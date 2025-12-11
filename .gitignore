@@ -1,0 +1,32 @@
+# Generated files
+config.el
+/eln-cache/
+/auto-save-list/
+
+# Backup and lock files
+*~
+\#*\#
+.\#*
+
+# User-specific data
+/.local/
+/.cache/
+/.dap-breakpoints
+/.lsp-session-v1
+/history
+/org-roam.db
+/org-roam.db-journal
+/projectile-bookmarks.eld
+/projects
+/transient/
+/workspace/
+
+# Downloaded packages
+# By default, all packages are ignored.
+# To track a specific local package (like gemini-cli),
+# uncomment the two lines below.
+/elpa/
+#!elpa/gemini-cli/
+
+# Java LSP files
+/eclipse.jdt.ls/
