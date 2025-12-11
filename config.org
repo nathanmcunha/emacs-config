@@ -52,10 +52,6 @@ To mimic Doom's leader keys (~SPC~), we use ~general.el~. This allows us to defi
     (my-leader-def
       ""    nil
       "SPC" '(execute-extended-command :which-key "M-x")
-      "f"   '(:ignore t :which-key "files")
-      "ff"  '(find-file :which-key "find file")
-      "fp"  '(my/open-personal-folder :which-key "private config")
-      "fs"  '(save-buffer :which-key "save file")
       "b"   '(:ignore t :which-key "buffer")
       "bb"  '(switch-to-buffer :which-key "switch buffer")
       "bk"  '(kill-current-buffer :which-key "kill buffer")))
@@ -494,6 +490,7 @@ Using the built-in ~hideshow~ mode combined with ~evil~ integration.
     ;; They work out of the box with evil if hs-minor-mode is active.
     )
 #+end_src
+* General Keybidings
 ** Window Management (Doom Style)
 We adhere to the Doom Emacs standard ~SPC w~ prefix for window operations.
 
@@ -536,6 +533,44 @@ Sets up standard buffer management keys under ~SPC b~ and the handy ~SPC TAB~ to
     "bs"  '(save-buffer :which-key "save buffer")
     "br"  '(revert-buffer :which-key "revert buffer") ;; Recarrega o arquivo do disco
     "bB"  '(switch-to-buffer-other-window :which-key "buffer other window"))
+#+end_src
+
+** Files
+#+begin_src emacs-lisp
+  (my-leader-def
+    "f"   '(:ignore t :which-key "files")
+    
+    ;; Existing mappings (Kept for reference)
+    "f f" '(find-file :which-key "find file")
+    "f ." '(find-file :which-key "find file")
+    "f s" '(save-buffer :which-key "save file")
+    "f r" '(consult-recent-file :which-key "recent files")
+    
+    ;; --- NEW DOOM BINDINGS ---
+    
+    ;; Save As...
+    "f S" '(write-file :which-key "save as...")
+    
+    ;; Rename/Move current file (Emacs 29+)
+    "f R" '(rename-visited-file :which-key "rename/move file")
+    
+    ;; Delete current file (and kill buffer)
+    "f D" '(lambda () (interactive) 
+             (when (y-or-n-p "Really delete this file? ")
+               (delete-file (buffer-file-name))
+               (kill-this-buffer))
+             :which-key "delete file")
+             
+    ;; Open your config.org quickly
+    "f p" '((lambda () (interactive) 
+              (find-file (expand-file-name "config.org" user-emacs-directory))) 
+            :which-key "open config")
+            
+    ;; Copy file path (Yank)
+    "f y" '((lambda () (interactive)
+              (kill-new (buffer-file-name))
+              (message "Copied path: %s" (buffer-file-name)))
+            :which-key "yank file path"))
 #+end_src
 * Java Development (LSP + JDTLS)
 We use ~lsp-java~ which downloads and manages the Eclipse JDTLS server automatically. This matches Doom's default behavior for Java.
