@@ -17,6 +17,7 @@ config.el
 /org-roam.db
 /org-roam.db-journal
 /projectile-bookmarks.eld
+/places
 /projects
 /transient/
 /workspace/
