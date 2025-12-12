@@ -11,7 +11,7 @@
 			 ("nongnu" . "https://elpa.nongnu.org/nongnu/")))
 
 (package-initialize)
-
+(setq use-package-always-ensure t)
 ;; 3. Ensure use-package is available (Native in Emacs 29+)
 (unless (package-installed-p 'use-package)
   (package-refresh-contents)
@@ -38,3 +38,4 @@
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  )
+

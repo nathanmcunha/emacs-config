@@ -6,35 +6,37 @@
 We start by cleaning up the UI to make it look modern and minimal, similar to Doom's defaults.
 
 #+begin_src emacs-lisp
-    ;; Remove GUI clutter
-    (setq inhibit-startup-message t)
-    (scroll-bar-mode -1)        ; Disable visible scrollbar
-    (tool-bar-mode -1)          ; Disable the toolbar
-    (tooltip-mode -1)           ; Disable tooltips
-    (set-fringe-mode 10)        ; Give some breathing room
-    (menu-bar-mode -1)          ; Disable the menu bar
+  ;; Remove GUI clutter
+  (setq inhibit-startup-message t)
+  (scroll-bar-mode -1)        ; Disable visible scrollbar
+  (tool-bar-mode -1)          ; Disable the toolbar
+  (tooltip-mode -1)           ; Disable tooltips
+  (set-fringe-mode 10)        ; Give some breathing room
+  (menu-bar-mode -1)          ; Disable the menu bar
 
-    ;; Font Configuration (Change "JetBrains Mono" to your preferred font)
-    ;;(set-face-attribute 'default nil :font "JetBrains Mono" :height 120)
+  ;; Font Configuration (Change "JetBrains Mono" to your preferred font)
+  ;;(set-face-attribute 'default nil :font "JetBrains Mono" :height 120)
 
-    ;; Line Numbers
-    (column-number-mode)
-    (global-display-line-numbers-mode t)
-    (dolist (mode '(org-mode-hook
-                    term-mode-hook
-                    shell-mode-hook
-                    treemacs-mode-hook
-                    eshell-mode-hook
-  		  eat-mode))
-      (add-hook mode (lambda () (display-line-numbers-mode 0))))
+  ;; Line Numbers
+  (column-number-mode)
+  (global-display-line-numbers-mode t)
+  (dolist (mode '(org-mode-hook
+                  term-mode-hook
+                  shell-mode-hook
+                  treemacs-mode-hook
+                  eshell-mode-hook
+  		eat-mode-hook
+  		gemini-cli-mode-hook
+  		))
+    (add-hook mode (lambda () (display-line-numbers-mode 0))))
   ;; Atalhos rápidos para Zoom (Afeta apenas o buffer atual)
   (global-set-key (kbd "C-=") 'text-scale-increase)
   (global-set-key (kbd "C--") 'text-scale-decrease)
   (global-set-key (kbd "C-0") 'text-scale-adjust) ;; Reseta com C-0
 
   (defun my/open-personal-folder()
-   (interactive)
-   (dired (expand-file-name "~/.config/emacs/")))
+    (interactive)
+    (dired (expand-file-name "~/.config/emacs/")))
 #+end_src
 
 ** Keybinding Helper (General.el)
@@ -367,7 +369,6 @@ Correction: Mapping ~SPC ;~ to ~embark-act~, which is the Doom standard for quic
 #+end_src
 * In-Buffer Completion (Corfu + Cape)
 This module configures the "Intellisense" experience. Corfu handles the UI, while Cape extends the data sources (files, buffer words).
-
 ** UI Configuration (Corfu)
 Sets up the popup, cycling, and documentation display.
 
@@ -485,10 +486,10 @@ Using the built-in ~hideshow~ mode combined with ~evil~ integration.
 #+begin_src emacs-lisp :tangle no
   (use-package hs
     :hook (prog-mode . hs-minor-mod
-    :config
-    ;; Evil bindings for folding are usually z a, z c, z o, z M, etc.
-    ;; They work out of the box with evil if hs-minor-mode is active.
-    )
+  		   :config
+  		   ;; Evil bindings for folding are usually z a, z c, z o, z M, etc.
+  		   ;; They work out of the box with evil if hs-minor-mode is active.
+  		   )
 #+end_src
 * General Keybidings
 ** Window Management (Doom Style)
@@ -560,12 +561,12 @@ Sets up standard buffer management keys under ~SPC b~ and the handy ~SPC TAB~ to
                (delete-file (buffer-file-name))
                (kill-this-buffer))
              :which-key "delete file")
-             
+    
     ;; Open your config.org quickly
     "f p" '((lambda () (interactive) 
               (find-file (expand-file-name "config.org" user-emacs-directory))) 
             :which-key "open config")
-            
+    
     ;; Copy file path (Yank)
     "f y" '((lambda () (interactive)
               (kill-new (buffer-file-name))
@@ -579,53 +580,79 @@ We use ~lsp-java~ which downloads and manages the Eclipse JDTLS server automatic
 Setting up ~lsp-mode~ basics for performance and keybindings.
 
 #+begin_src emacs-lisp
-         (use-package lsp-mode
-           :init
-           ;; Prefix for LSP actions (matches Doom's SPC l)
+ (defun lsp-booster--advice-json-parse (old-fn &rest args)
+    "Try to parse bytecode instead of json."
+    (or
+     (when (equal (following-char) ?#)
+       (let ((bytecode (read (current-buffer))))
+         (when (byte-code-function-p bytecode)
+           (funcall bytecode))))
+     (apply old-fn args)))
 
-  	   (setq lsp-headerline-breadcrumb-enable nil)
-           (setq lsp-keymap-prefix "C-c l")
-           (defun my/lsp-mode-setup-completion ()
-             (setf (alist-get 'styles (alist-get 'lsp-capf completion-category-defaults))
-                   '(orderless))) ;; Use Orderless with LSP
-           :custom
-           (lsp-headerline-breadcrumb-mode nil)
-           (lsp-completion-provider :none) ;; We use Corfu!
-  	 (lsp-enable-snippet t)
-           :hook (
-                  (java-mode . lsp-deferred) ;; Load LSP lazily
-                  (lsp-mode . lsp-enable-which-key-integration)
-                   (lsp-completion-mode . my/lsp-mode-setup-completion))
-           :commands (lsp lsp-deferred)
-           :config
-           ;; Performance tuning for LSP (essential for Java)
-           (setq lsp-idle-delay 0.500
-                 read-process-output-max (* 1024 1024) ;; 1mb
-                 lsp-log-io nil)
+  (advice-add (if (progn (require 'json)
+                         (fboundp 'json-parse-buffer))
+                  'json-parse-buffer
+                'json-read)
+              :around
+              #'lsp-booster--advice-json-parse)
 
-  (with-eval-after-load 'lsp-headerline
-        (lsp-headerline-breadcrumb-mode -1))
-           :general
-           (my-leader-def
-             ;; Map standard Doom "Code" actions
-             "c a" '(lsp-execute-code-action :which-key "code action")
-             "c r" '(lsp-rename :which-key "rename")
-  	     "c f" '(apheleia-format-buffer :which-key "format buffer")
-             "c d" '(lsp-find-definition :which-key "jump definition")
-             "c D" '(lsp-find-references :which-key "find references")
+  (defun lsp-booster--advice-final-command (old-fn cmd &optional test?)
+    "Prepend emacs-lsp-booster command to lsp CMD."
+    (let ((orig-result (funcall old-fn cmd test?)))
+      (if (and (not test?)
+               (not (file-remote-p default-directory)) ;; Do not use on remote connections
+               (not (member (car orig-result) '("emacs-lsp-booster"))))
+          ;; FIX: We add "--" here to separate booster args from server args
+          (cons "emacs-lsp-booster" (cons "--" orig-result))
+        orig-result)))
 
-             ;; Workspace actions
-             "l"   '(:keymap lsp-command-map :which-key "lsp workspace")))
+  (advice-add 'lsp-resolve-final-command :around #'lsp-booster--advice-final-command)
+  
+       (use-package lsp-mode
+         :init
+         (setq lsp-use-plist t)
+         (setq lsp-headerline-breadcrumb-enable nil)
+         (setq lsp-keymap-prefix "C-c l")
+         (defun my/lsp-mode-setup-completion ()
+           (setf (alist-get 'styles (alist-get 'lsp-capf completion-category-defaults))
+                 '(orderless))) ;; Use Orderless with LSP
+         :custom
+         (lsp-headerline-breadcrumb-mode nil)
+         (lsp-completion-provider :none) ;; We use Corfu!
+         (lsp-enable-snippet t)
+         :hook (
+                (java-mode . lsp-deferred) ;; Load LSP lazily
+                (lsp-mode . lsp-enable-which-key-integration)
+                (lsp-completion-mode . my/lsp-mode-setup-completion))
+         :commands (lsp lsp-deferred)
+         :config
+         ;; Performance tuning for LSP (essential for Java)
+         (setq lsp-idle-delay 0.500
+               read-process-output-max (* 1024 1024) ;; 1mb
+               lsp-log-io nil)
 
-         ;; UI enhancements (sideline info, documentation popups)
-         (use-package lsp-ui
-           :hook (lsp-mode . lsp-ui-mode)
-           :config
-           (setq lsp-ui-doc-enable t
-                 lsp-ui-doc-position 'at-point
-                 lsp-ui-sideline-enable t))
+         (with-eval-after-load 'lsp-headerline
+           (lsp-headerline-breadcrumb-mode -1))
+     :general
+         (my-leader-def
+           ;; Map standard Doom "Code" actions
+           "c a" '(lsp-execute-code-action :which-key "code action")
+           "c r" '(lsp-rename :which-key "rename")
+           "c f" '(apheleia-format-buffer :which-key "format buffer")
+           "c d" '(lsp-find-definition :which-key "jump definition")
+           "c D" '(lsp-find-references :which-key "find references")
+
+           ;; Workspace actions
+           "l"   '(:keymap lsp-command-map :which-key "lsp workspace")))
+
+       ;; UI enhancements (sideline info, documentation popups)
+       (use-package lsp-ui
+         :hook (lsp-mode . lsp-ui-mode)
+         :config
+         (setq lsp-ui-doc-enable t
+               lsp-ui-doc-position 'at-point
+               lsp-ui-sideline-enable t))
 #+end_src
-
 ** Java Specifics (lsp-java)
 Specific settings for JDTLS, including Lombok and Gradle wrapper support.
 
@@ -648,15 +675,15 @@ Specific settings for JDTLS, including Lombok and Gradle wrapper support.
     (setq lsp-java-configuration-runtimes
           '[
             (:name "JavaSE-21"
-             :path "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS"
-             :default t)
+  		 :path "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS"
+  		 :default t)
 
             ;; Se tiver Java 17 também:
             ;; (:name "Java-17-Mise"
             ;;  :path "~/.local/share/mise/installs/java/temurin-17.0.9+9"
             ;;  :default nil)
-           ])
-    ; Força o servidor JDTLS a iniciar usando o Java do Mise (opcional, mas recomendado)
+            ])
+  					; Força o servidor JDTLS a iniciar usando o Java do Mise (opcional, mas recomendado)
     (setq lsp-java-java-path (expand-file-name "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS/bin/java"))
     ;; 2. Lombok & VM Arguments configuration
     ;; Uncomment and adjust paths if you need manual Lombok or memory tuning
@@ -719,49 +746,49 @@ This module configures the Debug Adapter Protocol, enabling a full graphical deb
 This configuration replicates the Doom Emacs ~SPC p~ menu using Projectile.
 
 #+begin_src emacs-lisp
-    (use-package projectile
-      :diminish projectile-mode
-      :init
-      (projectile-mode +1)
-      :config
-      ;; Define o sistema de busca padrão para usar o Vertico/Consult
-      (setq projectile-completion-system 'default)
+  (use-package projectile
+    :diminish projectile-mode
+    :init
+    (projectile-mode +1)
+    :config
+    ;; Define o sistema de busca padrão para usar o Vertico/Consult
+    (setq projectile-completion-system 'default)
 
-      ;; Ação padrão ao trocar de projeto: Abrir busca de arquivos (ou mude para projectile-dired)
-      (setq projectile-switch-project-action #'projectile-find-file)
+    ;; Ação padrão ao trocar de projeto: Abrir busca de arquivos (ou mude para projectile-dired)
+    (setq projectile-switch-project-action #'projectile-find-file)
 
-      ;; Onde o Projectile deve procurar projetos automaticamente
-      (setq projectile-project-search-path '("~/projects" "~/workspace" "~/git"))
+    ;; Onde o Projectile deve procurar projetos automaticamente
+    (setq projectile-project-search-path '("~/projects" "~/workspace" "~/git"))
 
-      ;; Ordenar arquivos por acesso recente
-      (setq projectile-sort-order 'recently-active)
+    ;; Ordenar arquivos por acesso recente
+    (setq projectile-sort-order 'recently-active)
 
-      (dolist (dir '(".idea" ".vscode" "node_modules" "target" "build" "dist" ".cache" ".git"))
-        (add-to-list 'projectile-globally-ignored-directories dir))
-      :general
-      (my-leader-def
-        "p"   '(:ignore t :which-key "project")
+    (dolist (dir '(".idea" ".vscode" "node_modules" "target" "build" "dist" ".cache" ".git"))
+      (add-to-list 'projectile-globally-ignored-directories dir))
+    :general
+    (my-leader-def
+      "p"   '(:ignore t :which-key "project")
 
-        ;; Navegação e Troca
-        "p p" '(projectile-switch-project :which-key "switch project")
-        "p f" '(projectile-find-file :which-key "find file")
-        "p r" '(projectile-recentf :which-key "recent files")
-        "p b" '(consult-project-buffer :which-key "switch buffer") ;; Usa Consult para buffers do projeto
-        "p d" '(projectile-remove-known-project :which-key "remove project")
-        "p a" '(projectile-add-known-project :which-key "add project")
+      ;; Navegação e Troca
+      "p p" '(projectile-switch-project :which-key "switch project")
+      "p f" '(projectile-find-file :which-key "find file")
+      "p r" '(projectile-recentf :which-key "recent files")
+      "p b" '(consult-project-buffer :which-key "switch buffer") ;; Usa Consult para buffers do projeto
+      "p d" '(projectile-remove-known-project :which-key "remove project")
+      "p a" '(projectile-add-known-project :which-key "add project")
 
-        ;; Ações no Projeto
-        "p s" '(projectile-save-project-buffers :which-key "save project")
-        "p k" '(projectile-kill-buffers :which-key "kill buffers")
-        "p c" '(projectile-compile-project :which-key "compile")
-        "p t" '(projectile-test-project :which-key "run tests")
-        "p i" '(projectile-invalidate-cache :which-key "invalidate cache")
+      ;; Ações no Projeto
+      "p s" '(projectile-save-project-buffers :which-key "save project")
+      "p k" '(projectile-kill-buffers :which-key "kill buffers")
+      "p c" '(projectile-compile-project :which-key "compile")
+      "p t" '(projectile-test-project :which-key "run tests")
+      "p i" '(projectile-invalidate-cache :which-key "invalidate cache")
 
-        ;; Utilitários e Busca
-        "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
-        "p x" '(projectile-run-async-shell-command-in-root :which-key "async cmd")
-        ;; Integração com a busca do Consult (se você configurou o Consult anteriormente)
-        "p /" '(consult-ripgrep :which-key "search in project")))
+      ;; Utilitários e Busca
+      "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
+      "p x" '(projectile-run-async-shell-command-in-root :which-key "async cmd")
+      ;; Integração com a busca do Consult (se você configurou o Consult anteriormente)
+      "p /" '(consult-ripgrep :which-key "search in project")))
 #+end_src
 ** Environment (Mise)
 Integrates with 'mise' (formerly rtx) to manage development environments (JDKs, Node, etc).
@@ -820,58 +847,58 @@ Colors identifiers (variables, parameters) uniquely based on their names.
 #+end_src
 * ECA
 #+begin_src emacs-lisp :tangle no
-(use-package eca :vc (:url "https://github.com/editor-code-assistant/eca-emacs" :rev :newest) :hook (prog-mode . eca-mode) ;; Enable automatically in programming modes :config ;; 1. Configuration (setq eca-backend 'gemini) ;; Set the backend to Gemini
+  (use-package eca :vc (:url "https://github.com/editor-code-assistant/eca-emacs" :rev :newest) :hook (prog-mode . eca-mode) ;; Enable automatically in programming modes :config ;; 1. Configuration (setq eca-backend 'gemini) ;; Set the backend to Gemini
 
-;; Option A: Read from Environment Variable (Recommended for security)
-(setq eca-gemini-api-key (getenv "GEMINI_API_KEY"))
+    ;; Option A: Read from Environment Variable (Recommended for security)
+    (setq eca-gemini-api-key (getenv "GEMINI_API_KEY"))
 
-;; Option B: Hardcoded (Uncomment and replace if strictly necessary, but not recommended for dotfiles)
-;; (setq eca-gemini-api-key "your-api-key-here")
+    ;; Option B: Hardcoded (Uncomment and replace if strictly necessary, but not recommended for dotfiles)
+    ;; (setq eca-gemini-api-key "your-api-key-here")
 
-;; UI Tweak: Delay before showing ghost text (to avoid fighting with Corfu)
-(setq eca-debounce-time 0.5)
+    ;; UI Tweak: Delay before showing ghost text (to avoid fighting with Corfu)
+    (setq eca-debounce-time 0.5)
 
-;; 2. Keybindings (Evil Integration)
-;; We need specific bindings in Insert Mode to accept the ghost text.
-(general-define-key
- :states 'insert
- :keymaps 'eca-mode-map
- "C-l" 'eca-accept-completion   ;; Accept the suggestion
- "C-j" 'eca-next-suggestion     ;; Cycle next suggestion
- "C-k" 'eca-previous-suggestion ;; Cycle previous suggestion
- "C-h" 'eca-dismiss-completion) ;; Dismiss/Hide
+    ;; 2. Keybindings (Evil Integration)
+    ;; We need specific bindings in Insert Mode to accept the ghost text.
+    (general-define-key
+     :states 'insert
+     :keymaps 'eca-mode-map
+     "C-l" 'eca-accept-completion   ;; Accept the suggestion
+     "C-j" 'eca-next-suggestion     ;; Cycle next suggestion
+     "C-k" 'eca-previous-suggestion ;; Cycle previous suggestion
+     "C-h" 'eca-dismiss-completion) ;; Dismiss/Hide
 
-;; 3. Leader Integration (General.el)
-;; Add AI controls to your global leader map
-(my-leader-def
-  "a"   '(:ignore t :which-key "AI Assistant")
-  "a t" '(eca-mode :which-key "toggle assistant")
-  "a c" '(eca-trigger-completion :which-key "trigger completion")
-  "a s" '(eca-change-backend :which-key "switch backend")))
+    ;; 3. Leader Integration (General.el)
+    ;; Add AI controls to your global leader map
+    (my-leader-def
+      "a"   '(:ignore t :which-key "AI Assistant")
+      "a t" '(eca-mode :which-key "toggle assistant")
+      "a c" '(eca-trigger-completion :which-key "trigger completion")
+      "a s" '(eca-change-backend :which-key "switch backend")))
 
 #+end_src
 ** Configuration First, we configure ~eat~ (Emulate A Terminal), which provides the robust terminal backend required by the wrapper. Then, we configure the Gemini client itself.
 
 #+begin_src emacs-lisp
-            ;; 1. Terminal Emulator Dependency (Eat)
-          (use-package eat :ensure t :config ;; Optional: Kill the buffer immediately when the process exits
-    	(setq eat-kill-buffer-on-exit t))
-(use-package popup :ensure t)
-            ;; 2. Gemini CLI Wrapper
-            (use-package gemini-cli :vc (:url "https://github.com/linchen2chris/gemini-cli.el" :rev :newest) :after eat :config ;; Customization: Ensure Emacs finds the 'gemini' executable. ;; If the package fails to find it, uncomment and set the absolute path: ;;
-  	    (setq gemini-cli-command "~/.local/share/mise/installs/node/20.19.6/bin/gemini")
+  ;; 1. Terminal Emulator Dependency (Eat)
+  (use-package eat :ensure t :config ;; Optional: Kill the buffer immediately when the process exits
+    (setq eat-kill-buffer-on-exit t))
+  (use-package popup :ensure t)
+  ;; 2. Gemini CLI Wrapper
+  (use-package gemini-cli :vc (:url "https://github.com/linchen2chris/gemini-cli.el" :rev :newest) :after eat :config ;; Customization: Ensure Emacs finds the 'gemini' executable. ;; If the package fails to find it, uncomment and set the absolute path: ;;
+    (setq gemini-cli-command "~/.local/share/mise/installs/node/20.19.6/bin/gemini")
 
-            ;; General Keybindings
-            )
+    ;; General Keybindings
+    )
 
-            ;; 3. Helper: Evil Mode Integration ;; Ensure we can exit the terminal insert mode easily with ESC
-            (use-package eat :defer t
-  	      :hook (eat-mode . (lambda () (evil-local-mode 1)
-  				  ;; Make sure standard Evil motions work in the chat buffer
-  				  (evil-define-key* 'insert eat-mode-map (kbd "C-c C-k") #'eat-reset)))
-  :config
-  ;; Configure Eat to play nice with Evil's state switching
-  (add-hook 'eat-mode-hook (lambda () (add-hook 'evil-insert-state-entry-hook #'eat-emulate-es-mode nil t) (add-hook 'evil-normal-state-entry-hook #'eat-emulate-scroll-mode nil t))))
+  ;; 3. Helper: Evil Mode Integration ;; Ensure we can exit the terminal insert mode easily with ESC
+  (use-package eat :defer t
+    :hook (eat-mode . (lambda () (evil-local-mode 1)
+    		      ;; Make sure standard Evil motions work in the chat buffer
+    		      (evil-define-key* 'insert eat-mode-map (kbd "C-c C-k") #'eat-reset)))
+    :config
+    ;; Configure Eat to play nice with Evil's state switching
+    (add-hook 'eat-mode-hook (lambda () (add-hook 'evil-insert-state-entry-hook #'eat-emulate-es-mode nil t) (add-hook 'evil-normal-state-entry-hook #'eat-emulate-scroll-mode nil t))))
 #+end_src
 * Code Formatting (Google Java Format)
 Utilizamos o ~apheleia~ para aplicar a formatação automaticamente ao salvar o arquivo. Ele roda o processo de forma assíncrona (sem travar o editor).
@@ -912,8 +939,8 @@ Documentação: https://github.com/radian-software/apheleia
 
     ;; 4. (IMPORTANTE) Se o binário não estiver no PATH global do Emacs,
     ;; você pode forçar o caminho absoluto aqui. Descomente e ajuste se precisar:
-     (setf (alist-get 'google-java-format apheleia-formatters)
-           '("~/.local/bin/google-java-format" "-"))
+    (setf (alist-get 'google-java-format apheleia-formatters)
+          '("~/.local/bin/google-java-format" "-"))
     )
 
   ;; Atalho para formatar manualmente
@@ -1042,4 +1069,17 @@ Setup for Roam V2 with Doom-like keybindings.
     ;; Events that trigger a save (switching windows, buffers, etc.)
     (setq super-save-triggers
           '(evil-window-next evil-window-prev balance-windows other-window)))
+#+end_src
+* Terminal Integration
+#+begin_src emacs-lisp
+  (defun my/launch-alacritty (dir) "Launch Alacritty in DIR." (let ((proc (start-process "alacritty" nil "alacritty" "--working-directory" dir))) (set-process-query-on-exit-flag proc nil)))
+
+  (defun my/open-terminal-here () (interactive) (my/launch-alacritty default-directory))
+
+  (defun my/open-terminal-project () (interactive) (my/launch-alacritty (or (doom-project-root) default-directory)))
+
+   (my-leader-def
+    "o t" '(:ignore t :which-key "open terminal")
+    "o t h" '(my/open-terminal-here :which-key "Open External Terminal Here")  
+    "o t p" '(my/open-terminal-project :which-key "Open External Terminal in Project"))
 #+end_src
