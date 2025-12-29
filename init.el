@@ -12,11 +12,18 @@
 
 (package-initialize)
 (setq use-package-always-ensure t)
+
+;; CLI Support: explicit refresh when running 'emacs-cli sync'
+(when (bound-and-true-p my-cli-force-refresh)
+  (message "CLI Sync: Refreshing package archives...")
+  (package-refresh-contents))
+
 ;; 3. Ensure use-package is available (Native in Emacs 29+)
 (unless (package-installed-p 'use-package)
   (package-refresh-contents)
   (package-install 'use-package))
 (require 'use-package)
+(setq use-package-compute-statistics t) ;; Measure load time for M-x use-package-report
 (setq use-package-always-ensure t) ;; Always download packages if missing
 
 ;; 4. Load the Literate Configuration
@@ -32,8 +39,7 @@
  '(custom-safe-themes
    '("0f1341c0096825b1e5d8f2ed90996025a0d013a0978677956a9e61408fcd2c77"
      default))
- '(package-selected-packages
-   '(consult-dir consult-lsp consult-yasnippet gemini-cli ob-mermaid))
+ '(package-selected-packages nil)
  '(package-vc-selected-packages
    '((gemini-cli :url "https://github.com/linchen2chris/gemini-cli.el"))))
 (custom-set-faces

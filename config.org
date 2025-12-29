@@ -14,11 +14,14 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
   (set-fringe-mode 10)        ; Give some breathing room
   (menu-bar-mode -1)          ; Disable the menu bar
 
+  ;; Fix frame gap and maximize for emacsclient
+  (setq frame-resize-pixelwise t)
+  (add-to-list 'default-frame-alist '(fullscreen . maximized))
+
   ;; Font Configuration (Change "JetBrains Mono" to your preferred font)
   ;;(set-face-attribute 'default nil :font "JetBrains Mono" :height 120)
 
   ;; Line Numbers
-  (column-number-mode)
   (global-display-line-numbers-mode t)
   (dolist (mode '(org-mode-hook
                   term-mode-hook
@@ -37,6 +40,24 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
   (defun my/open-personal-folder()
     (interactive)
     (dired (expand-file-name "~/.config/emacs/")))
+
+  ;; Fix frame gap and maximize for emacsclient (GNOME behavior)
+  (setq frame-resize-pixelwise t)
+  (add-to-list 'default-frame-alist '(fullscreen . maximized))
+
+  ;; Diminish: Clean up mode line by hiding minor modes
+  (use-package diminish :ensure t)
+#+end_src
+
+** Server Mode
+Start the Emacs server automatically to enable ~emacsclient~ connections.
+
+#+begin_src emacs-lisp
+  (use-package server
+    :ensure nil
+    :config
+    (unless (server-running-p)
+      (server-start)))
 #+end_src
 
 ** Keybinding Helper (General.el)
@@ -64,8 +85,7 @@ To mimic Doom's leader keys (~SPC~), we use ~general.el~. This allows us to defi
       "h r" '(:ignore t :which-key "reload")
       "h r r" '((lambda () (interactive) (load-file user-init-file)) :which-key "reload config")
       
-      "f"   '(:ignore t :which-key "file")
-      "f R" '((lambda () (interactive) (load-file user-init-file)) :which-key "reload config")))
+      "f"   '(:ignore t :which-key "file")))
 
 #+end_src
 
@@ -122,6 +142,7 @@ This module installs and configures the comprehensive list of Evil extensions to
   ;; Visual: Select text -> S" (wrap with ")
   (use-package evil-surround
     :ensure t
+    :defer t
     :config
     (global-evil-surround-mode 1))
 
@@ -138,6 +159,7 @@ This module installs and configures the comprehensive list of Evil extensions to
   ;; Keys: gcc (comment line), gc (comment selection)
   (use-package evil-nerd-commenter
     :ensure t
+    :commands (evilnc-comment-operator)
     :general
     ;; Doom also binds this to 'SPC ;' (we did this in Embark),
     ;; but 'gc' is the Vim standard.
@@ -177,6 +199,7 @@ This module installs and configures the comprehensive list of Evil extensions to
   ;; Example: `gx w` on word A, move to word B, `gx w`. They swap.
   (use-package evil-exchange
     :ensure t
+    :commands (evil-exchange evil-exchange-install)
     :config
     (evil-exchange-install))
 
@@ -185,6 +208,7 @@ This module installs and configures the comprehensive list of Evil extensions to
   ;; Example: Select lines -> gl= (align by equal sign)
   (use-package evil-lion
     :ensure t
+    :commands (evil-lion-mode)
     :config
     (evil-lion-mode))
 
@@ -193,6 +217,7 @@ This module installs and configures the comprehensive list of Evil extensions to
   ;; Note: In Doom, C-a/C-x are reserved, so we use g+/g-
   (use-package evil-numbers
     :ensure t
+    :commands (evil-numbers/inc-at-pt evil-numbers/dec-at-pt)
     :general
     (:states '(normal visual)
              "g+" '(evil-numbers/inc-at-pt :which-key "increment")
@@ -202,6 +227,7 @@ This module installs and configures the comprehensive list of Evil extensions to
   ;; Keys: * or # (in visual mode) -> searches for the selected text
   (use-package evil-visualstar
     :ensure t
+    :defer t
     :config
     (global-evil-visualstar-mode))
 
@@ -219,6 +245,7 @@ This module installs and configures the comprehensive list of Evil extensions to
   ;; Example: yii (yank everything at this indentation level)
   (use-package evil-indent-plus
     :ensure t
+    :defer t
     :config
     (evil-indent-plus-default-bindings))
 
@@ -268,6 +295,11 @@ Loading the official Doom themes.
 
     ;; Enable flashing mode-line on errors
     (doom-themes-visual-bell-config)
+    
+    ;; Enable custom treemacs theme (all-the-icons must be installed!)
+    ;; (setq doom-themes-treemacs-theme "doom-colors")
+    ;; (doom-themes-treemacs-config)
+
     ;; Corrects (and improves) org-mode's native fontification.
     (doom-themes-org-config))
 #+end_src
@@ -276,7 +308,18 @@ Loading the official Doom themes.
 The famous Doom modeline.
 
 #+begin_src emacs-lisp
-  (use-package nerd-icons) ;; Prerequisite for icons
+  (use-package nerd-icons
+    :config
+    ;; Helper to fix "too big" icons by overriding the height forced by treemacs-nerd-icons
+    (defun my-nerd-icons-faicon-small (name &rest args)
+      (apply #'nerd-icons-faicon name (plist-put (copy-sequence args) :height 0.8)))
+
+    ;; Add gradle and project icon mappings
+    (add-to-list 'nerd-icons-extension-icon-alist '("gradle" my-nerd-icons-faicon-small "nf-fa-cog"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("kts" my-nerd-icons-faicon-small "nf-fa-cog"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("properties" my-nerd-icons-faicon-small "nf-fa-cog"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("project" nerd-icons-octicon "nf-oct-file_code"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("classpath" nerd-icons-octicon "nf-oct-file_code")))
 
   (use-package doom-modeline
     :init (doom-modeline-mode 1)
@@ -286,6 +329,14 @@ The famous Doom modeline.
     (setq doom-modeline-height 25)
     (setq doom-modeline-checker-enable t)
     (setq doom-modeline-checker-simple-format nil)
+
+    ;; Lean configuration
+    (setq doom-modeline-column-number nil)   ;; Hide column number
+    (setq doom-modeline-percent-position nil) ;; Hide percentage (%)
+    (setq doom-modeline-position-line-format '("%l")) ;; Show only line number (no "L" prefix)
+    
+    ;; Global override to ensure column number is off
+    (column-number-mode -1)
     
     (defun my/doom-modeline-flymake-click ()
       (interactive)
@@ -314,7 +365,7 @@ Vertico provides the vertical interface for selection.
                 ("C-f" . vertico-scroll-down)
                 ("C-b" . vertico-scroll-up)))
 
-  ;; Persist history over Emacs restarts. Vertico sorts by history position.
+   ;; Persist history over Emacs restarts. Vertico sorts by history position.
   (use-package savehist
     :init
     (savehist-mode))
@@ -392,12 +443,7 @@ Consult provides the actual search and navigation commands (replacing standard E
       "s S" '(consult-line-multi :which-key "search all buffers")
       "s i" '(consult-imenu :which-key "jump to symbol")
       "s p" '(consult-ripgrep :which-key "search project")
-      "s k" '(consult-yank-pop :which-key "yank pop")
-
-      ;; Goto
-      "g g" '(consult-goto-line :which-key "goto line")
-      "g m" '(consult-mark :which-key "jump to mark")
-      "g e" '(consult-flymake :which-key "goto error (flymake)")))
+      "s k" '(consult-yank-pop :which-key "yank pop")))
 
   (use-package consult-dir
     :bind (("C-x C-d" . consult-dir)
@@ -520,10 +566,18 @@ The best Git client.
 #+begin_src emacs-lisp
   (use-package magit
     :commands magit-status
-    :config
+    :init
     (my-leader-def
       "g"   '(:ignore t :which-key "git")
-      "gs"  '(magit-status :which-key "status")))
+      "g s" '(magit-status :which-key "status")
+      "g g" '(magit-status :which-key "status")
+      "g b" '(magit-blame-addition :which-key "blame")
+      "g l" '(magit-log-buffer-file :which-key "log file")
+      "g L" '(magit-log-current :which-key "log project")
+      "g d" '(magit-dispatch :which-key "dispatch")
+      "g f" '(magit-file-dispatch :which-key "file dispatch")
+      "g c" '(magit-clone :which-key "clone"))
+    :config)
 #+end_src
 
 ** File Tree (Treemacs)
@@ -533,12 +587,27 @@ Side bar file explorer.
   (use-package treemacs
     :defer t
     :init
+    (setq treemacs-display-in-side-window t)
     (with-eval-after-load 'winum
       (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
-    :config
+    
     (my-leader-def
       "e" '(:ignore t :which-key "explorer")
-      "ee" '(treemacs :which-key "toggle treemacs")))
+      "ee" '(treemacs :which-key "toggle treemacs"))
+    :hook
+    (projectile-after-switch-project . treemacs-add-and-display-current-project)
+    :config
+    (treemacs-follow-mode t)
+    (treemacs-filewatch-mode t)
+    (treemacs-project-follow-mode t) ;; Automatically switch to the current project
+    ;; (treemacs-resize-icons 22)
+    )
+
+  (use-package treemacs-nerd-icons
+    :ensure t
+    :after treemacs
+    :config
+    (treemacs-load-theme "nerd-icons"))
 
   (use-package treemacs-evil
     :after (treemacs evil)
@@ -546,11 +615,15 @@ Side bar file explorer.
 
   (use-package treemacs-projectile
     :after (treemacs projectile)
-    :ensure t)
+    :ensure t
+    :config
+    ;; Automatically add the project to Treemacs when switching via Projectile
+    (add-hook 'projectile-after-switch-project-hook #'treemacs-add-and-display-current-project))
 
   (use-package treemacs-magit
     :after (treemacs magit)
     :ensure t)
+
   (use-package lsp-treemacs
     :after (treemacs lsp-mode)
     :config
@@ -615,7 +688,6 @@ Sets up standard buffer management keys under ~SPC b~ and the handy ~SPC TAB~ to
 
     ;; Grupo de Buffers
     "b"   '(:ignore t :which-key "buffer")
-    "bb"  '(switch-to-buffer :which-key "switch buffer")
     "bi"  '(ibuffer :which-key "ibuffer")
     "bk"  '(kill-current-buffer :which-key "kill buffer")
     "bn"  '(next-buffer :which-key "next buffer")
@@ -707,6 +779,7 @@ Setting up ~lsp-mode~ basics for performance and keybindings.
     (setq lsp-headerline-breadcrumb-enable nil)
     (setq lsp-keymap-prefix "C-c l")
     (setq lsp-file-watch-threshold 2000)
+    (setq lsp-auto-guess-root t) ;; Detect project root automatically
 
     ;; Função auxiliar para configurar o Orderless com LSP
     (defun my/lsp-mode-setup-completion ()
@@ -724,6 +797,19 @@ Setting up ~lsp-mode~ basics for performance and keybindings.
 
     :commands (lsp lsp-deferred)
 
+    :init
+    (my-leader-def
+      ;; Ações de Código
+      "c a" '(lsp-execute-code-action :which-key "code action")
+      "c r" '(lsp-rename :which-key "rename")
+      "c f" '(apheleia-format-buffer :which-key "format buffer")
+      "c d" '(lsp-find-definition :which-key "jump definition")
+      "c D" '(lsp-find-references :which-key "find references")
+      "c x" '(consult-lsp-diagnostics :which-key "diagnostics (lsp)")
+      "c s" '(consult-lsp-symbols :which-key "symbols (lsp)")
+      ;; Workspace
+      "l"   '(:keymap lsp-command-map :package lsp-mode :which-key "lsp workspace"))
+
     :config
     (setq lsp-diagnostics-provider :flymake)
     (setq lsp-flymake-render-default-condition-bi-directional t)
@@ -738,19 +824,7 @@ Setting up ~lsp-mode~ basics for performance and keybindings.
           lsp-enable-links t)    
 
     (with-eval-after-load 'lsp-headerline
-      (lsp-headerline-breadcrumb-mode -1))
-
-    (my-leader-def
-      ;; Ações de Código
-      "c a" '(lsp-execute-code-action :which-key "code action")
-      "c r" '(lsp-rename :which-key "rename")
-      "c f" '(apheleia-format-buffer :which-key "format buffer")
-      "c d" '(lsp-find-definition :which-key "jump definition")
-      "c D" '(lsp-find-references :which-key "find references")
-      "c x" '(consult-lsp-diagnostics :which-key "diagnostics (lsp)")
-      "c s" '(consult-lsp-symbols :which-key "symbols (lsp)")
-      ;; Workspace
-      "l"   '(:keymap lsp-command-map :which-key "lsp workspace")))
+      (lsp-headerline-breadcrumb-mode -1)))
 
   (use-package consult-lsp
     :after lsp-mode)
@@ -842,20 +916,7 @@ This module configures the Debug Adapter Protocol, enabling a full graphical deb
 #+begin_src emacs-lisp
   (use-package dap-mode
     :after lsp-mode
-    :config
-    ;; Habilita a interface visual automaticamente ao iniciar o debug
-    (dap-ui-mode 1)
-
-    ;; Habilita tooltips ao passar o mouse sobre variáveis
-    (dap-tooltip-mode 1)
-
-    ;; Usa o recurso 'posframe' para mostrar tooltips flutuantes (mais bonito)
-    (tooltip-mode 1)
-    (setq dap-ui-buffer-update-hook '((lambda (&rest _args) (dap-ui-variable-tree-trigger-update))))
-
-    ;; Carrega o adaptador específico para Java
-    (require 'dap-java)
-
+    :init
     (my-leader-def
       "d"   '(:ignore t :which-key "debug")
       "d d" '(dap-debug :which-key "start debug")
@@ -871,7 +932,20 @@ This module configures the Debug Adapter Protocol, enabling a full graphical deb
       "d w" '(:ignore t :which-key "windows")
       "d w l" '(dap-ui-locals :which-key "locals")
       "d w s" '(dap-ui-sessions :which-key "sessions")
-      "d w b" '(dap-ui-breakpoints :which-key "breakpoints")))
+      "d w b" '(dap-ui-breakpoints :which-key "breakpoints"))
+    :config
+    ;; Habilita a interface visual automaticamente ao iniciar o debug
+    (dap-ui-mode 1)
+
+    ;; Habilita tooltips ao passar o mouse sobre variáveis
+    (dap-tooltip-mode 1)
+
+    ;; Usa o recurso 'posframe' para mostrar tooltips flutuantes (mais bonito)
+    (tooltip-mode 1)
+    (setq dap-ui-buffer-update-hook '((lambda (&rest _args) (dap-ui-variable-tree-trigger-update))))
+
+    ;; Carrega o adaptador específico para Java
+    (require 'dap-java))
 #+end_src
 * Project Management (Projectile)
 This configuration replicates the Doom Emacs ~SPC p~ menu using Projectile.
@@ -881,27 +955,11 @@ This configuration replicates the Doom Emacs ~SPC p~ menu using Projectile.
     :diminish projectile-mode
     :init
     (projectile-mode +1)
-    :config
-    ;; Define o sistema de busca padrão para usar o Vertico/Consult
-    (setq projectile-completion-system 'default)
-
-    ;; Ação padrão ao trocar de projeto: Abrir busca de arquivos (ou mude para projectile-dired)
-    (setq projectile-switch-project-action #'projectile-find-file)
-
-    ;; Onde o Projectile deve procurar projetos automaticamente
-    (setq projectile-project-search-path '("~/projects" "~/workspace" "~/git"))
-
-    ;; Ordenar arquivos por acesso recente
-    (setq projectile-sort-order 'recently-active)
-
-    (dolist (dir '(".idea" ".vscode" "node_modules" "target" "build" "dist" ".cache" ".git"))
-      (add-to-list 'projectile-globally-ignored-directories dir))
-
     (my-leader-def
       "p"   '(:ignore t :which-key "project")
 
       ;; Navegação e Troca
-      "p p" '(projectile-switch-project :which-key "switch project")
+      ;; "p p" is handled by persp-projectile
       "p f" '(projectile-find-file :which-key "find file")
       "p r" '(projectile-recentf :which-key "recent files")
       "p b" '(consult-project-buffer :which-key "switch buffer") ;; Usa Consult para buffers do projeto
@@ -919,8 +977,73 @@ This configuration replicates the Doom Emacs ~SPC p~ menu using Projectile.
       "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
       "p x" '(projectile-run-async-shell-command-in-root :which-key "async cmd")
       ;; Integração com a busca do Consult (se você configurou o Consult anteriormente)
-      "p /" '(consult-ripgrep :which-key "search in project")))
+      "p /" '(consult-ripgrep :which-key "search in project"))
+    :config
+    ;; Define o sistema de busca padrão para usar o Vertico/Consult
+    (setq projectile-completion-system 'default)
+
+    ;; Ação padrão ao trocar de projeto: Abrir busca de arquivos (ou mude para projectile-dired)
+    (setq projectile-switch-project-action #'projectile-find-file)
+
+    ;; Onde o Projectile deve procurar projetos automaticamente
+    (setq projectile-project-search-path '("~/projects" "~/workspace" "~/git"))
+
+    ;; Ordenar arquivos por acesso recente
+    (setq projectile-sort-order 'recently-active)
+
+    (dolist (dir '(".idea" ".vscode" "node_modules" "target" "build" "dist" ".cache" ".git"))
+      (add-to-list 'projectile-globally-ignored-directories dir)))
+
 #+end_src
+*  Workspaces (Perspective)
+This provides isolated workspaces (buffers + treemacs).
+
+#+begin_src emacs-lisp
+  (use-package perspective
+    :bind
+    ("C-x k" . persp-kill-buffer*) ;; Remap kill buffer to only kill in current perspective
+    :init
+    (persp-mode)
+    (my-leader-def
+      "W"   '(:ignore t :which-key "workspaces")
+      "W s" '(persp-switch :which-key "switch workspace")
+      "W n" '(persp-switch :which-key "new workspace") ;; persp-switch creates new if not found
+      "W k" '(persp-kill :which-key "kill workspace")
+      "W r" '(persp-rename :which-key "rename workspace")
+      "W a" '(persp-add-buffer :which-key "add buffer to workspace")
+      "W A" '(persp-set-buffer :which-key "move buffer to workspace")
+      "W b" '(persp-switch-to-buffer :which-key "switch buffer (persp)")
+      "W l" '(persp-state-load :which-key "load state")
+      "W S" '(persp-state-save :which-key "save state")
+      
+      ;; Easier Alternative Binding
+      "TAB" '(persp-switch :which-key "workspace switch")) ;; SPC TAB to switch workspaces
+    :custom
+    (persp-mode-prefix-key (kbd "C-c M-p")) ;; Move default prefix out of the way
+    :config
+    ;; Integrate with Consult if available
+    (with-eval-after-load 'consult
+      (consult-customize consult--source-buffer :hidden t :default nil)
+      (add-to-list 'consult-buffer-sources 'persp-consult-source)))
+
+  (use-package persp-projectile
+    :ensure t
+    :after (perspective projectile)
+    :init
+    (my-leader-def
+      "p p" '(projectile-persp-switch-project :which-key "switch project (persp)"))
+    :config
+    ;; Optional: Make this the default action for ALL projectile switch commands?
+    ;; (setq projectile-switch-project-action #'projectile-persp-switch-project)
+    )
+
+  (use-package treemacs-perspective
+    :after (treemacs perspective)
+    :ensure t
+    :config
+    (treemacs-set-scope-type 'Perspectives))
+#+end_src
+
 ** Environment (Mise)
 Integrates with 'mise' (formerly rtx) to manage development environments (JDKs, Node, etc).
 
@@ -997,15 +1120,7 @@ Colors identifiers (variables, parameters) uniquely based on their names.
      "C-l" 'eca-accept-completion   ;; Accept the suggestion
      "C-j" 'eca-next-suggestion     ;; Cycle next suggestion
      "C-k" 'eca-previous-suggestion ;; Cycle previous suggestion
-     "C-h" 'eca-dismiss-completion) ;; Dismiss/Hide
-
-    ;; 3. Leader Integration (General.el)
-    ;; Add AI controls to your global leader map
-    (my-leader-def
-      "a"   '(:ignore t :which-key "AI Assistant")
-      "a t" '(eca-mode :which-key "toggle assistant")
-      "a c" '(eca-trigger-completion :which-key "trigger completion")
-      "a s" '(eca-change-backend :which-key "switch backend")))
+     "C-h" 'eca-dismiss-completion))
 
 #+end_src
 ** Configuration First, we configure ~eat~ (Emulate A Terminal), which provides the robust terminal backend required by the wrapper. Then, we configure the Gemini client itself.
@@ -1037,6 +1152,7 @@ Documentação: https://github.com/radian-software/apheleia
 #+begin_src emacs-lisp
   (use-package apheleia
     :ensure t
+    :defer t
     :config
     ;; 1. Habilita logs de erro (opcional, bom para debug)
     (setq apheleia-log-only-errors nil)
@@ -1090,7 +1206,9 @@ Uses `org-modern` for badges/tags and `mixed-pitch` for reading comfort.
 
 #+begin_src emacs-lisp
   (use-package org-modern
-    :hook (org-mode . org-modern-mode)
+    :ensure t
+    :init
+    (add-hook 'org-mode-hook #'org-modern-mode)
     :config
     (setq org-modern-star '("◉" "○" "◈" "◇" "✳" "◆" "□")
           org-modern-table-vertical 1
@@ -1134,17 +1252,6 @@ Setup for Roam V2 with Doom-like keybindings.
     :ensure t
     :init
     (setq org-roam-v2-ack t) ;; Silence v2 warning
-    :custom
-    (org-roam-directory (file-truename "~/org")) ;; Change this path if needed!
-    (org-roam-completion-everywhere t)
-    :config
-    (org-roam-db-autosync-mode)
-
-    ;; Default capture templates
-    (setq org-roam-capture-templates
-          '(("d" "default" plain "%?"
-             :target (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
-             :unnarrowed t)))
 
     (my-leader-def
       "n"   '(:ignore t :which-key "notes")
@@ -1157,7 +1264,18 @@ Setup for Roam V2 with Doom-like keybindings.
       "n d t" '(org-roam-dailies-capture-today :which-key "capture today")
       "n d d" '(org-roam-dailies-goto-today :which-key "goto today")
       "n d y" '(org-roam-dailies-goto-yesterday :which-key "goto yesterday")
-      "n d m" '(org-roam-dailies-goto-tomorrow :which-key "goto tomorrow")))
+      "n d m" '(org-roam-dailies-goto-tomorrow :which-key "goto tomorrow"))
+    :custom
+    (org-roam-directory (file-truename "~/org")) ;; Change this path if needed!
+    (org-roam-completion-everywhere nil) ;; Disabled to fix "org-element-at-point" warning in non-org buffers
+    :config
+    (org-roam-db-autosync-mode)
+
+    ;; Default capture templates
+    (setq org-roam-capture-templates
+          '(("d" "default" plain "%?"
+             :target (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
+             :unnarrowed t))))
 #+end_src
 * Snippets
 #+begin_src emacs-lisp
@@ -1194,6 +1312,7 @@ Setup for Roam V2 with Doom-like keybindings.
 #+begin_src emacs-lisp
   (use-package super-save
     :ensure t
+    :defer t
     :config
     (super-save-mode +1)
     
@@ -1207,7 +1326,7 @@ Setup for Roam V2 with Doom-like keybindings.
 #+end_src
 * Terminal Integration
 #+begin_src emacs-lisp
-  (defun my/launch-alacritty (dir) "Launch Alacritty in DIR." (let ((proc (start-process "alacritty" nil "alacritty" "--working-directory" dir))) (set-process-query-on-exit-flag proc nil)))
+  (defun my/launch-alacritty (dir) "Launch Alacritty in DIR." (call-process-shell-command (format "alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
 
   (defun my/open-terminal-here () (interactive) (my/launch-alacritty default-directory))
 
@@ -1217,7 +1336,11 @@ Setup for Roam V2 with Doom-like keybindings.
     "o t" '(:ignore t :which-key "open terminal")
     "o t h" '(my/open-terminal-here :which-key "Open External Terminal Here")  
     "o t p" '(my/open-terminal-project :which-key "Open External Terminal in Project"))
-#+end_src
+
+    
+
+
+#+END_SRC
 
 * Markdown Mode
 #+BEGIN_SRC emacs-lisp 
@@ -1234,7 +1357,8 @@ Setup for Roam V2 with Doom-like keybindings.
 #+BEGIN_SRC emacs-lisp
   (use-package devdocs
     :ensure t
-    :config
+    :defer t
+    :init
     (my-leader-def
       "h d" '(devdocs-lookup :which-key "devdocs lookup")
       "h i" '(devdocs-install :which-key "devdocs install")))
