@@ -39,7 +39,21 @@
  '(custom-safe-themes
    '("0f1341c0096825b1e5d8f2ed90996025a0d013a0978677956a9e61408fcd2c77"
      default))
- '(package-selected-packages nil)
+ '(package-selected-packages
+   '(apheleia cape consult-dir consult-lsp consult-yasnippet corfu
+	      devdocs diminish doom-modeline doom-themes eat
+	      embark-consult evil-collection evil-easymotion
+	      evil-embrace evil-escape evil-exchange evil-indent-plus
+	      evil-lion evil-nerd-commenter evil-numbers evil-snipe
+	      evil-vimish-fold evil-visualstar gemini-cli general
+	      lsp-java lsp-ui marginalia mise mixed-pitch
+	      nerd-icons-completion nerd-icons-corfu
+	      nerd-icons-ibuffer ob-mermaid orderless org-modern
+	      org-roam persp-projectile popup rainbow-identifiers
+	      super-save treemacs-evil treemacs-magit
+	      treemacs-nerd-icons treemacs-perspective
+	      treemacs-projectile undo-fu vertico wgrep
+	      yasnippet-snippets))
  '(package-vc-selected-packages
    '((gemini-cli :url "https://github.com/linchen2chris/gemini-cli.el"))))
 (custom-set-faces

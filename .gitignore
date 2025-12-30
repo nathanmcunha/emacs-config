@@ -31,3 +31,4 @@ config.el
 
 # Java LSP files
 /eclipse.jdt.ls/
+.aider*

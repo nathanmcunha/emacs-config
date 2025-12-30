@@ -6,47 +6,50 @@
 We start by cleaning up the UI to make it look modern and minimal, similar to Doom's defaults.
 
 #+begin_src emacs-lisp
-  ;; Remove GUI clutter
-  (setq inhibit-startup-message t)
-  (scroll-bar-mode -1)        ; Disable visible scrollbar
-  (tool-bar-mode -1)          ; Disable the toolbar
-  (tooltip-mode -1)           ; Disable tooltips
-  (set-fringe-mode 10)        ; Give some breathing room
-  (menu-bar-mode -1)          ; Disable the menu bar
+    ;; Remove GUI clutter
+    (setq inhibit-startup-message t)
+    (scroll-bar-mode -1)        ; Disable visible scrollbar
+    (tool-bar-mode -1)          ; Disable the toolbar
+    (tooltip-mode -1)           ; Disable tooltips
+    (set-fringe-mode 10)        ; Give some breathing room
+    (menu-bar-mode -1)          ; Disable the menu bar
 
-  ;; Fix frame gap and maximize for emacsclient
-  (setq frame-resize-pixelwise t)
-  (add-to-list 'default-frame-alist '(fullscreen . maximized))
+    ;; Fix frame gap and maximize for emacsclient
+    (setq frame-resize-pixelwise t)
+    (add-to-list 'default-frame-alist '(fullscreen . maximized))
 
-  ;; Font Configuration (Change "JetBrains Mono" to your preferred font)
-  ;;(set-face-attribute 'default nil :font "JetBrains Mono" :height 120)
+    ;; Font Configuration (Change "JetBrains Mono" to your preferred font)
+    ;;(set-face-attribute 'default nil :font "JetBrains Mono" :height 120)
+  
+  ;; Configuração para evitar o "pulo" do texto ao mudar a quantidade de dígitos
+      (setq display-line-numbers-type t)  ;; Use 'relative para estilo Doom clássico
+      (setq display-line-numbers-grow-only t) ;; A margem nunca encolhe, evitando jitter
+    ;; Line Numbers
+    (global-display-line-numbers-mode t)
+    (dolist (mode '(org-mode-hook
+                    term-mode-hook
+                    shell-mode-hook
+                    treemacs-mode-hook
+                    eshell-mode-hook
+    		eat-mode-hook
+    		gemini-cli-mode-hook
+    		))
+      (add-hook mode (lambda () (display-line-numbers-mode 0))))
+    ;; Atalhos rápidos para Zoom (Afeta apenas o buffer atual)
+    (global-set-key (kbd "C-=") 'text-scale-increase)
+    (global-set-key (kbd "C--") 'text-scale-decrease)
+    (global-set-key (kbd "C-0") 'text-scale-adjust) ;; Reseta com C-0
 
-  ;; Line Numbers
-  (global-display-line-numbers-mode t)
-  (dolist (mode '(org-mode-hook
-                  term-mode-hook
-                  shell-mode-hook
-                  treemacs-mode-hook
-                  eshell-mode-hook
-  		eat-mode-hook
-  		gemini-cli-mode-hook
-  		))
-    (add-hook mode (lambda () (display-line-numbers-mode 0))))
-  ;; Atalhos rápidos para Zoom (Afeta apenas o buffer atual)
-  (global-set-key (kbd "C-=") 'text-scale-increase)
-  (global-set-key (kbd "C--") 'text-scale-decrease)
-  (global-set-key (kbd "C-0") 'text-scale-adjust) ;; Reseta com C-0
+    (defun my/open-personal-folder()
+      (interactive)
+      (dired (expand-file-name "~/.config/emacs/")))
 
-  (defun my/open-personal-folder()
-    (interactive)
-    (dired (expand-file-name "~/.config/emacs/")))
+    ;; Fix frame gap and maximize for emacsclient (GNOME behavior)
+    (setq frame-resize-pixelwise t)
+    (add-to-list 'default-frame-alist '(fullscreen . maximized))
 
-  ;; Fix frame gap and maximize for emacsclient (GNOME behavior)
-  (setq frame-resize-pixelwise t)
-  (add-to-list 'default-frame-alist '(fullscreen . maximized))
-
-  ;; Diminish: Clean up mode line by hiding minor modes
-  (use-package diminish :ensure t)
+    ;; Diminish: Clean up mode line by hiding minor modes
+    (use-package diminish :ensure t)
 #+end_src
 
 ** Server Mode
@@ -88,7 +91,6 @@ To mimic Doom's leader keys (~SPC~), we use ~general.el~. This allows us to defi
       "f"   '(:ignore t :which-key "file")))
 
 #+end_src
-
 ** Which-Key
 Shows a popup with available keybindings when you pause typing. Essential for discovering keys.
 
@@ -98,7 +100,19 @@ Shows a popup with available keybindings when you pause typing. Essential for di
     :config
     (setq which-key-idle-delay 0.3))
 #+end_src
-
+** Recentf
+#+begin_src emacs-lisp
+;; Habilita o rastreamento de arquivos recentes
+(use-package recentf
+  :init
+  (recentf-mode 1)
+  :config
+  ;; Quantos arquivos guardar na memória
+  (setq recentf-max-saved-items 200)
+  
+  ;; Ignorar arquivos automáticos ou cache para não poluir a lista
+  (setq recentf-exclude '("\\.git/" "\\.emacs\\.d/eln-cache/" "/tmp/" "/elpa/")))
+#+end_src
 * Evil Mode (Vim Emulation)
 This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-collection`).
 
@@ -111,6 +125,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     (setq evil-want-keybinding nil) ;; Disable evil's default keybindings in favor of evil-collection
     (setq evil-want-C-u-scroll t)   ;; Allow scrolling with C-u (like Vim)
     (setq evil-undo-system 'undo-fu)
+    (setq evil-search-module 'evil-search)
     :config
     (evil-mode 1)
     
@@ -129,150 +144,168 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
   (use-package evil-collection
     :after evil
     :demand t
+    :custom
+    (evil-collection-magit-use-z-for-folds t) ;; Use 'z' to toggle folds (Vim style)
     :config
+    (setq evil-collection-setup-minibuffer t)
     ;; Initialize bindings
     (evil-collection-init))
 #+end_src
-* Evil Extensions 
+** Evil Extensions 
 This module installs and configures the comprehensive list of Evil extensions to match Doom Emacs behavior and keybindings.
 
 #+begin_src emacs-lisp
-  ;; 1. Evil Surround (Manipulation of quotes/parens)
-  ;; Keys: cs"' (change " to '), ds" (delete "), ysw" (wrap word)
-  ;; Visual: Select text -> S" (wrap with ")
-  (use-package evil-surround
-    :ensure t
-    :defer t
-    :config
-    (global-evil-surround-mode 1))
+         ;; 1. Evil Surround (Manipulation of quotes/parens)
+         ;; Keys: cs"' (change " to '), ds" (delete "), ysw" (wrap word)
+         ;; Visual: Select text -> S" (wrap with ")
+         (use-package evil-surround
+           :ensure t
+           :after evil
+           :config
+           (global-evil-surround-mode 1))
 
-  ;; 2. Evil Embrace (Add more targets to Surround)
-  ;; Allows changing LaTeX environments, HTML tags, etc.
-  ;; Integrates automatically with evil-surround (cs, ds, ys).
-  (use-package evil-embrace
-    :ensure t
-    :after evil-surround
-    :config
-    (evil-embrace-enable-evil-surround-integration))
+         ;; 2. Evil Embrace (Add more targets to Surround)
+         ;; Allows changing LaTeX environments, HTML tags, etc.
+         ;; Integrates automatically with evil-surround (cs, ds, ys).
+         (use-package evil-embrace
+           :ensure t
+           :after evil-surround
+           :config
+           (evil-embrace-enable-evil-surround-integration))
 
-  ;; 3. Evil Nerd Commentary (Commenting)
-  ;; Keys: gcc (comment line), gc (comment selection)
-  (use-package evil-nerd-commenter
-    :ensure t
-    :commands (evilnc-comment-operator)
-    :general
-    ;; Doom also binds this to 'SPC ;' (we did this in Embark),
-    ;; but 'gc' is the Vim standard.
-    (:states '(normal visual)
-             "gc" 'evilnc-comment-operator))
+         ;; 3. Evil Nerd Commentary (Commenting)
+         ;; Keys: gcc (comment line), gc (comment selection)
+         (use-package evil-nerd-commenter
+           :ensure t
+           :commands (evilnc-comment-operator)
+           :general
+           ;; Doom also binds this to 'SPC ;' (we did this in Embark),
+           ;; but 'gc' is the Vim standard.
+           (:states '(normal visual)
+                    "gc" 'evilnc-comment-operator))
 
-  ;; 4. Evil Snipe (2-char search - Doom's signature speed)
-  ;; Keys: s<char><char> (jump forward), S<char><char> (jump backward)
-  ;; Replaces standard 'f'/'t' behavior with a smarter version.
-  (use-package evil-snipe
-    :ensure t
-    :hook (evil-mode . evil-snipe-mode)
-    :config
-    (evil-snipe-override-mode 1)
+         ;; 4. Evil Snipe (2-char search - Doom's signature speed)
+         ;; Keys: s<char><char> (jump forward), S<char><char> (jump backward)
+         ;; Replaces standard 'f'/'t' behavior with a smarter version.
+         ;; Note: 's' is hijacked for snipe. Use 'cl' for substitute char, 'cc' for substitute line.
+         (use-package evil-snipe
+           :ensure t
+           :after evil
+           :config
+           (evil-snipe-mode 1)
+           (evil-snipe-override-mode 1) ;; This enables 's' and 'S' for snipe
 
-    (setq evil-snipe-smart-case t      
-          evil-snipe-scope 'buffer     
-          evil-snipe-repeat-scope 'buffer 
-          evil-snipe-char-fold t       
-          evil-snipe-show-prompt nil)  
+           (setq evil-snipe-smart-case t      
+                 evil-snipe-scope 'buffer     
+                 evil-snipe-repeat-scope 'buffer 
+                 evil-snipe-char-fold t       
+                 evil-snipe-show-prompt nil)
 
-    (define-key evil-snipe-parent-transient-map (kbd ";") 'evil-snipe-repeat)
-    (define-key evil-snipe-parent-transient-map (kbd ",") 'evil-snipe-repeat-reverse))
+           ;; Fix visual mode: Let 's' be snipe, but 'S' be surround (Doom standard)
+           (evil-define-key 'visual evil-snipe-mode-map "s" 'evil-snipe-s)
+           ;; Unbind 'S' from snipe so evil-surround can use it
+           (evil-define-key 'visual evil-snipe-mode-map "S" nil)
 
-  ;; 5. Evil Escape (The "jk" panic button)
-  ;; Keys: jk (exit insert/visual mode)
-  (use-package evil-escape
-    :ensure t
-    :hook (evil-mode . evil-escape-mode)
-    :config
-    (setq evil-escape-key-sequence "jk"
-          evil-escape-delay 0.2
-          evil-escape-unordered-key-sequence t))
+           (define-key evil-snipe-parent-transient-map (kbd ";") 'evil-snipe-repeat)
+           (define-key evil-snipe-parent-transient-map (kbd ",") 'evil-snipe-repeat-reverse))
 
-  ;; 6. Evil Exchange (Swap two regions)
-  ;; Keys: gx (mark first region), move, gx (swap with second region)
-  ;; Example: `gx w` on word A, move to word B, `gx w`. They swap.
-  (use-package evil-exchange
-    :ensure t
-    :commands (evil-exchange evil-exchange-install)
-    :config
-    (evil-exchange-install))
+         ;; 5. Evil Escape (The "jk" panic button)
+         ;; Keys: jk (exit insert/visual mode)
+         (use-package evil-escape
+           :ensure t
+           :after evil
+           :config
+           (evil-escape-mode 1)
+           (setq evil-escape-key-sequence "jk"
+                 evil-escape-delay 0.2
+                 evil-escape-unordered-key-sequence t))
 
-  ;; 7. Evil Lion (Alignment)
-  ;; Keys: gl (align right), gL (align left)
-  ;; Example: Select lines -> gl= (align by equal sign)
-  (use-package evil-lion
-    :ensure t
-    :commands (evil-lion-mode)
-    :config
-    (evil-lion-mode))
+         ;; 6. Evil Exchange (Swap two regions)
+         ;; Keys: gx (mark first region), move, gx (swap with second region)
+         ;; Example: `gx w` on word A, move to word B, `gx w`. They swap.
+         (use-package evil-exchange
+           :ensure t
+           :config
+           (evil-exchange-install)
+  	  :general
+  	  (:states 'normal
+  "gx" 'evil-exchange
+  "gX" 'evil-exchange-cancel))
 
-  ;; 8. Evil Numbers (Increment/Decrement)
-  ;; Keys: g+ (increment), g- (decrement)
-  ;; Note: In Doom, C-a/C-x are reserved, so we use g+/g-
-  (use-package evil-numbers
-    :ensure t
-    :commands (evil-numbers/inc-at-pt evil-numbers/dec-at-pt)
-    :general
-    (:states '(normal visual)
-             "g+" '(evil-numbers/inc-at-pt :which-key "increment")
-             "g-" '(evil-numbers/dec-at-pt :which-key "decrement")))
+         ;; 7. Evil Lion (Alignment)
+         ;; Keys: gl (align right), gL (align left)
+         ;; Example: Select lines -> gl= (align by equal sign)
+         (use-package evil-lion
+           :ensure t
+           :config
+           (evil-lion-mode))
 
-  ;; 9. Evil Visualstar (Search current selection)
-  ;; Keys: * or # (in visual mode) -> searches for the selected text
-  (use-package evil-visualstar
-    :ensure t
-    :defer t
-    :config
-    (global-evil-visualstar-mode))
+         ;; 8. Evil Numbers (Increment/Decrement)
+         ;; Keys: g+ (increment), g- (decrement)
+         ;; Note: In Doom, C-a/C-x are reserved, so we use g+/g-
+         (use-package evil-numbers
+           :ensure t
+           :commands (evil-numbers/inc-at-pt evil-numbers/dec-at-pt)
+           :general
+           (:states '(normal visual)
+                    "g+" '(evil-numbers/inc-at-pt :which-key "increment")
+                    "g-" '(evil-numbers/dec-at-pt :which-key "decrement")))
 
-  ;; 10. Evil Vimish Fold (Advanced Folding)
-  ;; Keys: zf (create fold), za (toggle), zd (delete)
-  ;; Allows folding mixed regions, not just indentation based.
-  (use-package evil-vimish-fold
-    :ensure t
-    :after evil
-    :init
-    (global-evil-vimish-fold-mode))
+         ;; 9. Evil Visualstar (Search current selection)
+         ;; Keys: * or # (in visual mode) -> searches for the selected text
+         (use-package evil-visualstar
+           :ensure t
+           :after evil
+           :config
+           (global-evil-visualstar-mode))
 
-  ;; 11. Text Objects (Indent Plus & Anyblock)
-  ;; Adds "ii" (inner indent), "ai" (an indent), "ib" (inner block)
-  ;; Example: yii (yank everything at this indentation level)
-  (use-package evil-indent-plus
-    :ensure t
-    :defer t
-    :config
-    (evil-indent-plus-default-bindings))
+         ;; 10. Evil Vimish Fold (Advanced Folding)
+         ;; Keys: zf (create fold), za (toggle), zd (delete)
+         ;; Allows folding mixed regions, not just indentation based.
+         (use-package evil-vimish-fold
+           :ensure t
+           :after evil
+           :init
+           (global-evil-vimish-fold-mode)
+  	 :general
+  (:states '(normal visual)
+   "zf" 'evil-vimish-fold/create
+   "zd" 'evil-vimish-fold/delete
+   "zE" 'evil-vimish-fold/delete-all))
 
-  ;; 12. Evil Easymotion (Jump anywhere)
-  ;; Keys: gs (standard prefix) or SPC j (Doom leader)
-  (use-package evil-easymotion
-    :ensure t
-    :after evil
-    :demand t  
-    :config
-    (evilem-default-keybindings "gs")
+         ;; 11. Text Objects (Indent Plus & Anyblock)
+         ;; Adds "ii" (inner indent), "ai" (an indent), "ib" (inner block)
+         ;; Example: yii (yank everything at this indentation level)
+         (use-package evil-indent-plus
+           :ensure t
+           :after evil
+           :config
+           (evil-indent-plus-default-bindings))
 
-    ;; Seus ajustes visuais do which-key...
-    (with-eval-after-load 'which-key
-      (which-key-add-key-based-replacements
-        "gs w" "word start"
-        "gs e" "word end"
-        "gs l" "line"
-        "gs SPC" "find char"))
+         ;; 12. Evil Easymotion (Jump anywhere)
+         ;; Keys: gs (standard prefix) or SPC j (Doom leader)
+         (use-package evil-easymotion
+           :ensure t
+           :after evil
+           :demand t  
+           :config
+           (evilem-default-keybindings "gs")
 
-    (my-leader-def
-      "j"   '(:ignore t :which-key "jump")
-      "j w" '(evilem-motion-forward-word-begin :which-key "word")
-      "j l" '(evilem-motion-next-line :which-key "line")
-      "j c" '(evilem-motion-find-char :which-key "char")
-      "j s" '(evilem-motion-find-char-timer :which-key "find (timer)")
-      "j j" '(evilem-motion-next-line :which-key "line")))
+           ;; Seus ajustes visuais do which-key...
+           (with-eval-after-load 'which-key
+             (which-key-add-key-based-replacements
+               "gs w" "word start"
+               "gs e" "word end"
+               "gs l" "line"
+               "gs SPC" "find char"))
+
+           (my-leader-def
+             "j"   '(:ignore t :which-key "jump")
+             "j w" '(evilem-motion-forward-word-begin :which-key "word")
+             "j l" '(evilem-motion-next-line :which-key "line")
+             "j c" '(evilem-motion-find-char :which-key "char")
+             "j s" '(evilem-motion-find-char-timer :which-key "find (timer)")
+             "j j" '(evilem-motion-next-line :which-key "line")))
 #+end_src
 * Undo System
 Doom uses ~undo-fu~ to handle undo/redo steps properly with Evil mode (Ctrl-z / Ctrl-r).
@@ -309,14 +342,18 @@ The famous Doom modeline.
 
 #+begin_src emacs-lisp
   (use-package nerd-icons
+    :ensure t
+    :demand t
     :config
     ;; Helper to fix "too big" icons by overriding the height forced by treemacs-nerd-icons
     (defun my-nerd-icons-faicon-small (name &rest args)
       (apply #'nerd-icons-faicon name (plist-put (copy-sequence args) :height 0.8)))
+    (defun my-nerd-icons-devicon-small (name &rest args)
+      (apply #'nerd-icons-devicon name (plist-put (copy-sequence args) :height 0.8)))
 
     ;; Add gradle and project icon mappings
-    (add-to-list 'nerd-icons-extension-icon-alist '("gradle" my-nerd-icons-faicon-small "nf-fa-cog"))
-    (add-to-list 'nerd-icons-extension-icon-alist '("kts" my-nerd-icons-faicon-small "nf-fa-cog"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("gradle" my-nerd-icons-devicon-small "nf-dev-gradle"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("kts" my-nerd-icons-devicon-small "nf-dev-gradle"))
     (add-to-list 'nerd-icons-extension-icon-alist '("properties" my-nerd-icons-faicon-small "nf-fa-cog"))
     (add-to-list 'nerd-icons-extension-icon-alist '("project" nerd-icons-octicon "nf-oct-file_code"))
     (add-to-list 'nerd-icons-extension-icon-alist '("classpath" nerd-icons-octicon "nf-oct-file_code")))
@@ -329,11 +366,20 @@ The famous Doom modeline.
     (setq doom-modeline-height 25)
     (setq doom-modeline-checker-enable t)
     (setq doom-modeline-checker-simple-format nil)
+    (setq doom-modeline-support-mouse nil) ;; Disable mouse clicks on the modeline to prevent bugs
 
     ;; Lean configuration
     (setq doom-modeline-column-number nil)   ;; Hide column number
     (setq doom-modeline-percent-position nil) ;; Hide percentage (%)
-    (setq doom-modeline-position-line-format '("%l")) ;; Show only line number (no "L" prefix)
+    (setq doom-modeline-position-line-format '("%l")) ;; Show only line number
+    (setq doom-modeline-buffer-encoding nil) ;; Hide encoding/EOL (UTF-8 LF)
+    
+    ;; Major Mode Display
+    (setq doom-modeline-major-mode-icon t) ;; Show the icon
+    (setq doom-modeline-major-mode-hide-name t) ;; Hide the text name (e.g. "Python")
+    
+    ;; Workspace/Perspective Display (Reverted to clean state)
+    (setq doom-modeline-project-name t)         ;; Explicitly show Projectile project name
     
     ;; Global override to ensure column number is off
     (column-number-mode -1)
@@ -346,7 +392,7 @@ The famous Doom modeline.
 
     ;; Sobrescreve o mapa de cliques do doom-modeline para usar nossa função
     (define-key doom-modeline-mode-map (kbd "<mode-line> <flymake> <mouse-1>") 'my/doom-modeline-flymake-click))
-#+end_src
+  #+end_src
 
 * Completion System (Doom Style)
 This module replicates the highly integrated completion experience of Doom Emacs using the Vertico stack.
@@ -375,81 +421,129 @@ Vertico provides the vertical interface for selection.
 This enables "fuzzy" matching where space-separated terms match regardless of order.
 
 #+begin_src emacs-lisp
-  (use-package orderless
-    :custom
-    (completion-styles '(orderless basic))
-    (completion-category-defaults nil)
-    (completion-category-overrides '((file (styles partial-completion)))))
-#+end_src
+(use-package orderless
+  :ensure t
+  :custom
+  ;; Define estilos: Orderless como principal, Basic como fallback
+  (completion-styles '(orderless basic))
+  
+  ;; Garante que arquivos usem "partial-completion" (ex: /u/b/ -> /usr/bin/)
+  ;; O Orderless puro não é bom para expandir caminhos parciais
+  (completion-category-defaults nil)
+  (completion-category-overrides '((file (styles partial-completion))))
+  
+  :config
+  ;; --- DISPATCHERS (O "Pulo do Gato") ---
+  ;; Esta função permite usar sufixos/prefixos para alterar a busca dinamicamente:
+  ;;  termo=  -> Busca exata (Literal)
+  ;;  !termo  -> Exclui resultados com esse termo (Without)
+  ;;  %termo  -> Ignora acentos/diacríticos (CharFold)
+  ;;  ,termo  -> Inicialismo (ex: ,rmf acha read-multiple-files)
+  
+  (defun my/orderless-dispatch (pattern _index _total)
+    (cond
+     ;; Excluir termo se começar com !
+     ((string-prefix-p "!" pattern) 
+      `(orderless-without-literal . ,(substring pattern 1)))
+     
+     ;; Busca literal exata se terminar com =
+     ((string-suffix-p "=" pattern) 
+      `(orderless-literal . ,(substring pattern 0 -1)))
+     
+     ;; Inicialismo se começar com , (útil para comandos longos)
+     ((string-prefix-p "," pattern) 
+      `(orderless-initialism . ,(substring pattern 1)))
+      
+     ;; Flex (fuzzy "sujo") se terminar com ~
+     ((string-suffix-p "~" pattern) 
+      `(orderless-flex . ,(substring pattern 0 -1)))))
+
+  ;; Aplica o dispatcher
+  (setq orderless-style-dispatchers '(my/orderless-dispatch)))
+  #+end_src
 
 ** Annotations (Marginalia)
 Adds rich metadata (permissions, size, modification time) and icons to the completion list.
 
 #+begin_src emacs-lisp
-  (use-package marginalia
-    :after vertico
-    :init
-    (marginalia-mode))
+      (use-package marginalia
+        :after vertico
+        :custom
+        (marginalia-max-relative-age 0)
+        (marginalia-align 'right)
+        :init
+        (marginalia-mode)
+:bind (:map minibuffer-local-map
+           ("M-A" . marginalia-cycle))) ;; Atalho essencial: Alterna detalhes (Heavy <-> Light <-> None)
+        
 
-  (use-package nerd-icons-completion
-    :after marginalia
-    :config
-    (nerd-icons-completion-mode)
-    (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
+      (use-package nerd-icons-completion
+        :after marginalia
+        :config
+        (nerd-icons-completion-mode)
+        (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
 #+end_src
 
 ** Commands (Consult)
 Consult provides the actual search and navigation commands (replacing standard Emacs commands and Ivy/Counsel).
 
 #+begin_src emacs-lisp
-  (use-package consult
-    :hook (completion-list-mode . consult-preview-at-point-mode)
-    :init
-    ;; Tweak the register preview window.
-    (setq register-preview-delay 0.5
-          register-preview-function #'consult-register-format)
+    (use-package consult
+      :hook (completion-list-mode . consult-preview-at-point-mode)
+      :init
+      ;; Tweak the register preview window.
+      (setq register-preview-delay 0.5
+            register-preview-function #'consult-register-format)
 
-    ;; Use Consult to select xref locations with preview
-    (setq xref-show-xrefs-function #'consult-xref
-          xref-show-definitions-function #'consult-xref)
+      ;; Use Consult to select xref locations with preview
+      (setq xref-show-xrefs-function #'consult-xref
+            xref-show-definitions-function #'consult-xref)
 
-    ;; UI Improvements for Consult
-    (setq consult-narrow-key "<" ) ;; "Filter by category" (e.g., press < f for files)
-    (setq consult-widen-key ">")
+      ;; UI Improvements for Consult
+      (setq consult-narrow-key "<" ) ;; "Filter by category" (e.g., press < f for files)
+      (setq consult-widen-key ">")
 
-    ;; Better Preview
-    (setq consult-preview-key 'any) ;; Preview immediately
+      ;; Better Preview
+      (setq consult-preview-key 'any) ;; Preview immediately
+      (autoload 'projectile-project-root "projectile")
+      (setq consult-project-function (lambda (_) (projectile-project-root)))
 
-    ;; Optional: Configure the sources for `consult-buffer`
-    (setq consult-buffer-sources
-          '(consult--source-hidden-buffer
-            consult--source-modified-buffer
-            consult--source-buffer
-            consult--source-recent-file
-            consult--source-bookmark
-            consult--source-project-buffer
-            consult--source-project-recent-file))
+      ;; Optional: Configure the sources for `consult-buffer`
+      (setq consult-buffer-sources
+            '(consult--source-hidden-buffer
+              consult--source-modified-buffer
+              consult--source-buffer
+              consult--source-recent-file
+              consult--source-bookmark
+              consult--source-project-buffer
+              consult--source-project-recent-file))
 
+     :general
     (my-leader-def
       ;; Buffers & Files
-      "b b" '(consult-buffer :which-key "switch buffer") ;; Better than switch-to-buffer
+      "b b" '(consult-buffer :which-key "switch buffer")       ;; Agora suporta narrowing com '<'
       "f r" '(consult-recent-file :which-key "recent files")
-      "f d" '(consult-dir :which-key "find directory")
 
-      ;; Search (The famous Doom bindings)
-      "/"   '(consult-ripgrep :which-key "search project (rg)")
+      ;; Search (A Busca Estilo Doom)
+      "/"   '(consult-ripgrep :which-key "search project (rg)") ;; Busca conteúdo
+
       "s"   '(:ignore t :which-key "search")
-      "s s" '(consult-line :which-key "search buffer")
+      "s s" '(consult-line :which-key "search buffer")          ;; O 'Ctrl+F' turbinado
       "s S" '(consult-line-multi :which-key "search all buffers")
-      "s i" '(consult-imenu :which-key "jump to symbol")
+      "s i" '(consult-imenu :which-key "jump to symbol")        ;; Pula para funções/classes
+      "s h" '(consult-outline :which-key "jump to heading")     ;; NOVO: Ótimo para Org-mode/Markdown
       "s p" '(consult-ripgrep :which-key "search project")
-      "s k" '(consult-yank-pop :which-key "yank pop")))
+      "s f" '(consult-find :which-key "find file (name)")       ;; NOVO: Busca arquivos pelo nome (fd/find)
+      "s k" '(consult-yank-pop :which-key "yank pop")           ;; Histórico da área de transferência
+
+      ;; Navegação
+      "g M" '(consult-global-mark :which-key "jump to global mark")))
 
   (use-package consult-dir
-    :bind (("C-x C-d" . consult-dir)
-           :map minibuffer-local-completion-map
-           ("C-x C-d" . consult-dir)
-           ("C-x C-j" . consult-dir-jump-file)))
+      :bind (("C-x C-d" . consult-dir)
+             :map minibuffer-local-completion-map
+             ("C-x C-d" . consult-dir)
+             ("C-x C-j" . consult-dir-jump-file)))
 #+end_src
 
 ** Actions & Acts (Doom Style)
@@ -478,7 +572,10 @@ Correction: Mapping ~SPC ;~ to ~embark-act~, which is the Doom standard for quic
                  '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
                    nil
                    (window-parameters (mode-line-format . none)))))
+
   (use-package embark-consult)
+(use-package wgrep
+  :ensure t)
 #+end_src
 * In-Buffer Completion (Corfu + Cape)
 This module configures the "Intellisense" experience. Corfu handles the UI, while Cape extends the data sources (files, buffer words).
@@ -486,39 +583,46 @@ This module configures the "Intellisense" experience. Corfu handles the UI, whil
 Sets up the popup, cycling, and documentation display.
 
 #+begin_src emacs-lisp
-  (use-package corfu
-    :custom
-    (corfu-auto nil)                 ;; Disable auto completion (LAG FIX)
-    (corfu-auto-prefix 2)          ;; Min length to trigger
-    (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
-    (corfu-preselect 'prompt)      ;; Always preselect the prompt
-    (corfu-quit-no-match 'separator) ;; Auto-quit if no match
+    (use-package corfu
+      :custom
+      (corfu-auto t)                 ;; Disable auto completion (LAG FIX)
+      (corfu-auto-delay 0.1)
+      (corfu-auto-prefix 2)          ;; Min length to trigger
+      (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
+      (corfu-preselect 'prompt)      ;; Always preselect the prompt
+      (corfu-quit-no-match 'separator) ;; Auto-quit if no match
 
-    ;; Visual adjustments
-    (corfu-popupinfo-mode)         ;; Show documentation popup
-    (corfu-popupinfo-delay 0.5)    ;; Delay before showing docs
-    (corfu-max-width 80)
-    (corfu-preview-current nil)    ;; Disable previewing current candidate
+      ;; Visual adjustments
+      (corfu-popupinfo-delay 0.5)    ;; Delay before showing docs
+      (corfu-max-width 80)
+      (corfu-preview-current nil)    ;; Disable previewing current candidate
 
-    :init
-    (global-corfu-mode)
-
-    :bind
-    (("C-SPC" . completion-at-point)
-     :map corfu-map
-     ("TAB" . corfu-next)
-     ([tab] . corfu-next)
-     ("S-TAB" . corfu-previous)
-     ([backtab] . corfu-previous)
-     ;; Option to send to minibuffer/export
-     ("C-e" . corfu-send-shell)
-     ("SPC" . corfu-insert-separator))) ;; Helps filtering
+      :init
+      (global-corfu-mode)
+      (corfu-popupinfo-mode)         ;; Show documentation popup
+      :bind
+    (:map corfu-map
+          ("TAB" . corfu-next)
+          ([tab] . corfu-next)
+          ("S-TAB" . corfu-previous)
+          ([backtab] . corfu-previous)
+          
+          ;; --- Navegação Style Vim/Doom (Essencial!) ---
+          ("C-j" . corfu-next)
+          ("C-k" . corfu-previous)
+          
+          ;; --- Confirmação ---
+          ("RET" . corfu-insert)    ;; Enter aceita a sugestão selecionada
+          
+          ;; Utilitários
+          ("C-e" . corfu-send-shell)    ;; Exporta candidatos para o minibuffer
+          ("SPC" . corfu-insert-separator))) ;; Ajuda a filtrar com Orderless
 
   ;; Pretty icons for Corfu
-  (use-package nerd-icons-corfu
-    :after corfu
-    :config
-    (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
+    (use-package nerd-icons-corfu
+      :after corfu
+      :config
+      (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
 #+end_src
 
 ** Extended Backends (Cape)
@@ -526,10 +630,14 @@ Cape allows mixing completion backends (e.g., suggesting file paths inside strin
 
 #+begin_src emacs-lisp
   (use-package cape
+    :ensure t
     :init
     ;; Add `completion-at-point-functions`, used by `corfu`.
     (add-to-list 'completion-at-point-functions #'cape-file)    ;; File paths
-    (add-to-list 'completion-at-point-functions #'cape-dabbrev) ;; Words in buffer
+    ;; 2. cape-dabbrev: Palavras no buffer (Autocomplete burro)
+    ;; IMPORTANTE: Usamos o argumento 't' no final (append) para adicionar ao FIM da lista.
+    ;; Isso garante que o LSP (que é adicionado localmente no início) tenha prioridade.
+    (add-to-list 'completion-at-point-functions #'cape-dabbrev t) ;; Words in buffer
 
     ;; Make these capfs works in generic comments/strings
     (add-to-list 'completion-at-point-functions #'cape-keyword)
@@ -542,15 +650,15 @@ Cape allows mixing completion backends (e.g., suggesting file paths inside strin
     (setq cape-dabbrev-check-other-buffers t)
 
     ;; Merge LSP with other backends using cape-super
-    (defun my/cape-lsp-setup ()
-      (setq-local completion-at-point-functions
-                  (list (cape-capf-super
-                         #'cape-file
-                         #'lsp-completion-at-point
-                         #'cape-dabbrev
-                         #'cape-keyword))))
+    ;; (defun my/cape-lsp-setup ()
+    ;;   (setq-local completion-at-point-functions
+    ;;               (list (cape-capf-super
+    ;;                      #'cape-file
+    ;;                      #'lsp-completion-at-point
+    ;;                      #'cape-dabbrev
+    ;;                      #'cape-keyword))))
     
-    (add-hook 'lsp-completion-mode-hook #'my/cape-lsp-setup)
+    ;; (add-hook 'lsp-completion-mode-hook #'my/cape-lsp-setup)
 
     ;; Enable Elisp completion in Org source blocks
     (defun my/org-setup-completion ()
@@ -642,17 +750,6 @@ Enhanced buffer list with icons.
   (global-set-key (kbd "C-x C-b") 'ibuffer)
 #+end_src
 
-* Code Folding
-Using the built-in ~hideshow~ mode combined with ~evil~ integration.
-
-#+begin_src emacs-lisp :tangle no
-  (use-package hs
-    :hook (prog-mode . hs-minor-mod
-  		   :config
-  		   ;; Evil bindings for folding are usually z a, z c, z o, z M, etc.
-  		   ;; They work out of the box with evil if hs-minor-mode is active.
-  		   )
-#+end_src
 * General Keybidings
 ** Window Management (Doom Style)
 We adhere to the Doom Emacs standard ~SPC w~ prefix for window operations.
@@ -854,7 +951,6 @@ Specific settings for JDTLS, including Lombok and Gradle wrapper support.
   (use-package lsp-java
     :after lsp-mode
     :config
-
     ;; 1. Force jdtls to use the Gradle Wrapper (gradlew) if available
     ;; Referenced from your config
     (setq lsp-java-import-gradle-wrapper-enabled t)
@@ -866,6 +962,9 @@ Specific settings for JDTLS, including Lombok and Gradle wrapper support.
           '(("java.imports.gradle.wrapper.checksums" .
              [(:sha256 "423cb469ccc0ecc31f0e4e1c309976198ccb734cdcbb7029d4bda0f18f57e8d9" :allowed t)])))
     (setq lsp-java-completion-doc-format '("html" "markdown"))
+    ;; Ensure lsp-java uses a proper workspace directory
+    (setq lsp-java-workspace-dir (expand-file-name "workspace" user-emacs-directory))
+    (setq lsp-java-workspace-cache-dir (expand-file-name "workspace/.cache" user-emacs-directory))
     (setq lsp-java-configuration-runtimes
           '[
             (:name "JavaSE-21"
@@ -897,8 +996,6 @@ Specific settings for JDTLS, including Lombok and Gradle wrapper support.
     (with-eval-after-load 'projectile
       (setq projectile-project-test-cmd "./gradlew test")))
 
-#+end_src
-#+begin_src emacs-lisp
   ;; Eldoc Configuration (The Minibuffer Info)
   (setq eldoc-echo-area-use-multiline-p nil) ;; nil = Never resize minibuffer (Truncate text)
   ;; 2   = Allow max 2 lines of expansion
@@ -1020,6 +1117,7 @@ This provides isolated workspaces (buffers + treemacs).
       "TAB" '(persp-switch :which-key "workspace switch")) ;; SPC TAB to switch workspaces
     :custom
     (persp-mode-prefix-key (kbd "C-c M-p")) ;; Move default prefix out of the way
+    (persp-show-modestring nil)               ;; PREVENT persp-mode from drawing on the modeline
     :config
     ;; Integrate with Consult if available
     (with-eval-after-load 'consult
@@ -1100,29 +1198,6 @@ Colors identifiers (variables, parameters) uniquely based on their names.
           rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
 #+end_src
 * ECA
-#+begin_src emacs-lisp :tangle no
-  (use-package eca :vc (:url "https://github.com/editor-code-assistant/eca-emacs" :rev :newest) :hook (prog-mode . eca-mode) ;; Enable automatically in programming modes :config ;; 1. Configuration (setq eca-backend 'gemini) ;; Set the backend to Gemini
-
-    ;; Option A: Read from Environment Variable (Recommended for security)
-    (setq eca-gemini-api-key (getenv "GEMINI_API_KEY"))
-
-    ;; Option B: Hardcoded (Uncomment and replace if strictly necessary, but not recommended for dotfiles)
-    ;; (setq eca-gemini-api-key "your-api-key-here")
-
-    ;; UI Tweak: Delay before showing ghost text (to avoid fighting with Corfu)
-    (setq eca-debounce-time 1.5)
-
-    ;; 2. Keybindings (Evil Integration)
-    ;; We need specific bindings in Insert Mode to accept the ghost text.
-    (general-define-key
-     :states 'insert
-     :keymaps 'eca-mode-map
-     "C-l" 'eca-accept-completion   ;; Accept the suggestion
-     "C-j" 'eca-next-suggestion     ;; Cycle next suggestion
-     "C-k" 'eca-previous-suggestion ;; Cycle previous suggestion
-     "C-h" 'eca-dismiss-completion))
-
-#+end_src
 ** Configuration First, we configure ~eat~ (Emulate A Terminal), which provides the robust terminal backend required by the wrapper. Then, we configure the Gemini client itself.
 
 #+begin_src emacs-lisp
