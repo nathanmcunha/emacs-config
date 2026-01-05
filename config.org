@@ -6,12 +6,14 @@
 We start by cleaning up the UI to make it look modern and minimal, similar to Doom's defaults.
 
 #+begin_src emacs-lisp
+    ;;; config.el --- My Configuration -*- lexical-binding: t -*-
+
     ;; Remove GUI clutter
     (setq inhibit-startup-message t)
     (scroll-bar-mode -1)        ; Disable visible scrollbar
     (tool-bar-mode -1)          ; Disable the toolbar
     (tooltip-mode -1)           ; Disable tooltips
-    (set-fringe-mode 10)        ; Give some breathing room
+    (set-fringe-mode 25)        ; Give some breathing room
     (menu-bar-mode -1)          ; Disable the menu bar
 
     ;; Fix frame gap and maximize for emacsclient
@@ -26,6 +28,20 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
       (setq display-line-numbers-grow-only t) ;; A margem nunca encolhe, evitando jitter
     ;; Line Numbers
     (global-display-line-numbers-mode t)
+    
+    ;; Indentation (2 Spaces)
+    (setq-default tab-width 2)
+    (setq-default indent-tabs-mode nil) ;; Use spaces, not tabs
+    
+    ;; Visual column indicator (100 characters)
+    ;; 'setopt' is the modern way to set variables in Emacs 29+
+    (setopt display-fill-column-indicator-column 100)
+    (setq-default display-fill-column-indicator-character ?\|) ;; Use | for the line
+    (add-hook 'prog-mode-hook #'display-fill-column-indicator-mode)
+    
+    ;; Customize the line appearance (Light grey)
+    (set-face-attribute 'fill-column-indicator nil :foreground "grey90" :background "transparent")
+
     (dolist (mode '(org-mode-hook
                     term-mode-hook
                     shell-mode-hook
@@ -216,7 +232,7 @@ This module installs and configures the comprehensive list of Evil extensions to
            :after evil
            :config
            (evil-escape-mode 1)
-           (setq evil-escape-key-sequence "jk"
+           (setq evil-escape-key-sequence "jf"
                  evil-escape-delay 0.2
                  evil-escape-unordered-key-sequence t))
 
@@ -550,32 +566,36 @@ Consult provides the actual search and navigation commands (replacing standard E
 Correction: Mapping ~SPC ;~ to ~embark-act~, which is the Doom standard for quick contextual actions.
 
 #+begin_src emacs-lisp
-  (my-leader-def
-    ;; O atalho clássico do Doom para "Agir" no contexto atual
-    ";"   '(embark-act :which-key "act (embark)")
+    (my-leader-def
+      ;; O atalho clássico do Doom para "Agir" no contexto atual
+      ";"   '(embark-act :which-key "act (embark)")
 
-    ;; Atalho alternativo para "Actions"
-    "a"   '(embark-act :which-key "actions"))
+      ;; Atalho alternativo para "Actions"
+      "a"   '(embark-act :which-key "actions"))
 
-  ;; Garantir que o C-; funcione globalmente (Padrão Doom)
-  ;; Nota: Se você usou o bloco anterior do Embark, mude o bind de C-. para C-;
-  (use-package embark
+    ;; Garantir que o C-; funcione globalmente (Padrão Doom)
+    ;; Nota: Se você usou o bloco anterior do Embark, mude o bind de C-. para C-;
+    (use-package embark
+      :ensure t
+      :bind
+      (("C-;" . embark-act)         ;; Doom Standard
+       ("C-:" . embark-dwim)        ;; Do What I Mean
+       ("C-h B" . embark-bindings))
+      :init
+      (setq prefix-help-command #'embark-prefix-help-command)
+      :config
+      (add-to-list 'display-buffer-alist
+                   '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
+                     nil
+                     (window-parameters (mode-line-format . none)))))
+
+    (use-package embark-consult)
+(use-package consult-eglot
     :ensure t
-    :bind
-    (("C-;" . embark-act)         ;; Doom Standard
-     ("C-:" . embark-dwim)        ;; Do What I Mean
-     ("C-h B" . embark-bindings))
-    :init
-    (setq prefix-help-command #'embark-prefix-help-command)
-    :config
-    (add-to-list 'display-buffer-alist
-                 '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
-                   nil
-                   (window-parameters (mode-line-format . none)))))
+    :after (consult eglot))
+  (use-package wgrep
+    :ensure t)
 
-  (use-package embark-consult)
-(use-package wgrep
-  :ensure t)
 #+end_src
 * In-Buffer Completion (Corfu + Cape)
 This module configures the "Intellisense" experience. Corfu handles the UI, while Cape extends the data sources (files, buffer words).
@@ -585,11 +605,11 @@ Sets up the popup, cycling, and documentation display.
 #+begin_src emacs-lisp
     (use-package corfu
       :custom
-      (corfu-auto t)                 ;; Disable auto completion (LAG FIX)
+      (corfu-auto t)                 ;; Enable auto completion
       (corfu-auto-delay 0.1)
       (corfu-auto-prefix 2)          ;; Min length to trigger
       (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
-      (corfu-preselect 'prompt)      ;; Always preselect the prompt
+      (corfu-preselect 'first)       ;; Select the first candidate by default
       (corfu-quit-no-match 'separator) ;; Auto-quit if no match
 
       ;; Visual adjustments
@@ -633,14 +653,13 @@ Cape allows mixing completion backends (e.g., suggesting file paths inside strin
     :ensure t
     :init
     ;; Add `completion-at-point-functions`, used by `corfu`.
-    (add-to-list 'completion-at-point-functions #'cape-file)    ;; File paths
+    ;; APPEND (t) ensures they are at the end of the list, respecting LSP priority.
+    (add-to-list 'completion-at-point-functions #'cape-file t)    ;; File paths
     ;; 2. cape-dabbrev: Palavras no buffer (Autocomplete burro)
-    ;; IMPORTANTE: Usamos o argumento 't' no final (append) para adicionar ao FIM da lista.
-    ;; Isso garante que o LSP (que é adicionado localmente no início) tenha prioridade.
     (add-to-list 'completion-at-point-functions #'cape-dabbrev t) ;; Words in buffer
 
     ;; Make these capfs works in generic comments/strings
-    (add-to-list 'completion-at-point-functions #'cape-keyword)
+    (add-to-list 'completion-at-point-functions #'cape-keyword t)
 
     :config
     ;; Silence pcomplete (shell completion) capf, use cape-file/cape-sh instead
@@ -696,6 +715,14 @@ Side bar file explorer.
     :defer t
     :init
     (setq treemacs-display-in-side-window t)
+    (setq treemacs-git-mode 'deferred)
+    
+    ;; Performance Optimizations
+    (setq treemacs-filewatch-mode nil) ;; Disable file watcher (heavy on resources)
+    (setq treemacs-tag-follow-cleanup t)
+    
+    ;; Opcional: Se ainda der erro, aumente o delay de atualização
+   (setq treemacs-deferred-git-apply-delay 0.5)
     (with-eval-after-load 'winum
       (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
     
@@ -704,9 +731,10 @@ Side bar file explorer.
       "ee" '(treemacs :which-key "toggle treemacs"))
     :hook
     (projectile-after-switch-project . treemacs-add-and-display-current-project)
+    (treemacs-mode . (lambda () (setq bidi-paragraph-direction 'left-to-right)))
     :config
     (treemacs-follow-mode t)
-    (treemacs-filewatch-mode t)
+    (treemacs-tag-follow-mode nil) ;; Disable tag follow to fix LSP timeouts
     (treemacs-project-follow-mode t) ;; Automatically switch to the current project
     ;; (treemacs-resize-icons 22)
     )
@@ -732,11 +760,12 @@ Side bar file explorer.
     :after (treemacs magit)
     :ensure t)
 
-  (use-package lsp-treemacs
-    :after (treemacs lsp-mode)
+  ;; Eglot/Flymake integration for Treemacs
+  ;; This ensures Treemacs shows error/warning icons based on Flymake (Eglot's engine)
+  (use-package treemacs
     :config
-    ;; Sincroniza automaticamente a árvore do treemacs com o buffer aberto
-    (lsp-treemacs-sync-mode 1))
+    (with-eval-after-load 'flymake
+      (setq treemacs-flymake-mode t)))
 #+end_src
 
 ** Buffer Management (Ibuffer)
@@ -831,218 +860,186 @@ Sets up standard buffer management keys under ~SPC b~ and the handy ~SPC TAB~ to
               (message "Copied path: %s" (buffer-file-name)))
             :which-key "yank file path"))
 #+end_src
-* Java Development (LSP + JDTLS)
-We use ~lsp-java~ which downloads and manages the Eclipse JDTLS server automatically. This matches Doom's default behavior for Java.
 
-** Base LSP Configuration
-Setting up ~lsp-mode~ basics for performance and keybindings.
+* Flymake Configuration
+Flymake is the built-in diagnostic engine used by Eglot. We configure it to show diagnostics in a clean, non-intrusive popup at the bottom.
 
 #+begin_src emacs-lisp
-  (defun lsp-booster--advice-json-parse (old-fn &rest args)
-    "Try to parse bytecode instead of json."
-    (or
-     (when (equal (following-char) ?#)
-       (let ((bytecode (read (current-buffer))))
-         (when (byte-code-function-p bytecode)
-           (funcall bytecode))))
-     (apply old-fn args)))
+  (use-package flymake
+   :hook (prog-mode . flymake-mode)
+   :config
+   ;; 1. Configuração de Ícones nos Fringe (Margens laterais)
+   ;; Usa os bitmaps padrões, mas você pode customizar para usar nerd-icons se desejar algo mais gráfico via 'define-fringe-bitmap'
+   (setq flymake-fringe-indicator-position 'left-fringe)
+   
+   ;; 2. Estilo "IDE Panel" para a lista de diagnósticos
+   ;; Isso força o buffer de erros a abrir no rodapé, ocupando 25% da altura
+   (add-to-list 'display-buffer-alist
+                '("\\*Flymake diagnostics.*"
+                  (display-buffer-reuse-window display-buffer-in-side-window)
+                  (side . bottom)      ;; Ancorar no fundo
+                  (slot . 0)
+                  (window-height . 0.25) ;; Altura fixa (25%)
+                  (preserve-size . (nil . t))))
+   (add-hook 'flymake-project-diagnostics-mode-hook
+          (lambda ()
+            ;; Remove números de linha no painel de erros (poluição visual desnecessária)
+            (display-line-numbers-mode 0)
+            ;; Opcional: Destaca a linha atual visualmente
+            (hl-line-mode 1)))
 
-  (advice-add (if (progn (require 'json)
-                         (fboundp 'json-parse-buffer))
-                  'json-parse-buffer
-                'json-read)
-              :around
-              #'lsp-booster--advice-json-parse)
+   :general
+   (my-leader-def
+     "e"   '(:ignore t :which-key "errors")
+     ;; Abre o painel de erros do projeto (Estilo IDE)
+     "e p" '(flymake-show-project-diagnostics :which-key "project errors")
+     ;; Abre erros apenas do buffer atual
+     "e b" '(flymake-show-buffer-diagnostics :which-key "buffer errors")
+     ;; Navegação rápida (Next/Prev)
+     "e n" '(flymake-goto-next-error :which-key "next error")
+     "e N" '(flymake-goto-prev-error :which-key "prev error")
+     ;; Integração com Consult (Muito mais limpo para busca rápida)
+     "e l" '(consult-flymake :which-key "list errors (consult)")))
 
-  (defun lsp-booster--advice-final-command (old-fn cmd &optional test?)
-    "Prepend emacs-lsp-booster command to lsp CMD."
-    (let ((orig-result (funcall old-fn cmd test?)))
-      (if (and (not test?)
-               (not (file-remote-p default-directory)) ;; Do not use on remote connections
-               (executable-find "emacs-lsp-booster")   ;; Verify binary exists
-               (not (member (car orig-result) '("emacs-lsp-booster"))))
-          (progn
-            (message "Using emacs-lsp-booster for %s!" (car orig-result))
-            (cons "emacs-lsp-booster" (cons "--" orig-result)))
-        orig-result)))
+    #+end_src
 
-  (advice-add 'lsp-resolve-final-command :around #'lsp-booster--advice-final-command)
-
-
-  (use-package lsp-mode
+* Java Development (Eglot + JDTLS)
+We use Eglot (built-in) for a lighter LSP experience, paired with ~eglot-java~ to manage the Eclipse JDTLS server.
+** Eglot Configuration
+#+begin_src emacs-lisp
+  (use-package eglot
+    :ensure nil ;; Built-in in Emacs 29+
     :init
-    ;; Configurações de inicialização e performance JSON
-    (setq lsp-use-plists t)
-    (setq lsp-headerline-breadcrumb-enable nil)
-    (setq lsp-keymap-prefix "C-c l")
-    (setq lsp-file-watch-threshold 2000)
-    (setq lsp-auto-guess-root t) ;; Detect project root automatically
-
-    ;; Função auxiliar para configurar o Orderless com LSP
-    (defun my/lsp-mode-setup-completion ()
-      (setf (alist-get 'styles (alist-get 'lsp-capf completion-category-defaults))
-            '(orderless)))
-
-    :custom
-    (lsp-headerline-breadcrumb-mode nil)
-    (lsp-completion-provider :none) ;; Integração com Corfu
-    (lsp-enable-snippet t)
-
-    :hook ((java-mode . lsp-deferred)
-           (lsp-mode . lsp-enable-which-key-integration)
-           (lsp-completion-mode . my/lsp-mode-setup-completion))
-
-    :commands (lsp lsp-deferred)
-
-    :init
-    (my-leader-def
-      ;; Ações de Código
-      "c a" '(lsp-execute-code-action :which-key "code action")
-      "c r" '(lsp-rename :which-key "rename")
-      "c f" '(apheleia-format-buffer :which-key "format buffer")
-      "c d" '(lsp-find-definition :which-key "jump definition")
-      "c D" '(lsp-find-references :which-key "find references")
-      "c x" '(consult-lsp-diagnostics :which-key "diagnostics (lsp)")
-      "c s" '(consult-lsp-symbols :which-key "symbols (lsp)")
-      ;; Workspace
-      "l"   '(:keymap lsp-command-map :package lsp-mode :which-key "lsp workspace"))
-
+    (setq-default eglot-workspace-configuration
+                '(:java (:configuration
+                         (:runtimes [(:name "JavaSE-21"
+                                      :path "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS"
+                                      :default t)]
+                          :import (:gradle (:wrapper (:enabled t)
+                                            :version nil
+                                            :java (:home nil)))
+                          :maven (:downloadSources t)
+                          :completion (:guessMethodArguments t
+                          :favoriteStaticMembers ["org.junit.jupiter.api.Assertions.*"
+                                                  "org.mockito.Mockito.*"])
+                          :references (:includeDecompiledSources t)
+                          :format (:enabled nil) ;; Deixa o Apheleia cuidar disso
+                          :saveActions (:organizeImports t))))) ;; Opcional: Organiza imports ao salvar
+    :bind (:map eglot-mode-map
+                ("C-c l a" . eglot-code-actions)
+                ("C-c l r" . eglot-rename)
+                ("C-c l f" . eglot-format)
+                ("C-c l d" . xref-find-definitions)
+                ("C-c l D" . xref-find-references))
     :config
-    (setq lsp-diagnostics-provider :flymake)
-    (setq lsp-flymake-render-default-condition-bi-directional t)
-    (setq lsp-modeline-diagnostics-enable nil)
-    (setq lsp-modeline-code-actions-enable nil) ;; Opcional: remove a lâmpada (poluição visual)
-    ;; 1. Performance e Logs
-    (setq lsp-idle-delay 0.500
-          read-process-output-max (* 3 1024 1024) ;; 3mb
-          lsp-log-io nil)
-
-    (setq lsp-eldoc-render-all t   
-          lsp-enable-links t)    
-
-    (with-eval-after-load 'lsp-headerline
-      (lsp-headerline-breadcrumb-mode -1)))
-
-  (use-package consult-lsp
-    :after lsp-mode)
-
-  (use-package lsp-ui
-    :hook (lsp-mode . lsp-ui-mode)
-    :config
-    ;; COMPLETELY DISABLE the floating documentation popup
-    (setq lsp-ui-doc-enable nil)
+    ;; Optimization for large responses
+    (setq eglot-events-buffer-size 0)
+    (setq eglot-ignored-server-capabilities '(:inlayHintProvider :workspace/didChangeWorkspaceFolders)) ;; Reduce noise (optional)
     
-    ;; Keep the sideline for errors/warnings, or disable it too if you want pure minimalism
-    (setq lsp-ui-sideline-enable t)
-    (setq lsp-ui-sideline-show-hover nil) ;; Don't show info on hover in sideline
-    (setq lsp-ui-sideline-show-code-actions t))
-  ;; Forçar janelas de ajuda (incluindo LSP Help) a abrir na direita
-  (add-to-list 'display-buffer-alist
-               '("\\*lsp-help\\*"       ;; Nome do buffer gerado pelo LSP
-                 (display-buffer-in-side-window)
-                 (side . right)         ;; Lado direito
-                 (window-width . 0.4)   ;; Ocupa 40% da largura
-                 (slot . 0)))           ;; Posição na pilha de janelas laterais
-#+end_src
-** Java Specifics (lsp-java)
-Specific settings for JDTLS, including Lombok and Gradle wrapper support.
-
-#+begin_src emacs-lisp
-  (use-package lsp-java
-    :after lsp-mode
-    :config
-    ;; 1. Force jdtls to use the Gradle Wrapper (gradlew) if available
-    ;; Referenced from your config
-    (setq lsp-java-import-gradle-wrapper-enabled t)
-
-    (setq lsp-java-format-settings-url nil)
-    (setq lsp-java-format-settings-profile nil)
-
-    (setq lsp-java-configuration-user-settings
-          '(("java.imports.gradle.wrapper.checksums" .
-             [(:sha256 "423cb469ccc0ecc31f0e4e1c309976198ccb734cdcbb7029d4bda0f18f57e8d9" :allowed t)])))
-    (setq lsp-java-completion-doc-format '("html" "markdown"))
-    ;; Ensure lsp-java uses a proper workspace directory
-    (setq lsp-java-workspace-dir (expand-file-name "workspace" user-emacs-directory))
-    (setq lsp-java-workspace-cache-dir (expand-file-name "workspace/.cache" user-emacs-directory))
-    (setq lsp-java-configuration-runtimes
-          '[
-            (:name "JavaSE-21"
-  		 :path "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS"
-  		 :default t)
-
-            ;; Se tiver Java 17 também:
-            ;; (:name "Java-17-Mise"
-            ;;  :path "~/.local/share/mise/installs/java/temurin-17.0.9+9"
-            ;;  :default nil)
-            ])
-  					; Força o servidor JDTLS a iniciar usando o Java do Mise (opcional, mas recomendado)
-    (setq lsp-java-java-path (expand-file-name "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS/bin/java"))
-    ;; 2. Lombok & VM Arguments configuration
-    ;; Uncomment and adjust paths if you need manual Lombok or memory tuning
-    (setq lsp-java-vmargs
-          (list "-XX:+UseParallelGC"
-                "-XX:GCTimeRatio=4"
-                "-XX:AdaptiveSizePolicyWeight=90"
-                "-Dsun.zip.disableMemoryMapping=true"
-                "-Xmx2G"
-                "-Xms100m"
-                ;; Example Lombok path (adjust version as needed):
-                ;; (concat "-javaagent:" (expand-file-name "~/.m2/repository/org/projectlombok/lombok/1.18.30/lombok-1.18.30.jar"))
-                ))
-
-    ;; 3. Test Runner Integration
-    ;; Makes `SPC p t` (configured earlier in projectile) run tests via Gradle
-    (with-eval-after-load 'projectile
-      (setq projectile-project-test-cmd "./gradlew test")))
+    ;; UI Integration
+    (setq eglot-report-progress t) ;; Disable the "mini-modeline" spinner in favor of global modeline
+    
+    ;; Connect to existing keybinding system
+    (my-leader-def
+      "c a" '(eglot-code-actions :which-key "code action")
+      "c r" '(eglot-rename :which-key "rename")
+      "c f" '(eglot-format :which-key "format buffer")
+      "c d" '(xref-find-definitions :which-key "jump definition")
+      "c D" '(xref-find-references :which-key "find references")
+      "c x" '(consult-flymake :which-key "diagnostics") ;; Current buffer
+      "c X" '(flymake-show-project-diagnostics :which-key "project diagnostics") ;; Entire project
+      "c S" '(consult-eglot-symbols :which-key "search symbol (workspace)")
+      "c s" '(consult-imenu :which-key "symbols"))) ;; Eglot integrates with imenu
 
   ;; Eldoc Configuration (The Minibuffer Info)
   (setq eldoc-echo-area-use-multiline-p nil) ;; nil = Never resize minibuffer (Truncate text)
-  ;; 2   = Allow max 2 lines of expansion
-  ;; t   = Expand as much as needed (Jumpy)
-
   ;; Optional: If the message is too long, show "..." at the end
   (setq eldoc-echo-area-display-truncation-message t)
-
-  ;; Adjust the delay (default is often too fast or too slow)
+  ;; Adjust the delay
   (setq eldoc-idle-delay 0.2)
+
+  ;; Helper: Clean Java Signatures (Robust Version)
+  (defun my/java-clean-signature (doc-string)
+    "Limpa agressivamente assinaturas Java para o ElDoc/LSP."
+    (when (and doc-string (stringp doc-string))
+      (let ((result (substring-no-properties doc-string)))
+        ;; 1. Decodificar Entidades HTML
+        (setq result (string-replace "&nbsp;" " " result))
+        (setq result (string-replace "&lt;" "<" result))
+        (setq result (string-replace "&gt;" ">" result))
+        (setq result (string-replace "&amp;" "&" result))
+
+        ;; 2. Remover pacotes (Qualquer coisa como 'com.foo.' ou 'java.util.')
+        ;; Procuramos por sequências de minúsculas seguidas de ponto: [a-z0-9_]+\.
+        ;; E removemos se houver pelo menos um ponto.
+        (setq result (replace-regexp-in-string "\\b\\(?:[a-z0-9_]+\\.\\)+\\([a-zA-Z_]\\)" "\\1" result))
+
+        ;; 3. Remover anotações
+        (setq result (replace-regexp-in-string "@[a-zA-Z0-9_]+\\(?:(.*)\\)?\\s-*" "" result))
+
+        ;; 4. Tratar Varargs
+        (setq result (replace-regexp-in-string "\\.\\.\\." "[]" result))
+
+        ;; 5. Remover cláusula 'throws'
+        (setq result (replace-regexp-in-string " throws .*" "" result))
+
+        ;; 6. Remover modificadores de acesso
+        (setq result (replace-regexp-in-string "\\b\\(?:public\\|protected\\|private\\|static\\|final\\|native\\|synchronized\\|abstract\\|transient\\)\\b\\s-*" "" result))
+        
+        ;; 7. Limpeza final de espaços duplos
+        (setq result (replace-regexp-in-string "\\s-\\{2,\\}" " " result))
+        (string-trim result))))
+
+  ;; Advice: Clean ONLY Signatures (Parameter Hints)
+  ;; This wraps the callback passed to eglot-signature-eldoc-function.
+  ;; The callback signature is (DOCSTRING &rest PLIST).
+  (defun my/clean-eglot-signature-advice (orig-fun callback &rest args)
+    "Advice to clean Java signatures by wrapping the ElDoc callback."
+    (if (or (derived-mode-p 'java-mode) (derived-mode-p 'java-ts-mode))
+        (let ((cleaned-callback
+               (lambda (docstring &rest plist)
+                 (let ((cleaned (if (stringp docstring)
+                                    (my/java-clean-signature docstring)
+                                  docstring)))
+                   (apply callback cleaned plist)))))
+          (apply orig-fun cleaned-callback args))
+      (apply orig-fun callback args)))
+
+  (advice-add 'eglot-signature-eldoc-function :around #'my/clean-eglot-signature-advice)
+  (advice-remove 'eglot--format-markup #'my/apply-java-cleaning-advice) ;; Cleanup old advice
 #+end_src
-* Debugging (DAP Mode)
-This module configures the Debug Adapter Protocol, enabling a full graphical debugger interface for Java (and other languages).
+
+** Java Specifics (eglot-java)
+Replaces ~lsp-java~ for JDTLS management.
 
 #+begin_src emacs-lisp
-  (use-package dap-mode
-    :after lsp-mode
+  (defun my/java-mode-setup ()
+    "Set indentation for Java."
+    (setq-local c-basic-offset 2)
+    (setq-local tab-width 2))
+
+  (use-package eglot-java
+    :ensure t
+    :hook ((java-mode . my/java-mode-setup)
+    (java-ts-mode . my/java-mode-setup)
+    (java-mode . eglot-java-mode)
+    (java-ts-mode . eglot-java-mode))
+
     :init
-    (my-leader-def
-      "d"   '(:ignore t :which-key "debug")
-      "d d" '(dap-debug :which-key "start debug")
-      "d b" '(dap-breakpoint-toggle :which-key "toggle breakpoint")
-      "d c" '(dap-continue :which-key "continue")
-      "d n" '(dap-next :which-key "next step")
-      "d i" '(dap-step-in :which-key "step in")
-      "d o" '(dap-step-out :which-key "step out")
-      "d r" '(dap-restart-frame :which-key "restart frame")
-      "d Q" '(dap-disconnect :which-key "disconnect")
-
-      ;; Interfaces específicas
-      "d w" '(:ignore t :which-key "windows")
-      "d w l" '(dap-ui-locals :which-key "locals")
-      "d w s" '(dap-ui-sessions :which-key "sessions")
-      "d w b" '(dap-ui-breakpoints :which-key "breakpoints"))
+    ;; Configure the Java executable (Reuse your Mise setup)
+    (setq eglot-java-java-home (expand-file-name "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS"))
+    
     :config
-    ;; Habilita a interface visual automaticamente ao iniciar o debug
-    (dap-ui-mode 1)
+    ;; Project generation/management commands
+    (my-leader-def
+      "c j" '(:ignore t :which-key "java")
+      "c j n" '(eglot-java-create-project :which-key "new project")
+      "c j i" '(eglot-java-organize-imports :which-key "organize imports")
+      "c j g" '(eglot-java-generate-getters-and-setters :which-key "gen getters/setters")))
 
-    ;; Habilita tooltips ao passar o mouse sobre variáveis
-    (dap-tooltip-mode 1)
-
-    ;; Usa o recurso 'posframe' para mostrar tooltips flutuantes (mais bonito)
-    (tooltip-mode 1)
-    (setq dap-ui-buffer-update-hook '((lambda (&rest _args) (dap-ui-variable-tree-trigger-update))))
-
-    ;; Carrega o adaptador específico para Java
-    (require 'dap-java))
+    ;; Test Runner Integration (Projectile)
+    (with-eval-after-load 'projectile
+      (setq projectile-project-test-cmd "./gradlew test"))
 #+end_src
 * Project Management (Projectile)
 This configuration replicates the Doom Emacs ~SPC p~ menu using Projectile.
@@ -1163,11 +1160,14 @@ Configured to ALWAYS use the buffer description (describe-thing-at-point), avoid
     (interactive)
     (cond
      ;; 1. Se LSP estiver ativo, usa sempre o describe-thing-at-point
-     ;; Isso abre uma janela com a documentação completa.
      ((bound-and-true-p lsp-mode)
       (lsp-describe-thing-at-point))
 
-     ;; 2. Se for Emacs Lisp, abre a ajuda nativa
+     ;; 2. Se Eglot estiver ativo, usa o eldoc-doc-buffer
+     ((bound-and-true-p eglot--managed-mode)
+      (eldoc-doc-buffer))
+
+     ;; 3. Se for Emacs Lisp, abre a ajuda nativa
      ((derived-mode-p 'emacs-lisp-mode)
       (let ((sym (symbol-at-point)))
         (if (symbolp sym)
@@ -1197,7 +1197,7 @@ Colors identifiers (variables, parameters) uniquely based on their names.
           ;; Quantidade de cores diferentes para usar (padrão é bom, mas pode aumentar)
           rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
 #+end_src
-* ECA
+* Gemini-Cli
 ** Configuration First, we configure ~eat~ (Emulate A Terminal), which provides the robust terminal backend required by the wrapper. Then, we configure the Gemini client itself.
 
 #+begin_src emacs-lisp
@@ -1227,25 +1227,21 @@ Documentação: https://github.com/radian-software/apheleia
 #+begin_src emacs-lisp
   (use-package apheleia
     :ensure t
-    :defer t
+    :init
+    (apheleia-global-mode +1)
     :config
     ;; 1. Habilita logs de erro (opcional, bom para debug)
     (setq apheleia-log-only-errors nil)
 
-    ;; 2. Definição explícita do formatador (caso não venha built-in)
-    ;; Isso ensina ao Apheleia como rodar o comando.
+    ;; 2. Definição explícita do formatador
+    ;; Usamos o script wrapper em ~/.local/bin para garantir que funcione
     (setf (alist-get 'google-java-format apheleia-formatters)
-          '("google-java-format" "-"))
+          '("~/.local/bin/google-java-format" "-"))
 
     ;; 3. Associação com os Modos
     ;; Diz ao Apheleia: "Quando estiver em java-mode, use google-java-format"
     (push '(java-mode . google-java-format) apheleia-mode-alist)
     (push '(java-ts-mode . google-java-format) apheleia-mode-alist)
-
-    ;; 4. (IMPORTANTE) Se o binário não estiver no PATH global do Emacs,
-    ;; você pode forçar o caminho absoluto aqui. Descomente e ajuste se precisar:
-    (setf (alist-get 'google-java-format apheleia-formatters)
-          '("~/.local/bin/google-java-format" "-"))
     )
 
   ;; Atalho para formatar manualmente
@@ -1263,7 +1259,8 @@ Standard cleanup for a cleaner writing experience.
 #+begin_src emacs-lisp
   (use-package org
     :hook ((org-mode . visual-line-mode)  ; Wrap lines at window edge
-           (org-mode . org-indent-mode))  ; Indent text content to header level
+           (org-mode . org-indent-mode)   ; Indent text content to header level
+           (org-mode . (lambda () (setq bidi-paragraph-direction 'left-to-right)))) ; Improve performance
     :config
     (setq org-ellipsis " ▾"               ; Nicer folding symbol
           org-hide-emphasis-markers t     ; Hide markers like *bold* / /italic/
@@ -1382,7 +1379,6 @@ Setup for Roam V2 with Doom-like keybindings.
     :init
     (save-place-mode 1))
 #+end_src
-#+END_SRC
 * Super-Save
 #+begin_src emacs-lisp
   (use-package super-save
