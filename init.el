@@ -2,6 +2,8 @@
 
 ;; 1. Performance tuning for startup
 (setq gc-cons-threshold (* 50 1000 1000))
+(setq read-process-output-max (* 1024 1024)) ;; 1mb
+(setq jit-lock-defer-time 0.05) ;; Defer fontification while scrolling
 
 ;; 2. Initialize Package Manager (Standard package.el)
 (require 'package)
@@ -30,7 +32,6 @@
 (org-babel-load-file (expand-file-name "config.org" user-emacs-directory))
 
 ;; 5. Reset GC threshold after startup
-(setq gc-cons-threshold (* 100 1024 1024))
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
@@ -39,27 +40,21 @@
  '(custom-safe-themes
    '("0f1341c0096825b1e5d8f2ed90996025a0d013a0978677956a9e61408fcd2c77"
      default))
- '(package-selected-packages
-   '(apheleia cape consult-dir consult-lsp consult-yasnippet corfu
-	      devdocs diminish doom-modeline doom-themes eat
-	      embark-consult evil-collection evil-easymotion
-	      evil-embrace evil-escape evil-exchange evil-indent-plus
-	      evil-lion evil-nerd-commenter evil-numbers evil-snipe
-	      evil-vimish-fold evil-visualstar gemini-cli general
-	      lsp-java lsp-ui marginalia mise mixed-pitch
-	      nerd-icons-completion nerd-icons-corfu
-	      nerd-icons-ibuffer ob-mermaid orderless org-modern
-	      org-roam persp-projectile popup rainbow-identifiers
-	      super-save treemacs-evil treemacs-magit
-	      treemacs-nerd-icons treemacs-perspective
-	      treemacs-projectile undo-fu vertico wgrep
-	      yasnippet-snippets))
+ '(package-selected-packages nil)
  '(package-vc-selected-packages
-   '((gemini-cli :url "https://github.com/linchen2chris/gemini-cli.el"))))
+   '((gemini-cli :url "https://github.com/linchen2chris/gemini-cli.el")))
+ '(safe-local-variable-values
+   '((eval setq-local lsp-java-java-path
+           (string-trim (shell-command-to-string "mise which java"))))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  )
+
+(setq gc-cons-threshold (* 16 1024 1024))
+
+;; Run GC when emacs loses focus (e.g. alt-tabbing)
+(add-hook 'focus-out-hook 'garbage-collect)
 

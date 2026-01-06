@@ -11,8 +11,7 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     ;; Remove GUI clutter
     (setq inhibit-startup-message t)
     (scroll-bar-mode -1)        ; Disable visible scrollbar
-    (tool-bar-mode -1)          ; Disable the toolbar
-    (tooltip-mode -1)           ; Disable tooltips
+    (tool-bar-mode -1)          ; Disable the toolbar (tooltip-mode -1)           ; Disable tooltips
     (set-fringe-mode 25)        ; Give some breathing room
     (menu-bar-mode -1)          ; Disable the menu bar
 
@@ -597,6 +596,113 @@ Correction: Mapping ~SPC ;~ to ~embark-act~, which is the Doom standard for quic
     :ensure t)
 
 #+end_src
+* Flymake Configuration (Clean & IDE-Like)
+Configuração para diagnósticos limpos e integração completa com Eglot/Consult.
+
+#+begin_src emacs-lisp
+  (use-package flymake
+    :hook (prog-mode . flymake-mode)
+    :config
+    (setq flymake-fringe-indicator-position 'left-fringe)
+
+    ;; 1. Configuração da Janela (Popup Limpo no Rodapé)
+    (add-to-list 'display-buffer-alist
+                 '("\\*Flymake diagnostics.*"
+                   (display-buffer-reuse-window display-buffer-in-side-window)
+                   (side . bottom)
+                   (slot . 0)
+                   (window-height . 0.25)
+                   (preserve-size . (nil . t))
+                   (window-parameters . ((no-other-window . nil)
+                                         (mode-line-format . none)))))
+
+    ;; 2. O HOOK CORRIGIDO (A Mágica Visual)
+    (add-hook 'flymake-project-diagnostics-mode-hook
+              (lambda ()
+                ;; Força BRUTALMENTE a remoção do cabeçalho
+                (setq header-line-format nil) 
+                (setq tabulated-list-use-header-line nil)
+                
+                ;; Remove setinhas de ordenação e números de linha
+                (setq tabulated-list-gui-sort-indicator-mode nil)
+                (display-line-numbers-mode 0)
+                
+                ;; Visual: Destaca a linha atual
+                (hl-line-mode 1)))
+
+    ;; 3. Função de Busca ROBUSTA (Corrigindo o erro 'listp')
+    (defun my/consult-flymake-project ()
+      "Busca erros do projeto via Consult, extraindo dados do Flymake."
+      (interactive)
+      ;; Garante que a lista existe (abre em background se precisar)
+      (flymake-show-project-diagnostics)
+      
+      (let ((diag-buffer (get-buffer "*Flymake diagnostics*")))
+        (if (not diag-buffer)
+            (message "Aguarde... O Eglot ainda está indexando os erros.")
+          (with-current-buffer diag-buffer
+            ;; --- CORREÇÃO DO ERRO 'listp' ---
+            ;; No Emacs moderno, 'tabulated-list-entries' pode ser uma função.
+            ;; Testamos com functionp e chamamos funcall se necessário.
+            (let* ((entries-raw (if (functionp tabulated-list-entries)
+                                    (funcall tabulated-list-entries)
+                                  tabulated-list-entries))
+                   candidates)
+              
+              (dolist (entry entries-raw)
+                ;; entry = (ID [VECTOR-STRINGS...])
+                ;; O ID no Flymake é o próprio objeto 'flymake-diagnostic'
+                (let* ((diag (car entry))
+                       (buffer (flymake-diagnostic-buffer diag)))
+                  
+                  ;; Só mostramos erros de buffers válidos (para poder pular neles)
+                  (when (buffer-live-p buffer)
+                    (let* ((line (line-number-at-pos (flymake-diagnostic-beg diag)))
+                           (type (flymake-diagnostic-type diag))
+                           (text (flymake-diagnostic-text diag))
+                           (file (buffer-name buffer))
+                           ;; Ícone colorido baseado no tipo (error/warning)
+                           (face (flymake-diagnostic-type-face type))
+                           (type-str (propertize (symbol-name type) 'face face))
+                           ;; Formatação da linha no Consult
+                           (cand-str (format "%-20s %-8s %s" 
+                                             (propertize file 'face 'font-lock-variable-name-face)
+                                             type-str
+                                             (propertize text 'face 'shadow))))
+                      
+                      ;; Cria o candidato com marcador de posição
+                      (push (propertize cand-str 
+                                        'consult--candidate 
+                                        (cons (set-marker (make-marker) 
+                                                          (flymake-diagnostic-beg diag) 
+                                                          buffer)
+                                              cand-str))
+                            candidates)))))
+              
+              ;; Exibe a busca se houver erros
+              (if candidates
+                  (consult--read (nreverse candidates)
+                                 :prompt "Project Issues: "
+                                 :category 'consult-location
+                                 :sort nil
+                                 :lookup #'consult--lookup-candidate)
+                (message "Parabéns! Nenhum erro encontrado no projeto.")))))))
+
+    :general
+    (my-leader-def
+      "e"   '(:ignore t :which-key "errors")
+      ;; Painel passivo (Popup)
+      "e p" '(flymake-show-project-diagnostics :which-key "panel (project)")
+      "e b" '(flymake-show-buffer-diagnostics :which-key "panel (buffer)")
+      
+      ;; Busca ativa (Fuzzy Search)
+      "e l" '(consult-flymake :which-key "search buffer")
+      "e L" '(my/consult-flymake-project :which-key "search project")
+      
+      ;; Navegação sequencial
+      "e n" '(flymake-goto-next-error :which-key "next")
+      "e N" '(flymake-goto-prev-error :which-key "prev")))
+#+end_src
 * In-Buffer Completion (Corfu + Cape)
 This module configures the "Intellisense" experience. Corfu handles the UI, while Cape extends the data sources (files, buffer words).
 ** UI Configuration (Corfu)
@@ -668,17 +774,23 @@ Cape allows mixing completion backends (e.g., suggesting file paths inside strin
     ;; Configure Dabbrev to check other buffers
     (setq cape-dabbrev-check-other-buffers t)
 
-    ;; Merge LSP with other backends using cape-super
-    ;; (defun my/cape-lsp-setup ()
-    ;;   (setq-local completion-at-point-functions
-    ;;               (list (cape-capf-super
-    ;;                      #'cape-file
-    ;;                      #'lsp-completion-at-point
-    ;;                      #'cape-dabbrev
-    ;;                      #'cape-keyword))))
-    
-    ;; (add-hook 'lsp-completion-mode-hook #'my/cape-lsp-setup)
+    (defun my/corfu-enable-always-in-minibuffer ()
+      "Enable Corfu in the minibuffer if `completion-at-point' is bound."
+      (when (where-is-internal #'completion-at-point (list (current-local-map)))
+        (corfu-mode 1)))
 
+    ;; Função mágica para fazer o TAB funcionar com Yasnippet E Corfu
+    (defun my/yas-try-expand-first ()
+      "Tenta expandir o snippet primeiro. Se não conseguir, roda o comando original (ex: corfu-next ou indent)."
+      (interactive)
+      (unless (yas-expand)
+        (if (and (boundp 'corfu-mode) corfu-mode (frame-live-p corfu--frame))
+            (corfu-next)
+          (indent-for-tab-command))))
+
+    ;; Rebind do TAB no mapa global ou do modo de prog
+    (global-set-key (kbd "TAB") 'my/yas-try-expand-first)
+    (global-set-key (kbd "<tab>") 'my/yas-try-expand-first)
     ;; Enable Elisp completion in Org source blocks
     (defun my/org-setup-completion ()
       (add-to-list 'completion-at-point-functions #'cape-elisp-block))
@@ -779,6 +891,19 @@ Enhanced buffer list with icons.
   (global-set-key (kbd "C-x C-b") 'ibuffer)
 #+end_src
 
+** Eletric
+#+begin_src emacs-lisp
+;; Electric Pair: O jeito nativo e leve de fechar parênteses
+(use-package elec-pair
+  :ensure nil
+  :hook (prog-mode . electric-pair-mode)
+  :config
+  ;; Desabilita o fechamento de '<' para não atrapalhar comparações em Java (i < 10)
+  ;; Mas mantém funcional se você digitar um par completo (dependendo do modo)
+  (setq electric-pair-inhibit-predicate
+        `(lambda (c)
+           (if (char-equal c ?<) t (electric-pair-default-inhibit c)))))
+#+end_src
 * General Keybidings
 ** Window Management (Doom Style)
 We adhere to the Doom Emacs standard ~SPC w~ prefix for window operations.
@@ -861,47 +986,72 @@ Sets up standard buffer management keys under ~SPC b~ and the handy ~SPC TAB~ to
             :which-key "yank file path"))
 #+end_src
 
-* Flymake Configuration
-Flymake is the built-in diagnostic engine used by Eglot. We configure it to show diagnostics in a clean, non-intrusive popup at the bottom.
-
-#+begin_src emacs-lisp
++begin_src emacs-lisp
+  ;; 1. Desativa o Flymake (para não ter dois sublinhados na tela)
   (use-package flymake
-   :hook (prog-mode . flymake-mode)
-   :config
-   ;; 1. Configuração de Ícones nos Fringe (Margens laterais)
-   ;; Usa os bitmaps padrões, mas você pode customizar para usar nerd-icons se desejar algo mais gráfico via 'define-fringe-bitmap'
-   (setq flymake-fringe-indicator-position 'left-fringe)
-   
-   ;; 2. Estilo "IDE Panel" para a lista de diagnósticos
-   ;; Isso força o buffer de erros a abrir no rodapé, ocupando 25% da altura
-   (add-to-list 'display-buffer-alist
-                '("\\*Flymake diagnostics.*"
-                  (display-buffer-reuse-window display-buffer-in-side-window)
-                  (side . bottom)      ;; Ancorar no fundo
-                  (slot . 0)
-                  (window-height . 0.25) ;; Altura fixa (25%)
-                  (preserve-size . (nil . t))))
-   (add-hook 'flymake-project-diagnostics-mode-hook
-          (lambda ()
-            ;; Remove números de linha no painel de erros (poluição visual desnecessária)
-            (display-line-numbers-mode 0)
-            ;; Opcional: Destaca a linha atual visualmente
-            (hl-line-mode 1)))
+    :config
+    ;; Garante que o Flymake não ligue sozinho
+    (setq flymake-start-on-save-buffer nil)
+    (setq flymake-no-changes-timeout nil))
 
-   :general
-   (my-leader-def
-     "e"   '(:ignore t :which-key "errors")
-     ;; Abre o painel de erros do projeto (Estilo IDE)
-     "e p" '(flymake-show-project-diagnostics :which-key "project errors")
-     ;; Abre erros apenas do buffer atual
-     "e b" '(flymake-show-buffer-diagnostics :which-key "buffer errors")
-     ;; Navegação rápida (Next/Prev)
-     "e n" '(flymake-goto-next-error :which-key "next error")
-     "e N" '(flymake-goto-prev-error :which-key "prev error")
-     ;; Integração com Consult (Muito mais limpo para busca rápida)
-     "e l" '(consult-flymake :which-key "list errors (consult)")))
+  ;; 2. Configura o Flycheck (A engine visual)
+  (use-package flycheck
+    :init (global-flycheck-mode)
+    :config
+    ;; Aparência
+    (setq flycheck-indication-mode 'left-fringe)
+    (setq flycheck-emacs-lisp-load-path 'inherit)
 
-    #+end_src
+    ;; Aumenta um pouco o delay para não pesar
+    (setq flycheck-display-errors-delay 0.25)
+    (setq flycheck-idle-change-delay 0.5)
+
+    ;; Define a lista de erros para aparecer embaixo (20% da altura)
+    (add-to-list 'display-buffer-alist
+                 `(,(rx bos "*Flycheck errors*" eos)
+                   (display-buffer-reuse-window
+                    display-buffer-in-side-window)
+                   (side            . bottom)
+                   (reusable-frames . visible)
+                   (window-height   . 0.20))))
+  ;; 3. Consult Flycheck (Pacote Separado!)
+  (use-package consult-flycheck
+    :ensure t  
+    :after (consult flycheck))
+
+  ;; 3. A Ponte (Eglot -> Flycheck)
+  (use-package flycheck-eglot
+    :ensure t
+    :after (flycheck eglot)
+    :config
+    (global-flycheck-eglot-mode 1)
+    
+    ;; (Opcional) Limpeza do texto "Java [123]"
+    ;; O Flycheck permite alterar a mensagem antes de exibir
+    (defun my/flycheck-java-cleaner (errors)
+      (dolist (err errors)
+        (let ((msg (flycheck-error-message err)))
+          (when (string-match "^Java \\[[0-9]+\\]: \\(.*\\)" msg)
+            (setf (flycheck-error-message err) (match-string 1 msg)))))
+      errors)
+    
+    (add-hook 'flycheck-after-syntax-check-hook
+              (lambda ()
+                (my/flycheck-java-cleaner flycheck-current-errors))))
+
+  ;; 4. Atalhos (General)
+  (my-leader-def
+    "e"   '(:ignore t :which-key "errors")
+    ;; A lista nativa do Flycheck (Bonita, colunas alinhadas)
+    "e p" '(flycheck-list-errors :which-key "List Errors (Panel)")
+    
+    ;; Busca com Consult (Agora usando suporte nativo do Flycheck)
+    "e l" '(consult-flycheck :which-key "Search Errors (Consult)")
+    
+    ;; Navegação
+    "e n" '(flycheck-next-error :which-key "Next")
+    "e N" '(flycheck-previous-error :which-key "Prev"))
+#+end_src
 
 * Java Development (Eglot + JDTLS)
 We use Eglot (built-in) for a lighter LSP experience, paired with ~eglot-java~ to manage the Eclipse JDTLS server.
@@ -911,20 +1061,20 @@ We use Eglot (built-in) for a lighter LSP experience, paired with ~eglot-java~ t
     :ensure nil ;; Built-in in Emacs 29+
     :init
     (setq-default eglot-workspace-configuration
-                '(:java (:configuration
-                         (:runtimes [(:name "JavaSE-21"
-                                      :path "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS"
-                                      :default t)]
-                          :import (:gradle (:wrapper (:enabled t)
-                                            :version nil
-                                            :java (:home nil)))
-                          :maven (:downloadSources t)
-                          :completion (:guessMethodArguments t
-                          :favoriteStaticMembers ["org.junit.jupiter.api.Assertions.*"
-                                                  "org.mockito.Mockito.*"])
-                          :references (:includeDecompiledSources t)
-                          :format (:enabled nil) ;; Deixa o Apheleia cuidar disso
-                          :saveActions (:organizeImports t))))) ;; Opcional: Organiza imports ao salvar
+                  '(:java (:configuration
+                           (:runtimes [(:name "JavaSE-21"
+                                              :path "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS"
+                                              :default t)]
+                                      :import (:gradle (:wrapper (:enabled t)
+                                                                 :version nil
+                                                                 :java (:home nil)))
+                                      :maven (:downloadSources t)
+                                      :completion (:guessMethodArguments t
+                                                                         :favoriteStaticMembers ["org.junit.jupiter.api.Assertions.*"
+                                                                                                 "org.mockito.Mockito.*"])
+                                      :references (:includeDecompiledSources t)
+                                      :format (:enabled nil) ;; Deixa o Apheleia cuidar disso
+                                      :saveActions (:organizeImports t))))) ;; Opcional: Organiza imports ao salvar
     :bind (:map eglot-mode-map
                 ("C-c l a" . eglot-code-actions)
                 ("C-c l r" . eglot-rename)
@@ -951,12 +1101,13 @@ We use Eglot (built-in) for a lighter LSP experience, paired with ~eglot-java~ t
       "c S" '(consult-eglot-symbols :which-key "search symbol (workspace)")
       "c s" '(consult-imenu :which-key "symbols"))) ;; Eglot integrates with imenu
 
+  (setq eldoc-documentation-strategy 'eldoc-documentation-compose)
   ;; Eldoc Configuration (The Minibuffer Info)
-  (setq eldoc-echo-area-use-multiline-p nil) ;; nil = Never resize minibuffer (Truncate text)
+  (setq eldoc-echo-area-use-multiline-p t) 
   ;; Optional: If the message is too long, show "..." at the end
-  (setq eldoc-echo-area-display-truncation-message t)
+  (setq eldoc-documentation-strategy 'eldoc-documentation-enthusiast)
   ;; Adjust the delay
-  (setq eldoc-idle-delay 0.2)
+  (setq eldoc-idle-delay 0.1)
 
   ;; Helper: Clean Java Signatures (Robust Version)
   (defun my/java-clean-signature (doc-string)
@@ -1351,28 +1502,29 @@ Setup for Roam V2 with Doom-like keybindings.
 #+end_src
 * Snippets
 #+begin_src emacs-lisp
-  (use-package yasnippet
-    :ensure t
-    :hook ((prog-mode . yas-minor-mode)
-           (conf-mode . yas-minor-mode))
-    :config
-    ;; Define onde seus snippets pessoais serão salvos
-    (setq yas-snippet-dirs (list (expand-file-name "snippets" user-emacs-directory)))
+(use-package yasnippet
+  :ensure t
+  :hook ((prog-mode . yas-minor-mode)
+         (conf-mode . yas-minor-mode))
+  :config
+  ;; Define seus snippets pessoais
+  (setq yas-snippet-dirs (list (expand-file-name "snippets" user-emacs-directory)))
+  
+  ;; Comportamento do TAB (para coexistir com Corfu/Company)
+  (setq yas-triggers-in-field t))
 
-    ;; Recarrega tudo para garantir que funcione logo após o init
-    (yas-reload-all))
+(use-package yasnippet-snippets
+  :ensure t
+  :after yasnippet
+  :config
+  ;; Garante que o diretório do pacote seja adicionado
+  (require 'yasnippet-snippets) 
+  (add-to-list 'yas-snippet-dirs yasnippet-snippets-dir t)
+  
+  ;; O PULO DO GATO: Recarrega tudo AGORA, depois que ambos os diretórios estão configurados
+  (yas-reload-all))
 
-  (use-package yasnippet-snippets
-    :ensure t
-    :after yasnippet)
-
-  (use-package consult-yasnippet
-    :after (consult yasnippet)
-    :init
-    (my-leader-def
-      "s y" '(consult-yasnippet :which-key "search snippets")))
-
-#+end_src
+  #+end_src
 * Recent Mode ( saveplace)
 #+begin_src emacs-lisp
   (use-package saveplace

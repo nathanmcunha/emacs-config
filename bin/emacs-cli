@@ -97,6 +97,12 @@ function cmd_doctor() {
     fi
     # Check for native comp
     $EMACS --batch --eval "(if (native-comp-available-p) (message \"Native compilation: Available\") (message \"Native compilation: Not available\"))"
+
+    # Check Org structure
+    if [ -f "$PROJECT_ROOT/bin/validate-org-blocks" ]; then
+        echo "Checking config.org blocks..."
+        "$PROJECT_ROOT/bin/validate-org-blocks" "$PROJECT_ROOT/config.org"
+    fi
 }
 
 # Main dispatch
