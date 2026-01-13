@@ -2,6 +2,11 @@
 #+AUTHOR: Nathan Martins Cunha
 #+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
+* File Header
+#+begin_src emacs-lisp
+;;; config.el --- Tangled Configuration -*- lexical-binding: t -*-
+#+end_src
+
 * Core Configuration
 ** Defaults and UI
 We start by cleaning up the UI to make it look modern and minimal, similar to Doom's defaults.
@@ -156,6 +161,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     :demand t
     :custom
     (evil-collection-magit-use-z-for-folds t)
+    (evil-collection-magit-want-horizontal-movement t)
     :config
     (setq evil-collection-setup-minibuffer t)
     (evil-collection-init))
@@ -271,6 +277,41 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
       "j j" '(evilem-motion-next-line :which-key "line")))
 #+end_src
 
+* Undo System
+Nós usamos uma combinação de três pacotes para a experiência suprema de desfazer:
+1. ~undo-fu~: Wrapper linear simples para o sistema de desfazer do Emacs (necessário para o Evil).
+2. ~undo-fu-session~: Salva o histórico de desfazer no disco (persistência entre reinícios).
+3. ~vundo~: Visualizador gráfico da árvore de desfazer (para quando você se perde nos undos/redos).
+
+#+begin_src emacs-lisp
+  (use-package undo-fu
+    :config
+    ;; Aumentamos os limites de memória para evitar que o Emacs delete histórico antigo
+    ;; de forma agressiva. (Valores copiados do Doom Emacs)
+    (setq undo-limit 6710886400 ;; 64mb
+          undo-strong-limit 100663296 ;; 96mb
+          undo-outer-limit 1006632960) ;; 960mb
+    )
+
+  (use-package undo-fu-session
+    :ensure t
+    :init
+    (undo-fu-session-global-mode)
+    :config
+    (setq undo-fu-session-incompatible-files '("/COMMIT_EDITMSG\\'" "/git-rebase-todo\\'")))
+
+  (use-package vundo
+    :ensure t
+    :commands (vundo)
+    :config
+    ;; Usar símbolos Unicode bonitos para a árvore
+    (setq vundo-glyph-alist vundo-unicode-symbols)
+    (setq vundo-compact-display t)
+
+    :general
+    (my-leader-def
+      "u" '(vundo :which-key "undo tree (visual)")))
+#+end_src
 * Visuals & Themes
 #+begin_src emacs-lisp
   (use-package doom-themes
@@ -440,22 +481,29 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     "a"   '(embark-act :which-key "actions"))
 #+end_src
 
-** Corfu & Cape (In-buffer)
+* In-Buffer Completion (Corfu + Cape)
+This module configures the "Intellisense" experience using Corfu, with specific tweaks to handle Yasnippet expansion gracefully via the TAB key.
+
+** UI Configuration (Corfu)
+Sets up the popup, cycling, and integration with icons.
+
 #+begin_src emacs-lisp
   (use-package corfu
     :custom
-    (corfu-auto t)
-    (corfu-auto-delay 0.1)
-    (corfu-auto-prefix 2)
-    (corfu-cycle t)
-    (corfu-preselect 'first)
-    (corfu-quit-no-match 'separator)
-    (corfu-popupinfo-delay 0.5)
+    (corfu-auto t)                 ;; Enable auto completion
+    (corfu-auto-delay 0.1)         ;; Small delay to prevent stuttering
+    (corfu-auto-prefix 2)          ;; Minimum length to trigger
+    (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
+    (corfu-preselect 'prompt)      ;; Always preselect the prompt (first candidate is not auto-selected)
+    (corfu-quit-no-match 'separator) ;; Auto-quit if no match, helps with separator insertion
+    (corfu-popupinfo-delay 0.5)    ;; Delay before showing docs
     (corfu-max-width 80)
-    (corfu-preview-current nil)
+    (corfu-preview-current nil)    ;; Disable previewing current candidate (can be distracting)
+
     :init
     (global-corfu-mode)
     (corfu-popupinfo-mode)
+
     :bind
     (:map corfu-map
           ("TAB" . corfu-next)
@@ -465,36 +513,49 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
           ("C-j" . corfu-next)
           ("C-k" . corfu-previous)
           ("RET" . corfu-insert)
-          ("C-e" . corfu-send-shell)
-          ("SPC" . corfu-insert-separator)))
+          ("C-e" . corfu-send-shell)    ;; Send candidate to shell/minibuffer
+          ("SPC" . corfu-insert-separator))) ;; Helps filtering with Orderless
 
+  ;; Pretty icons for Corfu
   (use-package nerd-icons-corfu
     :after corfu
     :config
     (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
+#+end_src
 
+** Extended Backends (Cape)
+Configures additional completion backends and the specific TAB integration strategy.
+
+#+begin_src emacs-lisp
   (use-package cape
     :ensure t
     :init
-    (add-to-list 'completion-at-point-functions #'cape-file t)
+    ;; Add `completion-at-point-functions`, used by `corfu`.
+    ;; Note: We omit 't' (append) for cape-file so it takes precedence over normal code completion.
+    (add-to-list 'completion-at-point-functions #'cape-file)
     (add-to-list 'completion-at-point-functions #'cape-dabbrev t)
     (add-to-list 'completion-at-point-functions #'cape-keyword t)
+
     :config
     (setq pcomplete-ignore-case t)
     (setq cape-dabbrev-check-other-buffers t)
-    
+
+    ;; --- Custom Tab Handling Strategy ---
+    ;; This function tries to expand a snippet first.
+    ;; If no snippet is available, it falls back to indentation (or completion if we were to bind it inside corfu-map).
     (defun my/yas-try-expand-first ()
-      "Tenta expandir o snippet primeiro."
+      "Try to expand a yasnippet. If failed, indent the line."
       (interactive)
-      (unless (yas-expand)
-        (if (and (boundp 'corfu-mode) corfu-mode (frame-live-p corfu--frame))
-            (corfu-next)
-          (indent-for-tab-command))))
-    
+      (unless (and (bound-and-true-p yas-minor-mode)
+                   (yas-expand))
+        (indent-for-tab-command)))
+
+    ;; Bind TAB globally to our custom function.
+    ;; Note: When Corfu is open, corfu-map takes precedence, so TAB will navigate candidates
+    ;; instead of expanding snippets. This is usually the desired behavior to avoid confusion.
     (global-set-key (kbd "TAB") 'my/yas-try-expand-first)
     (global-set-key (kbd "<tab>") 'my/yas-try-expand-first))
 #+end_src
-
 * Development Tools
 ** Snippets (Yasnippet)
 #+begin_src emacs-lisp
@@ -572,7 +633,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     (persp-show-modestring nil)
     :config
     (with-eval-after-load 'consult
-      (consult-customize consult--source-buffer :hidden t :default nil)
+      (consult-customize consult-source-buffer :hidden t :default nil)
       (add-to-list 'consult-buffer-sources 'persp-consult-source)))
 
   (use-package persp-projectile
@@ -622,11 +683,12 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     :ensure t
     :init (apheleia-global-mode +1)
     :config
+ (setq apheleia-log-only-errors nil)
     (setf (alist-get 'google-java-format apheleia-formatters)
-          '("~/.local/bin/google-java-format" "-"))
+          '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
     (push '(java-mode . google-java-format) apheleia-mode-alist)
     (push '(java-ts-mode . google-java-format) apheleia-mode-alist))
-  
+
   (my-leader-def "c f" '(apheleia-format-buffer :which-key "format buffer"))
 #+end_src
 
@@ -780,6 +842,23 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
   (advice-add 'eglot-signature-eldoc-function :around #'my/clean-eglot-signature-advice)
 #+end_src
 
+* Visual Wrapping (Adaptive Wrap)
+Melhora a leitura de linhas longas em buffers de código, mantendo a indentação visual.
+
+#+begin_src emacs-lisp
+  (use-package adaptive-wrap
+    :ensure t
+    :config
+    ;; Define quanto de recuo EXTRA adicionar nas linhas quebradas (padrão é 0).
+    ;; Colocar 2 ajuda a diferenciar visualmente a quebra de uma nova linha indentada.
+    (setq-default adaptive-wrap-extra-indent 2))
+
+  ;; Hook para ativar automaticamente em programação
+  (add-hook 'prog-mode-hook
+            (lambda ()
+              (visual-line-mode 1)          ;; Ativa a quebra de linha na borda da janela
+              (adaptive-wrap-prefix-mode 1))) ;; Ativa a correção inteligente da indentação
+#+end_src
 * General Keybindings
 ** Window Management
 #+begin_src emacs-lisp
@@ -889,9 +968,14 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
 
       ;; Terminal Launchers
       (defun my/launch-alacritty (dir) (call-process-shell-command (format "alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
+
       (defun my/open-terminal-here () (interactive) (my/launch-alacritty default-directory))
+      (defun my/open-terminal-in-project () (interactive) (my/launch-alacritty 'projectile-project-info))
       (my-leader-def "o t" '(:ignore t :which-key "open terminal")
-                     "o t h" '(my/open-terminal-here :which-key "here"))
+                     "o t h" '(my/open-terminal-here :which-key "here")
+
+                     "o t p" '(my/open-terminal-in-project :which-key "project")
+                     )
 #+end_src
 
 ** Org Mode
