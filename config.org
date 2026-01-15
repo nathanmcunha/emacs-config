@@ -132,38 +132,39 @@ To mimic Doom's leader keys (~SPC~), we use ~general.el~.
 * Evil Mode (Vim Emulation)
 This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-collection`).
 #+begin_src emacs-lisp
-  (use-package evil
-    :demand t
-    :init
-    ;; Pre-load configuration is required for evil-collection
-    (setq evil-want-integration t)
-    (setq evil-want-keybinding nil)
-    (setq evil-want-C-u-scroll t)
-    (setq evil-undo-system 'undo-fu)
-    (setq evil-search-module 'evil-search)
-    :config
-    (evil-mode 1)
-    
+    (use-package evil
+      :demand t
+      :init
+      ;; Pre-load configuration is required for evil-collection
+      (setq evil-want-integration t)
+      (setq evil-want-keybinding nil)
+      (setq evil-want-C-u-scroll t)
+      (setq evil-undo-system 'undo-fu)
+      (setq evil-search-module 'evil-search)
+      :config
+      (evil-mode 1)
+      
 
-    ;; Bind TAB in insert state to trigger completion
-    (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
-    (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first)
-    ;; Set cursor colors
-    (setq evil-emacs-state-cursor    '("#649bce" box)
-          evil-normal-state-cursor   '("#ebcb8b" box)
-          evil-visual-state-cursor   '("#676f7d" box)
-          evil-insert-state-cursor   '("#ebcb8b" bar)
-          evil-replace-state-cursor  '("#ebcb8b" hbar)
-          evil-operator-state-cursor '("#ebcb8b" hollow)))
+      ;; Bind TAB in insert state to trigger completion
+      (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
+      (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first)
+      ;; Set cursor colors
+      (setq evil-emacs-state-cursor    '("#649bce" box)
+            evil-normal-state-cursor   '("#ebcb8b" box)
+            evil-visual-state-cursor   '("#676f7d" box)
+            evil-insert-state-cursor   '("#ebcb8b" bar)
+            evil-replace-state-cursor  '("#ebcb8b" hbar)
+            evil-operator-state-cursor '("#ebcb8b" hollow)))
 
-  (use-package evil-collection
+    (use-package evil-collection
     :after evil
-    :demand t
+    :demand t ;; Force load immediately after evil
     :custom
-    (evil-collection-magit-use-z-for-folds t)
-    (evil-collection-magit-want-horizontal-movement t)
+    ;; Magit Integration Settings
+    (evil-collection-magit-use-z-for-folds t)       ;; Use 'z' to fold sections
+    (evil-collection-magit-want-horizontal-movement t) ;; Enable h/l for movement
     :config
-    (setq evil-collection-setup-minibuffer t)
+    ;; Initialize bindings for all supported modes (including magit)
     (evil-collection-init))
 
   (use-package undo-fu)
@@ -447,7 +448,7 @@ Nós usamos uma combinação de três pacotes para a experiência suprema de des
       "s S" '(consult-line-multi :which-key "search all buffers")
       "s i" '(consult-imenu :which-key "jump to symbol")
       "s h" '(consult-outline :which-key "jump to heading")
-      "s f" '(consult-find :which-key "find file (name)")
+      "s f" '(consult-find :which-key "find file (live)")
       "s k" '(consult-yank-pop :which-key "yank pop")
       "g M" '(consult-global-mark :which-key "jump to global mark")))
 
@@ -580,40 +581,80 @@ Configures additional completion backends and the specific TAB integration strat
 #+begin_src emacs-lisp
   (use-package magit
     :commands magit-status
-    :init
-    (my-leader-def
-      "g"   '(:ignore t :which-key "git")
-      "g s" '(magit-status :which-key "status")
-      "g b" '(magit-blame-addition :which-key "blame")
-      "g d" '(magit-dispatch :which-key "dispatch")
-      "g f" '(magit-file-dispatch :which-key "file dispatch")
-      "g c" '(magit-clone :which-key "clone")))
-#+end_src
+   :general
+  (my-leader-def
+    "g"   '(:ignore t :which-key "git")
+    "g s" '(magit-status :which-key "status")
+    "g b" '(magit-blame-addition :which-key "blame")
+    "g d" '(magit-dispatch :which-key "dispatch")
+    "g f" '(magit-file-dispatch :which-key "file dispatch")
+    "g c" '(magit-clone :which-key "clone"))
+
+  (:states '(normal visual)
+   :keymaps 'magit-mode-map
+   "TAB" 'magit-section-toggle
+   "<tab>" 'magit-section-toggle)
+  :config
+    ;; 1. Ensure evil-collection setup runs for magit buffers
+    (with-eval-after-load 'evil-collection
+      (evil-collection-init 'magit))
+
+    ;; 2. Optional: Manual fallback if evil-collection fails
+    ;; Force Magit buffers to start in Normal state (Vim mode)
+    (with-eval-after-load 'evil
+      (evil-set-initial-state 'magit-status-mode 'normal)
+      (evil-set-initial-state 'magit-log-mode 'normal)))
+    #+END_SRC
 
 ** Projectile
 #+begin_src emacs-lisp
-  (use-package projectile
-    :diminish projectile-mode
-    :init
-    (projectile-mode +1)
-    (my-leader-def
-      "p"   '(:ignore t :which-key "project")
-      "p f" '(projectile-find-file :which-key "find file")
-      "p r" '(projectile-recentf :which-key "recent files")
-      "p b" '(consult-project-buffer :which-key "switch buffer")
-      "p s" '(projectile-save-project-buffers :which-key "save project")
-      "p k" '(projectile-kill-buffers :which-key "kill buffers")
-      "p t" '(projectile-test-project :which-key "run tests")
-      "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
-      "p /" '(consult-ripgrep :which-key "search in project"))
-    :config
-    (setq projectile-completion-system 'default)
-    (setq projectile-switch-project-action #'projectile-find-file)
-    (setq projectile-project-search-path '("~/projects" "~/workspace" "~/git"))
-    (setq projectile-sort-order 'recently-active)
-    (dolist (dir '(".idea" ".vscode" "node_modules" "target" "build" ".git"))
-      (add-to-list 'projectile-globally-ignored-directories dir)))
-#+end_src
+(use-package projectile
+  :diminish projectile-mode
+  :init
+  (projectile-mode +1)
+  :config
+  ;; Define o sistema de completação padrão (caso use comandos nativos do Projectile)
+  (setq projectile-completion-system 'default)
+
+  ;; Ação ao trocar de projeto: Já abre a busca "live" na raiz
+  (setq projectile-switch-project-action 
+        #'(lambda () (consult-find (projectile-project-root))))
+
+  (setq projectile-project-search-path '("~/projects" "~/workspace" "~/git"))
+  (setq projectile-sort-order 'recently-active)
+  
+  (dolist (dir '(".idea" ".vscode" "node_modules" "target" "build" "dist" ".cache" ".git"))
+    (add-to-list 'projectile-globally-ignored-directories dir))
+
+  :general
+  (my-leader-def
+    "p"   '(:ignore t :which-key "project")
+
+    ;; Navegação e Troca
+    "p p" '(projectile-switch-project :which-key "switch project")
+    
+    "p f" '((lambda () (interactive) (consult-find (projectile-project-root))) 
+            :which-key "find file (project)")
+            
+    "p r" '(projectile-recentf :which-key "recent files")
+    "p b" '(consult-project-buffer :which-key "switch buffer") ;; Usa Consult para buffers do projeto
+    "p d" '(projectile-remove-known-project :which-key "remove project")
+    "p a" '(projectile-add-known-project :which-key "add project")
+
+    ;; Ações no Projeto
+    "p s" '(projectile-save-project-buffers :which-key "save project")
+    "p k" '(projectile-kill-buffers :which-key "kill buffers")
+    "p c" '(projectile-compile-project :which-key "compile")
+    "p t" '(projectile-test-project :which-key "run tests")
+    "p i" '(projectile-invalidate-cache :which-key "invalidate cache")
+
+    ;; Utilitários e Busca
+    "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
+    "p x" '(projectile-run-async-shell-command-in-root :which-key "async cmd")
+    
+    ;; Busca de texto (grep/ripgrep) na raiz do projeto
+    "p /" '(consult-ripgrep :which-key "search in project")))
+    #+end_src
 
 ** Workspaces (Perspective)
 #+begin_src emacs-lisp
@@ -655,7 +696,7 @@ Configures additional completion backends and the specific TAB integration strat
     :init
     (setq treemacs-display-in-side-window t)
     (setq treemacs-git-mode 'deferred)
-    (setq treemacs-filewatch-mode nil)
+    (setq treemacs-filewatch-mode t)
     (with-eval-after-load 'winum
       (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
     (my-leader-def "e" '(:ignore t :which-key "explorer")
