@@ -93,10 +93,10 @@ Start the Emacs server automatically to enable ~emacsclient~ connections.
     (unless (server-running-p)
       (server-start)))
 #+end_src
-
 ** Keybinding Helper (General.el)
 To mimic Doom's leader keys (~SPC~), we use ~general.el~.
 #+begin_src emacs-lisp
+(setq tab-always-indent 'complete)
   (use-package general
     :demand t
     :config
@@ -132,42 +132,58 @@ To mimic Doom's leader keys (~SPC~), we use ~general.el~.
 * Evil Mode (Vim Emulation)
 This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-collection`).
 #+begin_src emacs-lisp
-    (use-package evil
-      :demand t
-      :init
-      ;; Pre-load configuration is required for evil-collection
-      (setq evil-want-integration t)
-      (setq evil-want-keybinding nil)
-      (setq evil-want-C-u-scroll t)
-      (setq evil-undo-system 'undo-fu)
-      (setq evil-search-module 'evil-search)
-      :config
-      (evil-mode 1)
-      
+            (use-package evil
+              :demand t
+              :init
+              ;; Pre-load configuration is required for evil-collection
+              (setq evil-want-integration t)
+              (setq evil-want-keybinding nil)
+              (setq evil-want-C-u-scroll t)
+              (setq evil-undo-system 'undo-fu)
+              (setq evil-search-module 'evil-search)
+              :config
+              (evil-mode 1)
+              
 
-      ;; Bind TAB in insert state to trigger completion
-      (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
-      (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first)
-      ;; Set cursor colors
-      (setq evil-emacs-state-cursor    '("#649bce" box)
-            evil-normal-state-cursor   '("#ebcb8b" box)
-            evil-visual-state-cursor   '("#676f7d" box)
-            evil-insert-state-cursor   '("#ebcb8b" bar)
-            evil-replace-state-cursor  '("#ebcb8b" hbar)
-            evil-operator-state-cursor '("#ebcb8b" hollow)))
+              ;; Bind TAB in insert state to trigger completion
+              (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
+              (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first)
+              ;; Set cursor colors
+              (setq evil-emacs-state-cursor    '("#649bce" box)
+                    evil-normal-state-cursor   '("#ebcb8b" box)
+                    evil-visual-state-cursor   '("#676f7d" box)
+                    evil-insert-state-cursor   '("#ebcb8b" bar)
+                    evil-replace-state-cursor  '("#ebcb8b" hbar)
+                    evil-operator-state-cursor '("#ebcb8b" hollow)))
+        (use-package evil-collection
+          :after evil
+          :ensure t
+          :custom
+          ;; (Opcional) Se quiser que o evil-collection configure o minibuffer (comportamento de vim no M-x)
+          ; (setq evil-collection-setup-minibuffer t)
+          (evil-collection-magit-use-z-for-folds t)       ;; Use 'z' to fold sections
+          (evil-collection-magit-want-horizontal-movement t) ;; Enable h/l for movement
+          :config
+          ;; A lista essencial para uma experiência Doom/Spacemacs completa
+          (evil-collection-init 
+            '(magit           ; Interface Git
+              dired           ; Gerenciador de Arquivos
+              ibuffer         ; Gerenciador de Buffers
+              help            ; Telas de ajuda (C-h v, C-h f)
+              info            ; Manuais Info
+              dashboard       ; Tela inicial
+              eshell          ; Terminal Emacs
+              vterm           ; Terminal Visual (se usar)
+              corfu           ; Autocomplete (se usar)
+              vertico         ; Minibuffer completion (se usar)
+              consult         ; Comandos de busca aprimorados
+              flycheck        ; Syntax highlighting
+              profiler        ; Profiler do Emacs
+              man
+              org
+              )))          ; Man pages
 
-    (use-package evil-collection
-    :after evil
-    :demand t ;; Force load immediately after evil
-    :custom
-    ;; Magit Integration Settings
-    (evil-collection-magit-use-z-for-folds t)       ;; Use 'z' to fold sections
-    (evil-collection-magit-want-horizontal-movement t) ;; Enable h/l for movement
-    :config
-    ;; Initialize bindings for all supported modes (including magit)
-    (evil-collection-init))
-
-  (use-package undo-fu)
+          (use-package undo-fu)
 #+end_src
 
 ** Evil Extensions
@@ -536,6 +552,8 @@ Configures additional completion backends and the specific TAB integration strat
     (add-to-list 'completion-at-point-functions #'cape-file)
     (add-to-list 'completion-at-point-functions #'cape-dabbrev t)
     (add-to-list 'completion-at-point-functions #'cape-keyword t)
+    (add-to-list 'completion-at-point-functions #'cape-elisp-block)
+    (add-to-list 'completion-at-point-functions #'yasnippet-capf)
 
     :config
     (setq pcomplete-ignore-case t)
@@ -560,52 +578,59 @@ Configures additional completion backends and the specific TAB integration strat
 * Development Tools
 ** Snippets (Yasnippet)
 #+begin_src emacs-lisp
-  (use-package yasnippet
-    :ensure t
-    :hook ((prog-mode . yas-minor-mode)
-           (conf-mode . yas-minor-mode))
-    :config
-    (setq yas-snippet-dirs (list (expand-file-name "snippets" user-emacs-directory)))
-    (setq yas-triggers-in-field t))
+    (use-package yasnippet
+      :ensure t
+      :hook ((prog-mode . yas-minor-mode)
+             (conf-mode . yas-minor-mode)
+               (org-mode . yas-minor-mode)
+             )
+      :config
+      (setq yas-snippet-dirs (list (expand-file-name "snippets" user-emacs-directory)))
+      (setq yas-triggers-in-field t))
 
-  (use-package yasnippet-snippets
+    (use-package yasnippet-snippets
+      :ensure t
+      :after yasnippet
+      :config
+      (require 'yasnippet-snippets)
+      (add-to-list 'yas-snippet-dirs yasnippet-snippets-dir t)
+      (yas-reload-all))
+
+  (use-package yasnippet-capf
     :ensure t
     :after yasnippet
     :config
-    (require 'yasnippet-snippets)
-    (add-to-list 'yas-snippet-dirs yasnippet-snippets-dir t)
-    (yas-reload-all))
+    (add-to-list 'completion-at-point-functions #'yasnippet-capf))
 #+end_src
 
 ** Git (Magit)
 #+begin_src emacs-lisp
   (use-package magit
-    :commands magit-status
-   :general
-  (my-leader-def
-    "g"   '(:ignore t :which-key "git")
-    "g s" '(magit-status :which-key "status")
-    "g b" '(magit-blame-addition :which-key "blame")
-    "g d" '(magit-dispatch :which-key "dispatch")
-    "g f" '(magit-file-dispatch :which-key "file dispatch")
-    "g c" '(magit-clone :which-key "clone"))
+  :ensure t
+  :commands (magit-status magit-get-current-branch)
+  :custom
+  ;; --- Aparência e Comportamento ---
+  ;; Mostra diffs refinados (destaque da palavra que mudou)
+  (magit-diff-refine-hunk t) 
+  ;; Salva buffers de repositório automaticamente ao abrir o status
+  (magit-save-repository-buffers 'dontask)
+  ;; Abre o Magit na janela atual (estilo "tela cheia"), exceto para diffs
+  (magit-display-buffer-function #'magit-display-buffer-same-window-except-diff-v1)
+  ;; Mostra gravatars no log (opcional, estilo visual do Doom)
+  (magit-revision-show-gravatars '("^Author:     " . "^Commit:     "))
 
-  (:states '(normal visual)
-   :keymaps 'magit-mode-map
-   "TAB" 'magit-section-toggle
-   "<tab>" 'magit-section-toggle)
+  ;; --- Performance e Segurança ---
+  ;; Remove a confirmação para ações "seguras" ou reversíveis
+  (magit-no-confirm '(discard stage-all-changes unstage-all-changes))
+
   :config
-    ;; 1. Ensure evil-collection setup runs for magit buffers
-    (with-eval-after-load 'evil-collection
-      (evil-collection-init 'magit))
+  ;; Garante que o diretório padrão seja respeitado
+  (setq magit-repository-directories '(("~/Projects" . 2) ("~/org" . 0)))
 
-    ;; 2. Optional: Manual fallback if evil-collection fails
-    ;; Force Magit buffers to start in Normal state (Vim mode)
-    (with-eval-after-load 'evil
-      (evil-set-initial-state 'magit-status-mode 'normal)
-      (evil-set-initial-state 'magit-log-mode 'normal)))
+  ;; Dica Doom: Fecha a janela do Magit e restaura a anterior ao pressionar 'q'
+  (setq magit-bury-buffer-function #'magit-mode-quit-window))
     #+END_SRC
-
+    
 ** Projectile
 #+begin_src emacs-lisp
 (use-package projectile
@@ -812,77 +837,121 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
       "e N" '(flymake-goto-prev-error :which-key "prev")))
 #+end_src
 
-** Java & LSP (Eglot)
+* Java Development & Debugging (Clean Setup)
+Esta seção substitui a antiga stack pesada (lsp-mode + dap-mode) por alternativas nativas e leves (Eglot + Dape).
+** LSP Client (Eglot)
+O Eglot é o cliente LSP padrão do Emacs (v29+). Ele usa componentes nativos (Flymake, Xref, Capf) para máxima performance.
+
 #+begin_src emacs-lisp
   (use-package eglot
-    :ensure nil
-    :init
-    ;; Configurações do JDTLS
-    (setq-default eglot-workspace-configuration
-                  '(:java (:configuration
-                           (:runtimes [(:name "JavaSE-21"
-                                        :path "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS"
-                                        :default t)]
-                            :import (:gradle (:wrapper (:enabled t) :version nil :java (:home nil)))
-                            :maven (:downloadSources t)
-                            :completion (:guessMethodArguments t
-                                         :favoriteStaticMembers ["org.junit.jupiter.api.Assertions.*" "org.mockito.Mockito.*"])
-                            :references (:includeDecompiledSources t)
-                            :format (:enabled nil) ;; Apheleia handles this
-                            :saveActions (:organizeImports t)))))
+    :ensure nil ;; Built-in no Emacs 29+
+    :hook ((java-mode java-ts-mode) . eglot-ensure)
     :config
-    (setq eglot-events-buffer-size 0)
-    (setq eglot-report-progress t)
-    
+    ;; Performance: Desabilita logs pesados de eventos e inlay hints poluentes
+    ;; Dica: Mude eglot-inlay-hints-mode para t se quiser ver tipos/parâmetros no código
+    (setq eglot-events-buffer-size 0
+          eglot-autoshutdown t
+          eglot-inlay-hints-mode nil)
+
+    :general
     (my-leader-def
+      "c"   '(:ignore t :which-key "code")
       "c a" '(eglot-code-actions :which-key "code action")
       "c r" '(eglot-rename :which-key "rename")
-      "c d" '(xref-find-definitions :which-key "jump definition")
-      "c D" '(xref-find-references :which-key "find references")
-      "c s" '(consult-imenu :which-key "symbols")
-      "c S" '(consult-eglot-symbols :which-key "search symbol (workspace)")))
-
-  (use-package consult-eglot :ensure t :after (consult eglot))
-
-  (use-package eglot-java
-    :ensure t
-    :hook ((java-mode . eglot-java-mode)
-           (java-ts-mode . eglot-java-mode))
-    :config
-    (setq eglot-java-java-home (expand-file-name "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS"))
-    (my-leader-def
-      "c j" '(:ignore t :which-key "java")
-      "c j n" '(eglot-java-create-project :which-key "new project")
-      "c j i" '(eglot-java-organize-imports :which-key "organize imports")))
-
-  ;; Helper: Clean Java Signatures for ElDoc
-  (defun my/java-clean-signature (doc-string)
-    "Limpa assinaturas Java para o ElDoc."
-    (when (and doc-string (stringp doc-string))
-      (let ((result (substring-no-properties doc-string)))
-        (setq result (string-replace "&nbsp;" " " result))
-        (setq result (string-replace "&lt;" "<" result))
-        (setq result (string-replace "&gt;" ">" result))
-        (setq result (replace-regexp-in-string "\\b\\(?:[a-z0-9_]+\\.\\)+\\([a-zA-Z_]\\)" "\\1" result))
-        (setq result (replace-regexp-in-string "@[a-zA-Z0-9_]+\\(?:(.*)\\)?\\s-*" "" result))
-        (setq result (replace-regexp-in-string "\\.\\.\\." "[]" result))
-        (setq result (replace-regexp-in-string " throws .*" "" result))
-        (setq result (replace-regexp-in-string "\\b\\(?:public\\|protected\\|private\\|static\\|final\\|native\\|synchronized\\|abstract\\|transient\\)\\b\\s-*" "" result))
-        (setq result (replace-regexp-in-string "\\s-\\{2,\\}" " " result))
-        (string-trim result))))
-
-  (defun my/clean-eglot-signature-advice (orig-fun callback &rest args)
-    (if (or (derived-mode-p 'java-mode) (derived-mode-p 'java-ts-mode))
-        (let ((cleaned-callback
-               (lambda (docstring &rest plist)
-                 (let ((cleaned (if (stringp docstring) (my/java-clean-signature docstring) docstring)))
-                   (apply callback cleaned plist)))))
-          (apply orig-fun cleaned-callback args))
-      (apply orig-fun callback args)))
-  
-  (advice-add 'eglot-signature-eldoc-function :around #'my/clean-eglot-signature-advice)
+      "c f" '(apheleia-format-buffer :which-key "format")
+      "c d" '(xref-find-definitions :which-key "defintion")
+      "c D" '(xref-find-references :which-key "references")))
 #+end_src
 
+** Java Extensions (Eglot Java)
+Gerencia o download e inicialização do servidor Eclipse JDTLS, adicionando capacidades de criação de projeto e organização de imports.
+
+#+begin_src emacs-lisp
+  (use-package eglot-java
+    :ensure t
+    :hook (java-mode . eglot-java-mode)
+    :config
+    ;; Caminhos e otimizações da JVM do servidor
+    (setq eglot-java-server-install-dir (expand-file-name "~/.local/share/eclipse.jdt.ls/")
+          eglot-java-java-home (expand-file-name "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS")
+          ;; Argumentos para garantir que o servidor JDTLS tenha memória suficiente
+          eglot-java-eclipse-jdt-args '("-noverify" "-Xmx2G" "-XX:+UseG1GC"))
+
+    :general
+    (my-leader-def
+      "c j" '(:ignore t :which-key "java project")
+      "c j n" '(eglot-java-create-project :which-key "new project")
+      "c j i" '(eglot-java-organize-imports :which-key "organize imports")))
+#+end_src
+
+** Debugging (Dape)
+O Dape é um cliente moderno para o protocolo DAP. Aqui configuramos o fluxo "Attach", onde o Gradle abre a porta e o Emacs conecta nela.
+
+#+begin_** Debugging (Dape)
+Configuração robusta para debug Java via Gradle.
+
+#+begin_src emacs-lisp
+  (use-package dape
+    :ensure t
+    :config
+    (require 'which-func)
+    (which-function-mode 1) 
+
+    (setq dape-buffer-window-arrangement 'right)
+
+    ;; Configuração de conexão padrão (Attach)
+    (add-to-list 'dape-configs
+                 `(java-attach
+                   modes (java-mode java-ts-mode)
+                   host "localhost"
+                   port 5005
+                   :type "java"
+                   :request "attach"))
+
+    ;; --- Função Mágica: Roda Teste -> Espera "Listening" -> Conecta ---
+    (defun my/dape-java-test-debug ()
+      "Roda o teste sob o cursor, espera o Gradle abrir a porta 5005 e conecta o Dape."
+      (interactive)
+      ;; Garante (novamente) que conseguimos ler o nome da função
+      (unless (fboundp 'which-function)
+        (require 'which-func)
+        (which-function-mode 1))
+      
+      (let* ((test-name (or (which-function) (error "Posicione o cursor dentro de um método de teste @Test!")))
+             ;; Limpa o nome (pega apenas o nome do método, sem a classe)
+             (clean-name (car (last (split-string test-name "\\."))))
+             (root (projectile-project-root))
+             (cmd (format "./gradlew test --tests *.%s --debug-jvm" clean-name))
+             (default-directory root))
+
+        (message "🚀 Debugging %s... (Aguarde a mensagem 'Listening')" clean-name)
+
+        ;; Inicia a compilação e cria um 'espião' na saída
+        (let ((buffer (compilation-start cmd 'grep-mode)))
+          (with-current-buffer buffer
+            (add-hook 'compilation-filter-hook
+                      (lambda ()
+                        (let ((output (buffer-substring-no-properties (point-min) (point-max))))
+                          ;; --- FIX 2: Monitora a saída do Gradle ---
+                          (when (and (string-search "Listening for transport dt_socket at address: 5005" output)
+                                     (not (dape--live-connection 'java-attach t)))
+                            (message "✅ Gradle pronto! Conectando Dape...")
+                            ;; Pequeno delay para garantir estabilidade do socket
+                            (run-at-time "0.5 sec" nil (lambda () (dape 'java-attach))))))
+                      nil t)))))
+
+    :general
+    (my-leader-def
+      "d"   '(:ignore t :which-key "debug")
+      "d d" '(dape :which-key "start manual")
+      "d t" '(my/dape-java-test-debug :which-key "debug test at point")
+      "d q" '(dape-quit :which-key "quit")
+      "d n" '(dape-next :which-key "next")
+      "d i" '(dape-step-in :which-key "step in")
+      "d o" '(dape-step-out :which-key "step out")
+      "d c" '(dape-continue :which-key "continue")
+      "d b" '(dape-breakpoint-toggle :which-key "toggle breakpoint")))
+#+end_src
 * Visual Wrapping (Adaptive Wrap)
 Melhora a leitura de linhas longas em buffers de código, mantendo a indentação visual.
 
@@ -940,6 +1009,38 @@ Melhora a leitura de linhas longas em buffers de código, mantendo a indentaçã
     "f y" '((lambda () (interactive) (kill-new (buffer-file-name)) (message "Copied path")) :which-key "yank path"))
 #+end_src
 
+** Magit
+#+BEGIN_SRC emacs-lisp
+  (my-leader-def
+    :states '(normal visual insert emacs)
+    :keymaps 'override
+    
+    ;; Menu Git (g)
+    "g"   '(:ignore t :which-key "git")
+    
+    ;; Comandos Principais
+    "gg"  '(magit-status :which-key "Magit status")
+    "gG"  '(magit-status-here :which-key "Magit status here")
+    "g/"  '(magit-dispatch :which-key "Magit dispatch")
+    "g."  '(magit-file-dispatch :which-key "Magit file dispatch")
+    
+    ;; Operações de Arquivo
+    "gf"  '(magit-find-file :which-key "Find file")
+    "gb"  '(magit-blame-addition :which-key "Blame")
+    
+    ;; Logs e Histórico
+    "gl"  '(:ignore t :which-key "log")
+    "glc" '(magit-log-current :which-key "Log current branch")
+    "glf" '(magit-log-buffer-file :which-key "Log current file")
+    "glg" '(magit-log-all :which-key "Log all branches")
+    
+    ;; Time Machine (Opcional, se usar git-timemachine)
+    "gt"  '(git-timemachine-toggle :which-key "Time machine")
+    
+    ;; Inicialização
+    "gi"  '(magit-init :which-key "Initialize repo"))
+#+END_SRC
+
 ** Documentation Lookup
 #+begin_src emacs-lisp
   (defun my/doom-like-lookup ()
@@ -953,7 +1054,7 @@ Melhora a leitura de linhas longas em buffers de código, mantendo a indentaçã
      (t (evil-lookup))))
 
   (general-define-key :states 'normal "K" #'my/doom-like-lookup)
-  
+
   (use-package devdocs
     :ensure t :defer t
     :init (my-leader-def "h d" '(devdocs-lookup :which-key "devdocs") "h i" '(devdocs-install :which-key "install")))
@@ -1021,52 +1122,65 @@ Melhora a leitura de linhas longas em buffers de código, mantendo a indentaçã
 
 ** Org Mode
 #+begin_src emacs-lisp
-  (use-package org
-    :hook ((org-mode . visual-line-mode)
-           (org-mode . org-indent-mode))
-    :config
-    (setq org-ellipsis " ▾"
-          org-hide-emphasis-markers t
-          org-src-fontify-natively t
-          org-fontify-quote-and-verse-blocks t
-          org-src-tab-acts-natively t
-          org-edit-src-content-indentation 2
-          org-hide-block-startup nil
-          org-src-preserve-indentation nil
-          org-startup-folded 'content))
+      (use-package org
+        :hook ((org-mode . visual-line-mode)
+               (org-mode . org-indent-mode))
+        :config
+    (require 'org-tempo)
+        (setq org-ellipsis " ▾"
+              org-hide-emphasis-markers t
+              org-src-fontify-natively t
+              org-fontify-quote-and-verse-blocks t
+              org-src-tab-acts-natively t
+              org-edit-src-content-indentation 2
+              org-hide-block-startup nil
+              org-src-preserve-indentation nil
+              org-startup-folded 'content)
+(defun my/org-tab-dwim ()
+    (interactive)
+    (or (and (bound-and-true-p yas-minor-mode)
+             (yas-expand))
+        (and (fboundp 'completion-at-point)
+             (completion-at-point))
+        (org-cycle)))
 
-  (use-package org-modern
-    :ensure t
-    :hook (org-mode . org-modern-mode)
-    :config
-    (setq org-modern-star '("◉" "○" "◈" "◇" "✳" "◆" "□")
-          org-modern-table-vertical 1
-          org-modern-table-horizontal 0.2
-          org-modern-list '((43 . "➤") (45 . "–") (42 . "•"))
-          org-modern-todo nil org-modern-tag nil org-modern-priority nil))
+  ;; Aplicar a correção apenas se necessário (embora o tab-always-indent geralmente resolva)
+  ;; Se ainda falhar, descomente a linha abaixo para forçar o comportamento:
+  ;; (define-key org-mode-map (kbd "<tab>") #'my/org-tab-dwim)
+        )
 
-  (use-package mixed-pitch
-    :hook (org-mode . mixed-pitch-mode)
-    :config (setq mixed-pitch-set-height t))
+      (use-package org-modern
+        :ensure t
+        :hook (org-mode . org-modern-mode)
+        :config
+        (setq org-modern-star '("◉" "○" "◈" "◇" "✳" "◆" "□")
+              org-modern-table-vertical 1
+              org-modern-table-horizontal 0.2
+              org-modern-list '((43 . "➤") (45 . "–") (42 . "•"))
+              org-modern-todo nil org-modern-tag nil org-modern-priority nil))
 
-  (use-package ob-mermaid :ensure t :after org
-    :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (emacs-lisp . t))))
+      (use-package mixed-pitch
+        :hook (org-mode . mixed-pitch-mode)
+        :config (setq mixed-pitch-set-height t))
 
-  (use-package org-roam
-    :ensure t
-    :init
-    (setq org-roam-v2-ack t)
-    (my-leader-def
-      "n"   '(:ignore t :which-key "notes")
-      "n r" '(org-roam-buffer-toggle :which-key "roam toggle")
-      "n f" '(org-roam-node-find :which-key "find node")
-      "n i" '(org-roam-node-insert :which-key "insert node")
-      "n d"   '(:ignore t :which-key "dailies")
-      "n d t" '(org-roam-dailies-capture-today :which-key "capture today"))
-    :custom
-    (org-roam-directory (file-truename "~/org"))
-    (org-roam-completion-everywhere nil)
-    :config (org-roam-db-autosync-mode))
+      (use-package ob-mermaid :ensure t :after org
+        :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (emacs-lisp . t))))
+
+      (use-package org-roam
+        :ensure t
+        :init
+        (setq org-roam-v2-ack t)
+        (my-leader-def
+          "n"   '(:ignore t :which-key "notes")
+          "n r" '(org-roam-buffer-toggle :which-key "roam toggle")
+          "n f" '(org-roam-node-find :which-key "find node")
+          "n i" '(org-roam-node-insert :which-key "insert node")
+          "n d"   '(:ignore t :which-key "dailies")
+          "n d t" '(org-roam-dailies-capture-today :which-key "capture today"))
+        :custom
+        (org-roam-directory (file-truename "~/org"))
+        (org-roam-completion-everywhere nil)
+        :config (org-roam-db-autosync-mode))
 #+end_src
 
 ** Markdown
