@@ -25,7 +25,8 @@
   (package-refresh-contents)
   (package-install 'use-package))
 (require 'use-package)
-(setq use-package-compute-statistics t) ;; Measure load time for M-x use-package-report
+;; Disable statistics gathering early to prevent macro expansion errors
+(setq use-package-compute-statistics nil)
 (setq use-package-always-ensure t) ;; Always download packages if missing
 
 ;; 4. Load the Literate Configuration
@@ -53,14 +54,15 @@
                    orderless org-modern org-roam persp-projectile
                    popup rainbow-identifiers super-save treemacs-evil
                    treemacs-magit treemacs-nerd-icons
-                   treemacs-perspective treemacs-projectile undo-fu
-                   undo-fu-session vertico vundo wgrep yasnippet-capf
-                   yasnippet-snippets))
+                   treemacs-perspective treemacs-projectile treesit
+                   undo-fu undo-fu-session vertico vundo wgrep
+                   yasnippet-capf yasnippet-snippets))
  '(package-vc-selected-packages
    '((gemini-cli :url "https://github.com/linchen2chris/gemini-cli.el")))
  '(safe-local-variable-values
    '((eval setq-local lsp-java-java-path
-           (string-trim (shell-command-to-string "mise which java"))))))
+           (string-trim (shell-command-to-string "mise which java")))))
+ '(warning-suppress-log-types '((treesit))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.

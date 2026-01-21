@@ -656,14 +656,14 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
   (setq magit-repository-directories '(("~/Projects" . 2) ("~/org" . 0)))
 
   ;; Dica Doom: Fecha a janela do Magit e restaura a anterior ao pressionar 'q'
-  (setq magit-bury-buffer-function #'magit-mode-quit-window))
+  (setq magit-bury-buffer-function #'magit-mode-quit-window)
 
   ;; Standard Doom-style keybindings
   :general
   (my-leader-def
     "g s" '(magit-status :which-key "magit status")
-    "g S" '(magit-status-here :which-key "magit status here"))
-    #+end_src
+    "g S" '(magit-status-here :which-key "magit status here")))
+#+end_src
     
 ** Projectile
 #+begin_src emacs-lisp
@@ -796,80 +796,82 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
 ** Linting (Flymake)
 Configurado para integração com Eglot e Consult. Substitui o Flycheck para consistência.
 #+begin_src emacs-lisp
-  (use-package flymake
-    :hook (prog-mode . flymake-mode)
-    :config
-    (setq flymake-fringe-indicator-position 'left-fringe)
+  ;; Simple flymake configuration - avoid eval-after-load to prevent macro expansion errors
+  (add-hook 'prog-mode-hook #'flymake-mode)
+  
+  ;; Configure flymake when loaded
+  (eval-after-load 'flymake
+    '(progn
+       (setq flymake-fringe-indicator-position 'left-fringe)
+       
+       ;; 1. Configuração da Janela (Popup Limpo no Rodapé)
+       (add-to-list 'display-buffer-alist
+                    '("\\*Flymake diagnostics.*"
+                      (display-buffer-reuse-window display-buffer-in-side-window)
+                      (side . bottom)
+                      (slot . 0)
+                      (window-height . 0.25)
+                      (preserve-size . (nil . t))
+                      (window-parameters . ((no-other-window . nil)
+                                            (mode-line-format . none)))))
+       
+       ;; 2. Visual do buffer de diagnósticos
+       (add-hook 'flymake-project-diagnostics-mode-hook
+                 (lambda ()
+                   (setq header-line-format nil) 
+                   (setq tabulated-list-use-header-line nil)
+                   (setq tabulated-list-gui-sort-indicator-mode nil)
+                   (display-line-numbers-mode 0)
+                   (hl-line-mode 1)))))
 
-    ;; 1. Configuração da Janela (Popup Limpo no Rodapé)
-    (add-to-list 'display-buffer-alist
-                 '("\\*Flymake diagnostics.*"
-                   (display-buffer-reuse-window display-buffer-in-side-window)
-                   (side . bottom)
-                   (slot . 0)
-                   (window-height . 0.25)
-                   (preserve-size . (nil . t))
-                   (window-parameters . ((no-other-window . nil)
-                                         (mode-line-format . none)))))
+  ;; 3. Função de Busca para Consult (simplified to avoid macro expansion issues)
+  (defun my/consult-flymake-project ()
+    "Busca erros do projeto via Consult, extraindo dados do Flymake."
+    (interactive)
+    (flymake-show-project-diagnostics)
+    (let ((diag-buffer (get-buffer "*Flymake diagnostics*")))
+      (if (not diag-buffer)
+          (message "Aguarde... O Eglot ainda está indexando os erros.")
+        (with-current-buffer diag-buffer
+          (let ((entries-raw (if (functionp tabulated-list-entries)
+                                  (funcall tabulated-list-entries)
+                                tabulated-list-entries))
+                candidates)
+            (dolist (entry entries-raw)
+              (let* ((diag (car entry))
+                     (buffer (flymake-diagnostic-buffer diag)))
+                (when (buffer-live-p buffer)
+                  (let* ((line (line-number-at-pos (flymake-diagnostic-beg diag)))
+                         (type (flymake-diagnostic-type diag))
+                         (text (flymake-diagnostic-text diag))
+                         (file (buffer-name buffer))
+                         (face (flymake-diagnostic-type-face type))
+                         (type-str (propertize (symbol-name type) 'face face))
+                         (cand-str (format "%-20s %-8s %s" 
+                                           (propertize file 'face 'font-lock-variable-name-face)
+                                           type-str
+                                           (propertize text 'face 'shadow))))
+                    (push (propertize cand-str 
+                                      'consult--candidate 
+                                      (cons (set-marker (make-marker) (flymake-diagnostic-beg diag)) buffer))
+                          candidates)))))
+            (if candidates
+                (consult--read (nreverse candidates)
+                               :prompt "Project Issues: "
+                               :category 'consult-location
+                               :sort nil
+                               :lookup #'consult--lookup-candidate)
+              (message "Nenhum erro encontrado no projeto."))))))
 
-    ;; 2. Visual do buffer de diagnósticos
-    (add-hook 'flymake-project-diagnostics-mode-hook
-              (lambda ()
-                (setq header-line-format nil) 
-                (setq tabulated-list-use-header-line nil)
-                (setq tabulated-list-gui-sort-indicator-mode nil)
-                (display-line-numbers-mode 0)
-                (hl-line-mode 1)))
-
-    ;; 3. Função de Busca para Consult
-    (defun my/consult-flymake-project ()
-      "Busca erros do projeto via Consult, extraindo dados do Flymake."
-      (interactive)
-      (flymake-show-project-diagnostics)
-      (let ((diag-buffer (get-buffer "*Flymake diagnostics*")))
-        (if (not diag-buffer)
-            (message "Aguarde... O Eglot ainda está indexando os erros.")
-          (with-current-buffer diag-buffer
-            (let* ((entries-raw (if (functionp tabulated-list-entries)
-                                    (funcall tabulated-list-entries)
-                                  tabulated-list-entries))
-                   candidates)
-              (dolist (entry entries-raw)
-                (let* ((diag (car entry))
-                       (buffer (flymake-diagnostic-buffer diag)))
-                  (when (buffer-live-p buffer)
-                    (let* ((line (line-number-at-pos (flymake-diagnostic-beg diag)))
-                           (type (flymake-diagnostic-type diag))
-                           (text (flymake-diagnostic-text diag))
-                           (file (buffer-name buffer))
-                           (face (flymake-diagnostic-type-face type))
-                           (type-str (propertize (symbol-name type) 'face face))
-                           (cand-str (format "%-20s %-8s %s" 
-                                             (propertize file 'face 'font-lock-variable-name-face)
-                                             type-str
-                                             (propertize text 'face 'shadow))))
-                      (push (propertize cand-str 
-                                        'consult--candidate 
-                                        (cons (set-marker (make-marker) (flymake-diagnostic-beg diag) buffer)
-                                              cand-str))
-                            candidates)))))
-              (if candidates
-                  (consult--read (nreverse candidates)
-                                 :prompt "Project Issues: "
-                                 :category 'consult-location
-                                 :sort nil
-                                 :lookup #'consult--lookup-candidate)
-                (message "Nenhum erro encontrado no projeto.")))))))
-
-    :general
-    (my-leader-def
-      "e"   '(:ignore t :which-key "errors")
-      "e p" '(flymake-show-project-diagnostics :which-key "panel (project)")
-      "e b" '(flymake-show-buffer-diagnostics :which-key "panel (buffer)")
-      "e l" '(consult-flymake :which-key "search buffer")
-      "e L" '(my/consult-flymake-project :which-key "search project")
-      "e n" '(flymake-goto-next-error :which-key "next")
-      "e N" '(flymake-goto-prev-error :which-key "prev")))
+  ;; Keybindings for flymake
+  (my-leader-def
+    "e"   '(:ignore t :which-key "errors")
+    "e p" '(flymake-show-project-diagnostics :which-key "panel (project)")
+    "e b" '(flymake-show-buffer-diagnostics :which-key "panel (buffer)")
+    "e l" '(consult-flymake :which-key "search buffer")
+    "e L" '(my/consult-flymake-project :which-key "search project")
+    "e n" '(flymake-goto-next-error :which-key "next")
+    "e N" '(flymake-goto-prev-error :which-key "prev"))
 #+end_src
 
 * Java Development & Debugging (Clean Setup)
@@ -932,7 +934,7 @@ Configuração do modo Java moderno com Tree-sitter para melhor precisão e dese
                 (electric-indent-local-mode +1)
                 ;; Melhorias de indentação para java-ts-mode
                 (setq-local java-ts-mode-indent-offset 4
-                            java-ts-mode-indent-basic 4))))
+                            java-ts-mode-indent-basic 4)))))
 
 #+end_src
 ** Java Extensions (Eglot Java)
@@ -941,10 +943,10 @@ Gerencia o download e inicialização do servidor Eclipse JDTLS, adicionando cap
 #+begin_src emacs-lisp
   (use-package eglot-java
     :ensure t
-    :hook ((java-ts-mode . eglot-java-mode)
-         (java-mode . (lambda () 
-                         (message "Consider using java-ts-mode for better Java support"))))
-    :config
+     :hook ((java-ts-mode . eglot-java-mode)
+          (java-mode . (lambda ()
+                          (message "Consider using java-ts-mode for better Java support"))))
+     :config
     ;; Caminhos e otimizações da JVM do servidor
     (setq eglot-java-server-install-dir (expand-file-name "~/.local/share/eclipse.jdt.ls/")
           eglot-java-java-home (expand-file-name "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS")
@@ -1008,74 +1010,6 @@ Funções utilitárias para gerenciar Tree-sitter e java-ts-mode.
           (message "Java Tree-sitter grammar installed successfully!")))))
 #+end_src
 
-** Debugging (Dape)
-O Dape é um cliente moderno para o protocolo DAP. Aqui configuramos o fluxo "Attach", onde o Gradle abre a porta e o Emacs conecta nela.
-
-#+begin_** Debugging (Dape)
-Configuração robusta para debug Java via Gradle.
-
-#+begin_src emacs-lisp
-  (use-package dape
-    :ensure t
-    :config
-    (require 'which-func)
-    (which-function-mode 1) 
-
-    (setq dape-buffer-window-arrangement 'right)
-
-    ;; Configuração de conexão padrão (Attach)
-    (add-to-list 'dape-configs
-                 `(java-attach
-                   modes (java-mode java-ts-mode)
-                   host "localhost"
-                   port 5005
-                   :type "java"
-                   :request "attach"))
-
-    ;; --- Função Mágica: Roda Teste -> Espera "Listening" -> Conecta ---
-    (defun my/dape-java-test-debug ()
-      "Roda o teste sob o cursor, espera o Gradle abrir a porta 5005 e conecta o Dape."
-      (interactive)
-      ;; Garante (novamente) que conseguimos ler o nome da função
-      (unless (fboundp 'which-function)
-        (require 'which-func)
-        (which-function-mode 1))
-      
-      (let* ((test-name (or (which-function) (error "Posicione o cursor dentro de um método de teste @Test!")))
-             ;; Limpa o nome (pega apenas o nome do método, sem a classe)
-             (clean-name (car (last (split-string test-name "\\."))))
-             (root (projectile-project-root))
-             (cmd (format "./gradlew test --tests *.%s --debug-jvm" clean-name))
-             (default-directory root))
-
-        (message "🚀 Debugging %s... (Aguarde a mensagem 'Listening')" clean-name)
-
-        ;; Inicia a compilação e cria um 'espião' na saída
-        (let ((buffer (compilation-start cmd 'grep-mode)))
-          (with-current-buffer buffer
-            (add-hook 'compilation-filter-hook
-                      (lambda ()
-                        (let ((output (buffer-substring-no-properties (point-min) (point-max))))
-                          ;; --- FIX 2: Monitora a saída do Gradle ---
-                          (when (and (string-search "Listening for transport dt_socket at address: 5005" output)
-                                     (not (dape--live-connection 'java-attach t)))
-                            (message "✅ Gradle pronto! Conectando Dape...")
-                            ;; Pequeno delay para garantir estabilidade do socket
-                            (run-at-time "0.5 sec" nil (lambda () (dape 'java-attach))))))
-                      nil t)))))
-
-    :general
-    (my-leader-def
-      "d"   '(:ignore t :which-key "debug")
-      "d d" '(dape :which-key "start manual")
-      "d t" '(my/dape-java-test-debug :which-key "debug test at point")
-      "d q" '(dape-quit :which-key "quit")
-      "d n" '(dape-next :which-key "next")
-      "d i" '(dape-step-in :which-key "step in")
-      "d o" '(dape-step-out :which-key "step out")
-      "d c" '(dape-continue :which-key "continue")
-      "d b" '(dape-breakpoint-toggle :which-key "toggle breakpoint")))
-#+end_src
 * Visual Wrapping (Adaptive Wrap)
 Melhora a leitura de linhas longas em buffers de código, mantendo a indentação visual.
 
@@ -1338,12 +1272,9 @@ Melhora a leitura de linhas longas em buffers de código, mantendo a indentaçã
              (completion-at-point))
         (org-cycle)))
 
-  ;; Aplicar a correção apenas se necessário (embora o tab-always-indent geralmente resolva)
-  ;; Se ainda falhar, descomente a linha abaixo para forçar o comportamento:
-  ;; (define-key org-mode-map (kbd "<tab>") #'my/org-tab-dwim)
         )
 
-      (use-package org-modern
+  (use-package org-modern
         :ensure t
         :hook (org-mode . org-modern-mode)
         :config
@@ -1394,6 +1325,3 @@ Melhora a leitura de linhas longas em buffers de código, mantendo a indentaçã
     :config (add-to-list 'exec-path (expand-file-name "~/.local/bin")))
 #+end_src
 
-
-# Local Variables:
-# End:
