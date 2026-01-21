@@ -109,9 +109,6 @@ To mimic Doom's leader keys (~SPC~), we use ~general.el~.
     (my-leader-def
       ""    nil
       "SPC" '(execute-extended-command :which-key "M-x")
-      "b"   '(:ignore t :which-key "buffer")
-      "bb"  '(switch-to-buffer :which-key "switch buffer")
-      "bk"  '(kill-current-buffer :which-key "kill buffer")
 
       ;; Config Reload & Help
       "h"   '(:ignore t :which-key "help/config")
@@ -161,7 +158,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
           :custom
           ;; (Opcional) Se quiser que o evil-collection configure o minibuffer (comportamento de vim no M-x)
           ; (setq evil-collection-setup-minibuffer t)
-          (evil-collection-magit-use-z-for-folds t)       ;; Use 'z' to fold sections
+          (evil-collection-magit-use-z-for-folds nil)       ;; Use default Magit fold key (TAB) instead of 'z'
           (evil-collection-magit-want-horizontal-movement t) ;; Enable h/l for movement
           :config
           ;; A lista essencial para uma experiência Doom/Spacemacs completa
@@ -456,12 +453,10 @@ Nós usamos uma combinação de três pacotes para a experiência suprema de des
     
     :general
     (my-leader-def
-      "b b" '(consult-buffer :which-key "switch buffer")
-      "f r" '(consult-recent-file :which-key "recent files")
-      "/"   '(consult-ripgrep :which-key "search project (rg)")
       "s"   '(:ignore t :which-key "search")
       "s s" '(consult-line :which-key "search buffer")
       "s S" '(consult-line-multi :which-key "search all buffers")
+      "s g" '(consult-goto-line :which-key "goto line")
       "s i" '(consult-imenu :which-key "jump to symbol")
       "s h" '(consult-outline :which-key "jump to heading")
       "s f" '(consult-find :which-key "find file (live)")
@@ -565,9 +560,20 @@ Configures additional completion backends and the specific TAB integration strat
     (defun my/yas-try-expand-first ()
       "Try to expand a yasnippet. If failed, indent the line."
       (interactive)
-      (unless (and (bound-and-true-p yas-minor-mode)
-                   (yas-expand))
-        (indent-for-tab-command)))
+      (cond
+       ;; If in Magit, delegate to the standard fold/unfold command
+       ((derived-mode-p 'magit-mode)
+        (magit-section-toggle (magit-current-section)))
+       
+       ;; If buffer is read-only, do nothing (avoids 'Buffer is read-only' errors)
+       (buffer-read-only
+        (message "Read-only buffer"))
+
+       ;; Otherwise, try snippet expansion or fallback to indentation
+       (t
+        (unless (and (bound-and-true-p yas-minor-mode)
+                     (yas-expand))
+          (indent-for-tab-command)))))
 
     ;; Bind TAB globally to our custom function.
     ;; Note: When Corfu is open, corfu-map takes precedence, so TAB will navigate candidates
@@ -629,7 +635,13 @@ Configures additional completion backends and the specific TAB integration strat
 
   ;; Dica Doom: Fecha a janela do Magit e restaura a anterior ao pressionar 'q'
   (setq magit-bury-buffer-function #'magit-mode-quit-window))
-    #+END_SRC
+
+  ;; Standard Doom-style keybindings
+  :general
+  (my-leader-def
+    "g s" '(magit-status :which-key "magit status")
+    "g S" '(magit-status-here :which-key "magit status here"))
+    #+end_src
     
 ** Projectile
 #+begin_src emacs-lisp
@@ -655,14 +667,13 @@ Configures additional completion backends and the specific TAB integration strat
   (my-leader-def
     "p"   '(:ignore t :which-key "project")
 
-    ;; Navegação e Troca
+    ;; Navegação e Troca (Doom-style)
     "p p" '(projectile-switch-project :which-key "switch project")
+    "p b" '(projectile-switch-to-buffer :which-key "switch project buffer")
+    "p f" '(projectile-find-file :which-key "find file in project")
     
-    "p f" '((lambda () (interactive) (consult-find (projectile-project-root))) 
-            :which-key "find file (project)")
-            
+    ;; Outros comandos de projeto
     "p r" '(projectile-recentf :which-key "recent files")
-    "p b" '(consult-project-buffer :which-key "switch buffer") ;; Usa Consult para buffers do projeto
     "p d" '(projectile-remove-known-project :which-key "remove project")
     "p a" '(projectile-add-known-project :which-key "add project")
 
@@ -990,74 +1001,144 @@ Melhora a leitura de linhas longas em buffers de código, mantendo a indentaçã
     "w="  '(balance-windows :which-key "balance"))
 #+end_src
 
-** Buffer & Files
+** Doom Utility Functions
+#+begin_src emacs-lisp
+  ;; Doom-like utility functions for file operations
+  
+  (defun my/copy-this-file ()
+    "Copy the current file to a new location."
+    (interactive)
+    (let* ((filename (buffer-file-name))
+           (new-name (read-file-name "Copy file to: " filename)))
+      (copy-file filename new-name 1)
+      (find-file new-name)
+      (message "Copied '%s' to '%s'" filename new-name)))
+  
+  (defun my/move-this-file ()
+    "Move/rename the current file to a new location."
+    (interactive)
+    (let* ((filename (buffer-file-name))
+           (new-name (read-file-name "Move file to: " filename)))
+      (rename-file filename new-name 1)
+      (find-file new-name)
+      (set-visited-file-name new-name)
+      (message "Moved '%s' to '%s'" filename new-name)))
+  
+  (defun my/delete-this-file ()
+    "Delete the current file and kill its buffer."
+    (interactive)
+    (let ((filename (buffer-file-name)))
+      (when (and filename (y-or-n-p (format "Really delete '%s'?" filename)))
+        (delete-file filename)
+        (kill-current-buffer)
+        (message "Deleted '%s'" filename))))
+  
+  (defun my/copy-file-path ()
+    "Copy the current file's path to the kill ring."
+    (interactive)
+    (let ((filename (or (buffer-file-name) (error "Buffer not visiting a file"))))
+      (kill-new filename)
+      (message "Copied: %s" filename)))
+  
+  (defun my/copy-file-path-relative-to-project ()
+    "Copy the current file's path relative to project root to the kill ring."
+    (interactive)
+    (let* ((filename (or (buffer-file-name) (error "Buffer not visiting a file")))
+           (project-root (or (projectile-project-root) (error "Not in a project")))
+           (relative-path (file-relative-name filename project-root)))
+      (kill-new relative-path)
+      (message "Copied: %s" relative-path)))
+  
+  (defun my/kill-all-buffers ()
+    "Kill all buffers except the current one and special buffers."
+    (interactive)
+    (let ((current-buffer (current-buffer)))
+      (dolist (buffer (buffer-list))
+        (unless (or (eq buffer current-buffer)
+                    (string-match-p "\\*.*\\*" (buffer-name buffer)))
+          (kill-buffer buffer))))
+      (message "Killed all buffers"))
+  
+  (defun my/kill-other-buffers ()
+    "Kill all buffers except the current one."
+    (interactive)
+    (let ((current-buffer (current-buffer)))
+      (dolist (buffer (buffer-list))
+        (unless (eq buffer current-buffer)
+          (kill-buffer buffer))))
+      (message "Killed other buffers"))
+
+#+end_src
+
+** Buffer & Files (Doom-style)
 #+begin_src emacs-lisp
   (my-leader-def
     "TAB" '(mode-line-other-buffer :which-key "last buffer")
+    "."   '(find-file :which-key "find file")          ; Doom-style: find file anywhere
+    ","   '(switch-to-buffer :which-key "switch buffer") ; Doom-style: switch buffer
+    "`"   '(evil-switch-to-windows-last-buffer :which-key "last buffer")
+    
+    ;; --- Buffer Management (Doom: b prefix) ---
     "b"   '(:ignore t :which-key "buffer")
-    "bi"  '(ibuffer :which-key "ibuffer")
-    "bn"  '(next-buffer :which-key "next buffer")
-    "bp"  '(previous-buffer :which-key "previous buffer")
-    "bs"  '(save-buffer :which-key "save buffer")
-    "br"  '(revert-buffer :which-key "revert buffer")
-    "bB"  '(switch-to-buffer-other-window :which-key "buffer other window")
+    "b b" '(projectile-switch-to-buffer :which-key "switch buffer") ; Doom-style: projectile buffer switch
+    "b B" '(switch-to-buffer :which-key "switch buffer (all)") ; All buffers, not just project
+    "b i" '(ibuffer :which-key "ibuffer")
+    "b n" '(next-buffer :which-key "next buffer")
+    "b p" '(previous-buffer :which-key "previous buffer")
+    "b s" '(save-buffer :which-key "save buffer")
+    "b S" '(evil-write-all :which-key "save all buffers")
+    "b r" '(revert-buffer :which-key "revert buffer")
+    "b k" '(kill-current-buffer :which-key "kill buffer")
+    "b K" '(my/kill-all-buffers :which-key "kill all buffers")
+    "b O" '(my/kill-other-buffers :which-key "kill other buffers")
+    "b N" '(evil-buffer :which-key "new buffer")
+    "b y" '(my/copy-this-file :which-key "copy file contents")
+    "b R" '(rename-buffer :which-key "rename buffer")
+    "b Y" '(bury-buffer :which-key "bury buffer")
     
+    ;; --- File Management (Doom: f prefix) ---
+    "f"   '(:ignore t :which-key "file")
+    "f f" '(projectile-find-file :which-key "find file in project") ; Doom-style: find file in project
+    "f F" '(find-file :which-key "find file anywhere") ; Alternative to SPC .
+    "f r" '(consult-recent-file :which-key "recent files")
+    "f s" '(save-buffer :which-key "save file")
     "f S" '(write-file :which-key "save as...")
-    "f R" '(rename-visited-file :which-key "rename/move file")
-    "f D" '(lambda () (interactive) (when (y-or-n-p "Delete file?") (delete-file (buffer-file-name)) (kill-this-buffer)))
+    "f R" '(my/move-this-file :which-key "rename/move file")
+    "f D" '(my/delete-this-file :which-key "delete file")
+    "f y" '(my/copy-file-path :which-key "copy file path")
+    "f Y" '(my/copy-file-path-relative-to-project :which-key "copy relative path")
     "f p" '((lambda () (interactive) (find-file (expand-file-name "config.org" user-emacs-directory))) :which-key "open config")
-    "f y" '((lambda () (interactive) (kill-new (buffer-file-name)) (message "Copied path")) :which-key "yank path"))
-#+end_src
+    "f e" '((lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) :which-key "open early-init")
+    "f E" '((lambda () (interactive) (dired (expand-file-name user-emacs-directory))) :which-key "browse emacs.d"))
+    
+    ;; --- Search (Doom: s prefix) ---
+    ;; Search bindings are defined in the Consult section above
 
-** Magit
-#+BEGIN_SRC emacs-lisp
-  (my-leader-def
-    :states '(normal visual insert emacs)
-    :keymaps 'override
-    
-    ;; Menu Git (g)
+    ;; --- Git/Version Control (Doom: g prefix) ---
     "g"   '(:ignore t :which-key "git")
-    
-    ;; Comandos Principais
-    "gg"  '(magit-status :which-key "Magit status")
-    "gG"  '(magit-status-here :which-key "Magit status here")
     "g/"  '(magit-dispatch :which-key "Magit dispatch")
     "g."  '(magit-file-dispatch :which-key "Magit file dispatch")
-    
-    ;; Operações de Arquivo
     "gf"  '(magit-find-file :which-key "Find file")
     "gb"  '(magit-blame-addition :which-key "Blame")
+    "gt"  '(git-timemachine-toggle :which-key "Time machine")
+    "gi"  '(magit-init :which-key "Initialize repo")
     
-    ;; Logs e Histórico
+    ;; Git logs
     "gl"  '(:ignore t :which-key "log")
     "glc" '(magit-log-current :which-key "Log current branch")
     "glf" '(magit-log-buffer-file :which-key "Log current file")
     "glg" '(magit-log-all :which-key "Log all branches")
     
-    ;; Time Machine (Opcional, se usar git-timemachine)
-    "gt"  '(git-timemachine-toggle :which-key "Time machine")
-    
-    ;; Inicialização
-    "gi"  '(magit-init :which-key "Initialize repo"))
-#+END_SRC
-
-** Documentation Lookup
-#+begin_src emacs-lisp
-  (defun my/doom-like-lookup ()
-    "Look up documentation using standard describe buffers."
-    (interactive)
-    (cond
-     ((bound-and-true-p eglot--managed-mode) (eldoc-doc-buffer))
-     ((derived-mode-p 'emacs-lisp-mode)
-      (let ((sym (symbol-at-point)))
-        (if (symbolp sym) (describe-symbol sym) (message "No symbol"))))
-     (t (evil-lookup))))
-
-  (general-define-key :states 'normal "K" #'my/doom-like-lookup)
-
-  (use-package devdocs
-    :ensure t :defer t
-    :init (my-leader-def "h d" '(devdocs-lookup :which-key "devdocs") "h i" '(devdocs-install :which-key "install")))
+    ;; Visual mode git operations
+    "g m" '(magit-file-dispatch :which-key "Git selection menu")
+    "g r" '((lambda () 
+              (interactive) 
+              (call-interactively 'magit-discard)) 
+            :which-key "Git discard selection")
+    "g s" '((lambda () 
+              (interactive) 
+              (call-interactively 'magit-stage)) 
+            :which-key "Git stage selection")
 #+end_src
 
 * Extras & Languages
@@ -1199,3 +1280,4 @@ Melhora a leitura de linhas longas em buffers de código, mantendo a indentaçã
     :hook (after-init . global-mise-mode)
     :config (add-to-list 'exec-path (expand-file-name "~/.local/bin")))
 #+end_src
+
