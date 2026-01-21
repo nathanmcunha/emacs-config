@@ -558,9 +558,31 @@ Configures additional completion backends and the specific TAB integration strat
     ;; This function tries to expand a snippet first.
     ;; If no snippet is available, it falls back to indentation (or completion if we were to bind it inside corfu-map).
     (defun my/yas-try-expand-first ()
-      "Try to expand a yasnippet. If failed, indent the line."
+      "Try to expand a yasnippet. If failed, indent the line.
+In minibuffer, delegate to completion system. Works with Vertico/Corfu."
       (interactive)
       (cond
+       ;; If in minibuffer, use proper completion
+       ((active-minibuffer-window)
+        (cond
+         ;; If Vertico is active and has candidates, use Vertico's TAB
+         ((and (bound-and-true-p vertico-mode)
+               vertico--candidates)
+          (vertico-insert))
+         
+         ;; If in any minibuffer completion context, use standard completion
+         ((minibuffer-completing-p)
+          (minibuffer-complete))
+         
+         ;; Otherwise, try standard minibuffer completion
+         (t
+          (minibuffer-complete))))
+       
+       ;; If Corfu is active, let Corfu handle TAB for completion navigation
+       ((and (bound-and-true-p corfu-mode)
+             corfu--candidates)
+        (corfu-send-tab))
+       
        ;; If in Magit, delegate to the standard fold/unfold command
        ((derived-mode-p 'magit-mode)
         (magit-section-toggle (magit-current-section)))
@@ -653,9 +675,11 @@ Configures additional completion backends and the specific TAB integration strat
   ;; Define o sistema de completação padrão (caso use comandos nativos do Projectile)
   (setq projectile-completion-system 'default)
 
-  ;; Ação ao trocar de projeto: Já abre a busca "live" na raiz
+  ;; Ação ao trocar de projeto: Lista arquivos do projeto com consult-find
   (setq projectile-switch-project-action 
-        #'(lambda () (consult-find (projectile-project-root))))
+        #'(lambda () 
+            (let ((default-directory (projectile-project-root)))
+              (consult-find default-directory))))
 
   (setq projectile-project-search-path '("~/projects" "~/workspace" "~/git"))
   (setq projectile-sort-order 'recently-active)
@@ -856,13 +880,25 @@ O Eglot é o cliente LSP padrão do Emacs (v29+). Ele usa componentes nativos (F
 #+begin_src emacs-lisp
   (use-package eglot
     :ensure nil ;; Built-in no Emacs 29+
-    :hook ((java-mode java-ts-mode) . eglot-ensure)
+    :hook ((python-mode js-mode ts-mode web-mode go-mode rust-mode c-mode c++-mode) . eglot-ensure)
     :config
     ;; Performance: Desabilita logs pesados de eventos e inlay hints poluentes
     ;; Dica: Mude eglot-inlay-hints-mode para t se quiser ver tipos/parâmetros no código
     (setq eglot-events-buffer-size 0
           eglot-autoshutdown t
-          eglot-inlay-hints-mode nil)
+          eglot-inlay-hints-mode nil
+          eglot-sync-connect t
+          eglot-connect-timeout 30
+          eglot-extend-to-xref t
+          eglot-confirm-server-initiated-edits nil)
+    
+    ;; Helper function to manually start eglot when auto-start fails
+    (defun my/eglot-restart ()
+      "Restart eglot server for current buffer."
+      (interactive)
+      (eglot-shutdown)
+      (sleep-for 0.5)
+      (eglot-ensure))
 
     :general
     (my-leader-def
@@ -874,25 +910,102 @@ O Eglot é o cliente LSP padrão do Emacs (v29+). Ele usa componentes nativos (F
       "c D" '(xref-find-references :which-key "references")))
 #+end_src
 
+** Java Tree-sitter Mode (java-ts-mode)
+Configuração do modo Java moderno com Tree-sitter para melhor precisão e desempenho.
+
+#+begin_src emacs-lisp
+  ;; Configuração Tree-sitter (built-in no Emacs 29+)
+  (when (treesit-available-p)
+    ;; Configura diretório de gramáticas Tree-sitter
+    (setq treesit-extra-load-path
+          (list (expand-file-name "~/.config/emacs/tree-sitter/")))
+    
+    ;; Configura java-ts-mode como padrão para arquivos .java
+    (add-to-list 'auto-mode-alist '("\\.java\\'" . java-ts-mode))
+    
+    ;; Configurações do java-ts-mode (built-in no Emacs 29+)
+    (add-hook 'java-ts-mode-hook
+              (lambda ()
+                ;; Configurações específicas para java-ts-mode
+                (setq-local tab-width 4)
+                (setq-local indent-tabs-mode nil)
+                (electric-indent-local-mode +1)
+                ;; Melhorias de indentação para java-ts-mode
+                (setq-local java-ts-mode-indent-offset 4
+                            java-ts-mode-indent-basic 4))))
+
+#+end_src
 ** Java Extensions (Eglot Java)
 Gerencia o download e inicialização do servidor Eclipse JDTLS, adicionando capacidades de criação de projeto e organização de imports.
 
 #+begin_src emacs-lisp
   (use-package eglot-java
     :ensure t
-    :hook (java-mode . eglot-java-mode)
+    :hook ((java-ts-mode . eglot-java-mode)
+         (java-mode . (lambda () 
+                         (message "Consider using java-ts-mode for better Java support"))))
     :config
     ;; Caminhos e otimizações da JVM do servidor
     (setq eglot-java-server-install-dir (expand-file-name "~/.local/share/eclipse.jdt.ls/")
           eglot-java-java-home (expand-file-name "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS")
           ;; Argumentos para garantir que o servidor JDTLS tenha memória suficiente
           eglot-java-eclipse-jdt-args '("-noverify" "-Xmx2G" "-XX:+UseG1GC"))
+    
+    ;; Configurações específicas para java-ts-mode com eglot
+    (with-eval-after-load 'java-ts-mode
+      (add-hook 'java-ts-mode-hook
+                (lambda ()
+                  ;; Otimizações para Tree-sitter + Eglot
+                  (setq-local treesit-font-lock-level 4)  ; Máximo realce sintático
+                  (setq-local treesit-simple-indent-rules
+                              (append java-ts-mode--indent-rules
+                                      '((catch 0)
+                                        (finally 0)))))))
 
     :general
     (my-leader-def
       "c j" '(:ignore t :which-key "java project")
       "c j n" '(eglot-java-create-project :which-key "new project")
-      "c j i" '(eglot-java-organize-imports :which-key "organize imports")))
+      "c j i" '(eglot-java-organize-imports :which-key "organize imports")
+      "c j r" '(my/eglot-restart :which-key "restart eglot")
+      "c j t" '(my/switch-to-java-ts-mode :which-key "switch to java-ts-mode")
+      "c j I" '(my/install-java-tree-sitter :which-key "install java grammar")))
+#+end_src
+
+** Java Tree-sitter Helper Functions
+Funções utilitárias para gerenciar Tree-sitter e java-ts-mode.
+
+#+begin_src emacs-lisp
+  ;; Função para alternar para java-ts-mode
+  (defun my/switch-to-java-ts-mode ()
+    "Switch current buffer from java-mode to java-ts-mode."
+    (interactive)
+    (if (eq major-mode 'java-mode)
+        (progn
+          (java-ts-mode)
+          (message "Switched to java-ts-mode"))
+      (message "Buffer is not in java-mode")))
+  
+  ;; Função para instalar gramática Java Tree-sitter
+  (defun my/install-java-tree-sitter ()
+    "Install Java Tree-sitter grammar manually using compilation."
+    (interactive)
+    (if (not (treesit-available-p))
+        (message "Tree-sitter not available in this Emacs version")
+      (let* ((grammar-dir (expand-file-name "~/.config/emacs/tree-sitter/"))
+             (temp-dir (expand-file-name "/tmp/tree-sitter-java"))
+             (lib-file (expand-file-name "libtree-sitter-java.so" grammar-dir)))
+        (if (file-exists-p lib-file)
+            (message "Java Tree-sitter grammar already installed!")
+          (message "Installing Java Tree-sitter grammar...")
+          (make-directory grammar-dir t)
+          (when (file-directory-p temp-dir)
+            (delete-directory temp-dir t))
+          (call-process "git" nil nil nil "clone" "https://github.com/tree-sitter/tree-sitter-java.git" temp-dir)
+          (call-process "make" nil "*Java Tree-sitter Install*" nil nil "-C" temp-dir)
+          (copy-file (expand-file-name "libtree-sitter-java.so" temp-dir) lib-file t)
+          (delete-directory temp-dir t)
+          (message "Java Tree-sitter grammar installed successfully!")))))
 #+end_src
 
 ** Debugging (Dape)
@@ -1281,3 +1394,6 @@ Melhora a leitura de linhas longas em buffers de código, mantendo a indentaçã
     :config (add-to-list 'exec-path (expand-file-name "~/.local/bin")))
 #+end_src
 
+
+# Local Variables:
+# End:
