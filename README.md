@@ -166,7 +166,8 @@ All keybindings use Doom-style leader keys:
 
 | Key | Action |
 | :--- | :--- |
-| `SPC p p` | Switch project (with workspace) |
+| `SPC p p` | Switch project |
+| `SPC p P` | Switch project (with workspace/persp) |
 | `SPC p b` | Switch project buffer |
 | `SPC p f` | Find file in project |
 | `SPC p r` | Recent files |
@@ -194,7 +195,7 @@ All keybindings use Doom-style leader keys:
 
 | Key | Action |
 | :--- | :--- |
-| `SPC e e` | Toggle Treemacs |
+| `SPC E e` | Toggle Treemacs |
 | `M-0` | Select Treemacs window |
 
 ### Code & LSP

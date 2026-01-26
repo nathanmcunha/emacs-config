@@ -549,10 +549,39 @@ Sets up the popup, cycling, and integration with icons.
     :after corfu
     :config
     (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
+ #+end_src
+
+* Development Tools
+ ** Snippets (Yasnippet)
+ #+begin_src emacs-lisp
+     (use-package yasnippet
+       :ensure t
+       :hook ((prog-mode . yas-minor-mode)
+              (conf-mode . yas-minor-mode)
+                (org-mode . yas-minor-mode)
+              )
+       :config
+       (setq yas-snippet-dirs (list (expand-file-name "snippets" user-emacs-directory)))
+       (setq yas-triggers-in-field t))
+
+     (use-package yasnippet-snippets
+       :ensure t
+       :after yasnippet
+       :config
+       (require 'yasnippet-snippets)
+       (add-to-list 'yas-snippet-dirs yasnippet-snippets-dir t)
+       (yas-reload-all))
+
+   (use-package yasnippet-capf
+     :ensure t
+     :after yasnippet
+     :config
+     (add-to-list 'completion-at-point-functions #'yasnippet-capf))
 #+end_src
 
-** Extended Backends (Cape)
-Configures additional completion backends and the specific TAB integration strategy.
+ ** Extended Backends (Cape)
+ Configures additional completion backends and the specific TAB integration strategy.
+ 
 
 #+begin_src emacs-lisp
   (use-package cape
@@ -615,39 +644,12 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
 
     ;; Bind TAB globally to our custom function.
     ;; Note: When Corfu is open, corfu-map takes precedence, so TAB will navigate candidates
-    ;; instead of expanding snippets. This is usually the desired behavior to avoid confusion.
-    (global-set-key (kbd "TAB") 'my/yas-try-expand-first)
-    (global-set-key (kbd "<tab>") 'my/yas-try-expand-first))
+     ;; instead of expanding snippets. This is usually the desired behavior to avoid confusion.
+     (global-set-key (kbd "TAB") 'my/yas-try-expand-first)
+     (global-set-key (kbd "<tab>") 'my/yas-try-expand-first))
 #+end_src
-* Development Tools
-** Snippets (Yasnippet)
-#+begin_src emacs-lisp
-    (use-package yasnippet
-      :ensure t
-      :hook ((prog-mode . yas-minor-mode)
-             (conf-mode . yas-minor-mode)
-               (org-mode . yas-minor-mode)
-             )
-      :config
-      (setq yas-snippet-dirs (list (expand-file-name "snippets" user-emacs-directory)))
-      (setq yas-triggers-in-field t))
-
-    (use-package yasnippet-snippets
-      :ensure t
-      :after yasnippet
-      :config
-      (require 'yasnippet-snippets)
-      (add-to-list 'yas-snippet-dirs yasnippet-snippets-dir t)
-      (yas-reload-all))
-
-  (use-package yasnippet-capf
-    :ensure t
-    :after yasnippet
-    :config
-    (add-to-list 'completion-at-point-functions #'yasnippet-capf))
-#+end_src
-
-** Git (Magit)
+ 
+ ** Git (Magit)
 #+begin_src emacs-lisp
    (use-package magit
    :ensure t
@@ -753,11 +755,11 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
       (consult-customize consult-source-buffer :hidden t :default nil)
       (add-to-list 'consult-buffer-sources 'persp-consult-source)))
 
-  (use-package persp-projectile
-    :ensure t
-    :after (perspective projectile)
-    :init
-    (my-leader-def "p p" '(projectile-persp-switch-project :which-key "switch project (persp)")))
+   (use-package persp-projectile
+     :ensure t
+     :after (perspective projectile)
+     :init
+     (my-leader-def "p P" '(projectile-persp-switch-project :which-key "switch project (persp)")))
 
   (use-package treemacs-perspective
     :after (treemacs perspective)
@@ -773,10 +775,10 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
     (setq treemacs-display-in-side-window t)
     (setq treemacs-git-mode 'deferred)
     (setq treemacs-filewatch-mode t)
-    (with-eval-after-load 'winum
-      (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
-    (my-leader-def "e" '(:ignore t :which-key "explorer")
-                   "ee" '(treemacs :which-key "toggle treemacs"))
+     (with-eval-after-load 'winum
+       (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
+     (my-leader-def "E" '(:ignore t :which-key "explorer")
+                    "E e" '(treemacs :which-key "toggle treemacs"))
     :hook (projectile-after-switch-project . treemacs-add-and-display-current-project)
     :config
     (treemacs-follow-mode t)
@@ -805,9 +807,7 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
           '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
     (push '(java-mode . google-java-format) apheleia-mode-alist)
     (push '(java-ts-mode . google-java-format) apheleia-mode-alist))
-
-  (my-leader-def "c f" '(apheleia-format-buffer :which-key "format buffer"))
-#+end_src
+ #+end_src
 
  ** Linting (Flymake)
  Configured for Eglot and Consult integration. Replaces Flycheck for consistency.
