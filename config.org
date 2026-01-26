@@ -36,7 +36,7 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
   (setopt display-fill-column-indicator-column 100)
   (setq-default display-fill-column-indicator-character ?\|)
   (add-hook 'prog-mode-hook #'display-fill-column-indicator-mode)
-  (set-face-attribute 'fill-column-indicator nil :foreground "grey90" :background "transparent")
+  ;; (set-face-attribute 'fill-column-indicator nil :foreground "grey90" :background "transparent")
 
   ;; Disable line numbers in specific modes
   (dolist (mode '(org-mode-hook
@@ -114,7 +114,23 @@ To mimic Doom's leader keys (~SPC~), we use ~general.el~.
       "h"   '(:ignore t :which-key "help/config")
       "h r" '(:ignore t :which-key "reload")
       "h r r" '((lambda () (interactive) (load-file user-init-file)) :which-key "reload config")
+
+      ;; Code (Eglot/LSP)
+      "c"   '(:ignore t :which-key "code")
+      "c a" '(eglot-code-actions :which-key "code action")
+      "c r" '(eglot-rename :which-key "rename")
+      "c f" '(apheleia-format-buffer :which-key "format")
+      "c d" '(xref-find-definitions :which-key "defintion")
+      "c D" '(xref-find-references :which-key "references")
       
+      ;; Java
+      "c j" '(:ignore t :which-key "java project")
+      "c j n" '(eglot-java-create-project :which-key "new project")
+      "c j i" '(eglot-java-organize-imports :which-key "organize imports")
+      "c j r" '(my/eglot-restart :which-key "restart eglot")
+      "c j t" '(my/switch-to-java-ts-mode :which-key "switch to java-ts-mode")
+      "c j I" '(my/install-java-tree-sitter :which-key "install java grammar")
+
       "f"   '(:ignore t :which-key "file")))
 #+end_src
 
@@ -861,7 +877,7 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
                                :category 'consult-location
                                :sort nil
                                :lookup #'consult--lookup-candidate)
-              (message "Nenhum erro encontrado no projeto."))))))
+              (message "Nenhum erro encontrado no projeto.")))))))
 
   ;; Keybindings for flymake
   (my-leader-def
@@ -874,141 +890,135 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
     "e N" '(flymake-goto-prev-error :which-key "prev"))
 #+end_src
 
-* Java Development & Debugging (Clean Setup)
-Esta seção substitui a antiga stack pesada (lsp-mode + dap-mode) por alternativas nativas e leves (Eglot + Dape).
-** LSP Client (Eglot)
-O Eglot é o cliente LSP padrão do Emacs (v29+). Ele usa componentes nativos (Flymake, Xref, Capf) para máxima performance.
+* Java Development (Eglot + JDTLS)
+Configuração leve usando Eglot, substituindo o lsp-java pesado.
 
 #+begin_src emacs-lisp
-  (use-package eglot
-    :ensure nil ;; Built-in no Emacs 29+
-    :hook ((python-mode js-mode ts-mode web-mode go-mode rust-mode c-mode c++-mode) . eglot-ensure)
-    :config
-    ;; Performance: Desabilita logs pesados de eventos e inlay hints poluentes
-    ;; Dica: Mude eglot-inlay-hints-mode para t se quiser ver tipos/parâmetros no código
-    (setq eglot-events-buffer-size 0
-          eglot-autoshutdown t
-          eglot-inlay-hints-mode nil
-          eglot-sync-connect t
-          eglot-connect-timeout 30
-          eglot-extend-to-xref t
-          eglot-confirm-server-initiated-edits nil)
-    
-    ;; Helper function to manually start eglot when auto-start fails
-    (defun my/eglot-restart ()
-      "Restart eglot server for current buffer."
-      (interactive)
-      (eglot-shutdown)
-      (sleep-for 0.5)
-      (eglot-ensure))
+(use-package eglot-java
+  :ensure t
+  :hook (((java-mode java-ts-mode) . eglot-java-mode))
+  :config
+  ;; Aumentar o timeout do eglot para dar tempo do JDTLS subir (comum em Java)
+  (setq eglot-connect-timeout 120)
+  (setq eglot-request-timeout 60)
 
-    :general
-    (my-leader-def
-      "c"   '(:ignore t :which-key "code")
-      "c a" '(eglot-code-actions :which-key "code action")
-      "c r" '(eglot-rename :which-key "rename")
-      "c f" '(apheleia-format-buffer :which-key "format")
-      "c d" '(xref-find-definitions :which-key "defintion")
-      "c D" '(xref-find-references :which-key "references")))
-#+end_src
+  (defun my/eglot-java-init-opts (server jdt)
+    (let ((debug-jar "/home/nathanmcunha/.config/emacs/java-debug/debug-plugin.jar"))
+      `(:bundles [,debug-jar]
+        :extendedClientCapabilities (:classFileContentsSupport t
+                                     :generateToStringPromptSupport t
+                                     :supportsDebugger t)
+        :settings (:java (:import (:gradle (:enabled t))
+                          :configuration (:runtimes []))))))
 
-** Java Tree-sitter Mode (java-ts-mode)
-Configuração do modo Java moderno com Tree-sitter para melhor precisão e desempenho.
+  (setq eglot-java-user-init-opts-fn 'my/eglot-java-init-opts))
+  #+end_src
+
+* Debugging (DAPE)
+Configuração moderna de debug sem dap-mode.
 
 #+begin_src emacs-lisp
-  ;; Configuração Tree-sitter (built-in no Emacs 29+)
-  (when (treesit-available-p)
-    ;; Configura diretório de gramáticas Tree-sitter
-    (setq treesit-extra-load-path
-          (list (expand-file-name "~/.config/emacs/tree-sitter/")))
-    
-    ;; Configura java-ts-mode como padrão para arquivos .java
-    (add-to-list 'auto-mode-alist '("\\.java\\'" . java-ts-mode))
-    
-    ;; Configurações do java-ts-mode (built-in no Emacs 29+)
-    (add-hook 'java-ts-mode-hook
-              (lambda ()
-                ;; Configurações específicas para java-ts-mode
-                (setq-local tab-width 4)
-                (setq-local indent-tabs-mode nil)
-                (electric-indent-local-mode +1)
-                ;; Melhorias de indentação para java-ts-mode
-                (setq-local java-ts-mode-indent-offset 4
-                            java-ts-mode-indent-basic 4)))))
+  (require 'which-func)
+  (which-function-mode 1)
 
-#+end_src
-** Java Extensions (Eglot Java)
-Gerencia o download e inicialização do servidor Eclipse JDTLS, adicionando capacidades de criação de projeto e organização de imports.
+  (defun my/get-java-full-test-target (is-gradle)
+  "Retorna o alvo do teste com o pacote completo (ex: com.foo.Bar.test)."
+  (let* ((package-name (save-excursion
+                         (goto-char (point-min))
+                         (when (re-search-forward "^package \\([^; \n]+\\);" nil t)
+                           (match-string 1))))
+         (class-name (file-name-base (buffer-file-name)))
+         (method-name (which-function))
+         (clean-method (when (stringp method-name)
+                         (car (last (split-string method-name "\\.")))))
+         ;; Monta o FQN (Full Qualified Name)
+         (full-class (if package-name (concat package-name "." class-name) class-name)))
+    (cond
+     ((not clean-method) full-class)
+(is-gradle (format "*%s.%s" class-name clean-method))
 
-#+begin_src emacs-lisp
-  (use-package eglot-java
-    :ensure t
-     :hook ((java-ts-mode . eglot-java-mode)
-          (java-mode . (lambda ()
-                          (message "Consider using java-ts-mode for better Java support"))))
-     :config
-    ;; Caminhos e otimizações da JVM do servidor
-    (setq eglot-java-server-install-dir (expand-file-name "~/.local/share/eclipse.jdt.ls/")
-          eglot-java-java-home (expand-file-name "~/.local/share/mise/installs/java/temurin-21.0.9+10.0.LTS")
-          ;; Argumentos para garantir que o servidor JDTLS tenha memória suficiente
-          eglot-java-eclipse-jdt-args '("-noverify" "-Xmx2G" "-XX:+UseG1GC"))
-    
-    ;; Configurações específicas para java-ts-mode com eglot
-    (with-eval-after-load 'java-ts-mode
-      (add-hook 'java-ts-mode-hook
-                (lambda ()
-                  ;; Otimizações para Tree-sitter + Eglot
-                  (setq-local treesit-font-lock-level 4)  ; Máximo realce sintático
-                  (setq-local treesit-simple-indent-rules
-                              (append java-ts-mode--indent-rules
-                                      '((catch 0)
-                                        (finally 0)))))))
+     (t (format "%s#%s" full-class clean-method)))))
 
-    :general
-    (my-leader-def
-      "c j" '(:ignore t :which-key "java project")
-      "c j n" '(eglot-java-create-project :which-key "new project")
-      "c j i" '(eglot-java-organize-imports :which-key "organize imports")
-      "c j r" '(my/eglot-restart :which-key "restart eglot")
-      "c j t" '(my/switch-to-java-ts-mode :which-key "switch to java-ts-mode")
-      "c j I" '(my/install-java-tree-sitter :which-key "install java grammar")))
-#+end_src
-
-** Java Tree-sitter Helper Functions
-Funções utilitárias para gerenciar Tree-sitter e java-ts-mode.
-
-#+begin_src emacs-lisp
-  ;; Função para alternar para java-ts-mode
-  (defun my/switch-to-java-ts-mode ()
-    "Switch current buffer from java-mode to java-ts-mode."
+  (defun my/java-debug-test-at-point ()
+    "Inicializa a JVM em modo debug apenas para o método ou classe sob o cursor."
     (interactive)
-    (if (eq major-mode 'java-mode)
-        (progn
-          (java-ts-mode)
-          (message "Switched to java-ts-mode"))
-      (message "Buffer is not in java-mode")))
-  
-  ;; Função para instalar gramática Java Tree-sitter
-  (defun my/install-java-tree-sitter ()
-    "Install Java Tree-sitter grammar manually using compilation."
-    (interactive)
-    (if (not (treesit-available-p))
-        (message "Tree-sitter not available in this Emacs version")
-      (let* ((grammar-dir (expand-file-name "~/.config/emacs/tree-sitter/"))
-             (temp-dir (expand-file-name "/tmp/tree-sitter-java"))
-             (lib-file (expand-file-name "libtree-sitter-java.so" grammar-dir)))
-        (if (file-exists-p lib-file)
-            (message "Java Tree-sitter grammar already installed!")
-          (message "Installing Java Tree-sitter grammar...")
-          (make-directory grammar-dir t)
-          (when (file-directory-p temp-dir)
-            (delete-directory temp-dir t))
-          (call-process "git" nil nil nil "clone" "https://github.com/tree-sitter/tree-sitter-java.git" temp-dir)
-          (call-process "make" nil "*Java Tree-sitter Install*" nil nil "-C" temp-dir)
-          (copy-file (expand-file-name "libtree-sitter-java.so" temp-dir) lib-file t)
-          (delete-directory temp-dir t)
-          (message "Java Tree-sitter grammar installed successfully!")))))
-#+end_src
+    (unless (projectile-project-p)
+      (user-error "Não estamos em um projeto Projectile"))
+    
+    (let* ((project-root (projectile-project-root))
+           (is-gradle (or (string= (projectile-project-type) 'gradle)
+                          (file-exists-p (expand-file-name "gradlew" project-root))))
+           (test-target (my/get-java-full-test-target is-gradle))
+           (buf-name " *java-test-debug-process*")
+           ;; Constrói o comando específico
+           (cmd (if is-gradle
+                    (format "./gradlew test --tests \"%s\" --rerun-tasks --debug-jvm" test-target)
+                  (format "mvn -Dmaven.surefire.debug test -Dtest=\"%s\"" test-target))))
+
+      ;; Limpa processos anteriores
+      (when (get-buffer buf-name)
+        (ignore-errors (delete-process (get-buffer-process buf-name)))
+        (kill-buffer buf-name))
+
+      (message "Lançando JVM para: %s..." test-target)
+      
+      (let* ((default-directory project-root)
+             (proc (start-process-shell-command "java-debug-proc" buf-name cmd)))
+        
+        (set-process-filter
+         proc
+         (lambda (process output)
+           (when (buffer-live-p (process-buffer process))
+             (with-current-buffer (process-buffer process)
+               (save-excursion
+                 (goto-char (point-max))
+                 (insert output))))
+           
+           (when (string-match-p "Listening for transport dt_socket" output)
+             (message "JVM pronta para [%s]! Use o Dape para anexar." test-target)))))))
+    
+        (defun my/show-java-debug-log ()
+              "Mostra o buffer de log do processo de debug atual."
+              (interactive)
+              (if (get-buffer " *java-test-debug-process*")
+                  (display-buffer " *java-test-debug-process*")
+                (message "Nenhum log de debug ativo.")))
+
+                (use-package dape
+                  :ensure t
+                  :config
+                  (setq dape-buffer-window-arrangement 'right)
+                  
+          (add-to-list 'dape-configs
+             `(java-attach
+               modes (java-mode java-ts-mode)
+               ensure (lambda (&rest _) (eglot-current-server))
+               ;; Aumentamos a resiliência da porta
+               port (lambda ()
+                      (let ((port (eglot-execute-command 
+                                   (eglot-current-server) 
+                                   "vscode.java.startDebugSession" nil)))
+                        ;; Um breve respiro para o Sentinel do Eglot não se perder
+                        (sit-for 0.2)
+                        port))
+               :type "java"
+               :request "attach"
+               :hostName "127.0.0.1"
+               :port 5005))
+          :general
+                  (my-leader-def
+                    "d"   '(:ignore t :which-key "debug")
+                    "dt"  '(my/java-debug-test-at-point  :which-key "Debug Test")
+                    "db"  '(dape-breakpoint-toggle :which-key "Toggle Breakpoint")
+                    "dc"  '(dape-continue :which-key "Continue")
+                    "dn"  '(dape-next :which-key "Next (Step Over)")
+                    "di"  '(dape-step-in :which-key "Step In")
+                    "do"  '(dape-step-out :which-key "Step Out")
+                    "dr"  '(dape-restart :which-key "Restart")
+                    "dl"  '(dape-info-setup :which-key "Show Layout")
+                    "dQ"  '(dape-kill :which-key "Quit Debugger")))
+
+    #+end_src
 
 * Visual Wrapping (Adaptive Wrap)
 Melhora a leitura de linhas longas em buffers de código, mantendo a indentação visual.
