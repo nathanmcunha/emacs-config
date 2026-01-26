@@ -172,26 +172,26 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
           :after evil
           :ensure t
           :custom
-          ;; (Opcional) Se quiser que o evil-collection configure o minibuffer (comportamento de vim no M-x)
+          ;; (Optional) If you want evil-collection to configure the minibuffer (vim behavior in M-x)
           ; (setq evil-collection-setup-minibuffer t)
           (evil-collection-magit-use-z-for-folds nil)       ;; Use default Magit fold key (TAB) instead of 'z'
           (evil-collection-magit-want-horizontal-movement t) ;; Enable h/l for movement
           :config
-          ;; A lista essencial para uma experiência Doom/Spacemacs completa
-          (evil-collection-init 
-            '(magit           ; Interface Git
-              dired           ; Gerenciador de Arquivos
-              ibuffer         ; Gerenciador de Buffers
-              help            ; Telas de ajuda (C-h v, C-h f)
-              info            ; Manuais Info
-              dashboard       ; Tela inicial
-              eshell          ; Terminal Emacs
-              vterm           ; Terminal Visual (se usar)
-              corfu           ; Autocomplete (se usar)
-              vertico         ; Minibuffer completion (se usar)
-              consult         ; Comandos de busca aprimorados
+          ;; The essential list for a complete Doom/Spacemacs experience
+          (evil-collection-init
+            '(magit           ; Git Interface
+              dired           ; File Manager
+              ibuffer         ; Buffer Manager
+              help            ; Help screens (C-h v, C-h f)
+              info            ; Info manuals
+              dashboard       ; Welcome screen
+              eshell          ; Emacs Terminal
+              vterm           ; Visual Terminal (if using)
+              corfu           ; Autocomplete (if using)
+              vertico         ; Minibuffer completion (if using)
+              consult         ; Enhanced search commands
               flycheck        ; Syntax highlighting
-              profiler        ; Profiler do Emacs
+              profiler        ; Emacs Profiler
               man
               org
               )))          ; Man pages
@@ -307,21 +307,21 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
       "j j" '(evilem-motion-next-line :which-key "line")))
 #+end_src
 
-* Undo System
-Nós usamos uma combinação de três pacotes para a experiência suprema de desfazer:
-1. ~undo-fu~: Wrapper linear simples para o sistema de desfazer do Emacs (necessário para o Evil).
-2. ~undo-fu-session~: Salva o histórico de desfazer no disco (persistência entre reinícios).
-3. ~vundo~: Visualizador gráfico da árvore de desfazer (para quando você se perde nos undos/redos).
+ * Undo System
+ We use a combination of three packages for the supreme undo experience:
+ 1. ~undo-fu~: Simple linear wrapper for Emacs' undo system (required for Evil).
+ 2. ~undo-fu-session~: Saves undo history to disk (persistence across restarts).
+ 3. ~vundo~: Graphical visualizer of the undo tree (for when you get lost in undos/redos).
 
-#+begin_src emacs-lisp
-  (use-package undo-fu
-    :config
-    ;; Aumentamos os limites de memória para evitar que o Emacs delete histórico antigo
-    ;; de forma agressiva. (Valores copiados do Doom Emacs)
-    (setq undo-limit 6710886400 ;; 64mb
-          undo-strong-limit 100663296 ;; 96mb
-          undo-outer-limit 1006632960) ;; 960mb
-    )
+ #+begin_src emacs-lisp
+   (use-package undo-fu
+     :config
+     ;; Increase memory limits to prevent Emacs from aggressively deleting old history
+     ;; (Values copied from Doom Emacs)
+     (setq undo-limit 6710886400 ;; 64mb
+           undo-strong-limit 100663296 ;; 96mb
+           undo-outer-limit 1006632960) ;; 960mb
+     )
 
   (use-package undo-fu-session
     :ensure t
@@ -330,13 +330,13 @@ Nós usamos uma combinação de três pacotes para a experiência suprema de des
     :config
     (setq undo-fu-session-incompatible-files '("/COMMIT_EDITMSG\\'" "/git-rebase-todo\\'")))
 
-  (use-package vundo
-    :ensure t
-    :commands (vundo)
-    :config
-    ;; Usar símbolos Unicode bonitos para a árvore
-    (setq vundo-glyph-alist vundo-unicode-symbols)
-    (setq vundo-compact-display t)
+   (use-package vundo
+     :ensure t
+     :commands (vundo)
+     :config
+     ;; Use beautiful Unicode symbols for the tree
+     (setq vundo-glyph-alist vundo-unicode-symbols)
+     (setq vundo-compact-display t)
 
     :general
     (my-leader-def
@@ -649,30 +649,30 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
 
 ** Git (Magit)
 #+begin_src emacs-lisp
-  (use-package magit
-  :ensure t
-  :commands (magit-status magit-get-current-branch)
-  :custom
-  ;; --- Aparência e Comportamento ---
-  ;; Mostra diffs refinados (destaque da palavra que mudou)
-  (magit-diff-refine-hunk t) 
-  ;; Salva buffers de repositório automaticamente ao abrir o status
-  (magit-save-repository-buffers 'dontask)
-  ;; Abre o Magit na janela atual (estilo "tela cheia"), exceto para diffs
-  (magit-display-buffer-function #'magit-display-buffer-same-window-except-diff-v1)
-  ;; Mostra gravatars no log (opcional, estilo visual do Doom)
-  (magit-revision-show-gravatars '("^Author:     " . "^Commit:     "))
+   (use-package magit
+   :ensure t
+   :commands (magit-status magit-get-current-branch)
+   :custom
+   ;; --- Appearance and Behavior ---
+   ;; Show refined diffs (highlight changed words)
+   (magit-diff-refine-hunk t)
+   ;; Automatically save repository buffers when opening status
+   (magit-save-repository-buffers 'dontask)
+   ;; Open Magit in current window (full screen style), except for diffs
+   (magit-display-buffer-function #'magit-display-buffer-same-window-except-diff-v1)
+   ;; Show gravatars in log (optional, Doom visual style)
+   (magit-revision-show-gravatars '("^Author:     " . "^Commit:     "))
 
-  ;; --- Performance e Segurança ---
-  ;; Remove a confirmação para ações "seguras" ou reversíveis
-  (magit-no-confirm '(discard stage-all-changes unstage-all-changes))
+   ;; --- Performance and Security ---
+   ;; Remove confirmation for "safe" or reversible actions
+   (magit-no-confirm '(discard stage-all-changes unstage-all-changes))
 
-  :config
-  ;; Garante que o diretório padrão seja respeitado
-  (setq magit-repository-directories '(("~/Projects" . 2) ("~/org" . 0)))
+   :config
+   ;; Ensure the default directory is respected
+   (setq magit-repository-directories '(("~/Projects" . 2) ("~/org" . 0)))
 
-  ;; Dica Doom: Fecha a janela do Magit e restaura a anterior ao pressionar 'q'
-  (setq magit-bury-buffer-function #'magit-mode-quit-window)
+   ;; Doom tip: Close Magit window and restore previous when pressing 'q'
+   (setq magit-bury-buffer-function #'magit-mode-quit-window)
 
   ;; Standard Doom-style keybindings
   :general
@@ -687,15 +687,15 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
   :diminish projectile-mode
   :init
   (projectile-mode +1)
-  :config
-  ;; Define o sistema de completação padrão (caso use comandos nativos do Projectile)
-  (setq projectile-completion-system 'default)
+   :config
+   ;; Set the default completion system (if using native Projectile commands)
+   (setq projectile-completion-system 'default)
 
-  ;; Ação ao trocar de projeto: Lista arquivos do projeto com consult-find
-  (setq projectile-switch-project-action 
-        #'(lambda () 
-            (let ((default-directory (projectile-project-root)))
-              (consult-find default-directory))))
+   ;; Action when switching projects: List project files with consult-find
+   (setq projectile-switch-project-action
+         #'(lambda ()
+             (let ((default-directory (projectile-project-root)))
+               (consult-find default-directory))))
 
   (setq projectile-project-search-path '("~/projects" "~/workspace" "~/git"))
   (setq projectile-sort-order 'recently-active)
@@ -703,33 +703,33 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
   (dolist (dir '(".idea" ".vscode" "node_modules" "target" "build" "dist" ".cache" ".git"))
     (add-to-list 'projectile-globally-ignored-directories dir))
 
-  :general
-  (my-leader-def
-    "p"   '(:ignore t :which-key "project")
+   :general
+   (my-leader-def
+     "p"   '(:ignore t :which-key "project")
 
-    ;; Navegação e Troca (Doom-style)
-    "p p" '(projectile-switch-project :which-key "switch project")
-    "p b" '(projectile-switch-to-buffer :which-key "switch project buffer")
-    "p f" '(projectile-find-file :which-key "find file in project")
-    
-    ;; Outros comandos de projeto
-    "p r" '(projectile-recentf :which-key "recent files")
-    "p d" '(projectile-remove-known-project :which-key "remove project")
-    "p a" '(projectile-add-known-project :which-key "add project")
+     ;; Navigation and Switching (Doom-style)
+     "p p" '(projectile-switch-project :which-key "switch project")
+     "p b" '(projectile-switch-to-buffer :which-key "switch project buffer")
+     "p f" '(projectile-find-file :which-key "find file in project")
 
-    ;; Ações no Projeto
-    "p s" '(projectile-save-project-buffers :which-key "save project")
-    "p k" '(projectile-kill-buffers :which-key "kill buffers")
-    "p c" '(projectile-compile-project :which-key "compile")
-    "p t" '(projectile-test-project :which-key "run tests")
-    "p i" '(projectile-invalidate-cache :which-key "invalidate cache")
+     ;; Other project commands
+     "p r" '(projectile-recentf :which-key "recent files")
+     "p d" '(projectile-remove-known-project :which-key "remove project")
+     "p a" '(projectile-add-known-project :which-key "add project")
 
-    ;; Utilitários e Busca
-    "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
-    "p x" '(projectile-run-async-shell-command-in-root :which-key "async cmd")
-    
-    ;; Busca de texto (grep/ripgrep) na raiz do projeto
-    "p /" '(consult-ripgrep :which-key "search in project")))
+     ;; Project Actions
+     "p s" '(projectile-save-project-buffers :which-key "save project")
+     "p k" '(projectile-kill-buffers :which-key "kill buffers")
+     "p c" '(projectile-compile-project :which-key "compile")
+     "p t" '(projectile-test-project :which-key "run tests")
+     "p i" '(projectile-invalidate-cache :which-key "invalidate cache")
+
+     ;; Utilities and Search
+     "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
+     "p x" '(projectile-run-async-shell-command-in-root :which-key "async cmd")
+
+     ;; Text search (grep/ripgrep) at project root
+     "p /" '(consult-ripgrep :which-key "search in project")))
     #+end_src
 
 ** Workspaces (Perspective)
@@ -809,9 +809,9 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
   (my-leader-def "c f" '(apheleia-format-buffer :which-key "format buffer"))
 #+end_src
 
-** Linting (Flymake)
-Configurado para integração com Eglot e Consult. Substitui o Flycheck para consistência.
-#+begin_src emacs-lisp
+ ** Linting (Flymake)
+ Configured for Eglot and Consult integration. Replaces Flycheck for consistency.
+ #+begin_src emacs-lisp
   ;; Simple flymake configuration - avoid eval-after-load to prevent macro expansion errors
   (add-hook 'prog-mode-hook #'flymake-mode)
   
@@ -820,7 +820,7 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
     '(progn
        (setq flymake-fringe-indicator-position 'left-fringe)
        
-       ;; 1. Configuração da Janela (Popup Limpo no Rodapé)
+        ;; 1. Window Configuration (Clean Popup at Bottom)
        (add-to-list 'display-buffer-alist
                     '("\\*Flymake diagnostics.*"
                       (display-buffer-reuse-window display-buffer-in-side-window)
@@ -831,7 +831,7 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
                       (window-parameters . ((no-other-window . nil)
                                             (mode-line-format . none)))))
        
-       ;; 2. Visual do buffer de diagnósticos
+        ;; 2. Diagnostics buffer visuals
        (add-hook 'flymake-project-diagnostics-mode-hook
                  (lambda ()
                    (setq header-line-format nil) 
@@ -840,14 +840,14 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
                    (display-line-numbers-mode 0)
                    (hl-line-mode 1)))))
 
-  ;; 3. Função de Busca para Consult (simplified to avoid macro expansion issues)
-  (defun my/consult-flymake-project ()
-    "Busca erros do projeto via Consult, extraindo dados do Flymake."
-    (interactive)
-    (flymake-show-project-diagnostics)
-    (let ((diag-buffer (get-buffer "*Flymake diagnostics*")))
-      (if (not diag-buffer)
-          (message "Aguarde... O Eglot ainda está indexando os erros.")
+   ;; 3. Search function for Consult (simplified to avoid macro expansion issues)
+   (defun my/consult-flymake-project ()
+     "Search project errors via Consult, extracting data from Flymake."
+     (interactive)
+     (flymake-show-project-diagnostics)
+     (let ((diag-buffer (get-buffer "*Flymake diagnostics*")))
+       (if (not diag-buffer)
+           (message "Please wait... Eglot is still indexing errors.")
         (with-current-buffer diag-buffer
           (let ((entries-raw (if (functionp tabulated-list-entries)
                                   (funcall tabulated-list-entries)
@@ -877,7 +877,7 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
                                :category 'consult-location
                                :sort nil
                                :lookup #'consult--lookup-candidate)
-              (message "Nenhum erro encontrado no projeto.")))))))
+                             (message "No errors found in project.")))))))
 
   ;; Keybindings for flymake
   (my-leader-def
@@ -890,17 +890,17 @@ Configurado para integração com Eglot e Consult. Substitui o Flycheck para con
     "e N" '(flymake-goto-prev-error :which-key "prev"))
 #+end_src
 
-* Java Development (Eglot + JDTLS)
-Configuração leve usando Eglot, substituindo o lsp-java pesado.
+ * Java Development (Eglot + JDTLS)
+ Lightweight configuration using Eglot, replacing the heavy lsp-java.
 
-#+begin_src emacs-lisp
+ #+begin_src emacs-lisp
 (use-package eglot-java
   :ensure t
   :hook (((java-mode java-ts-mode) . eglot-java-mode))
-  :config
-  ;; Aumentar o timeout do eglot para dar tempo do JDTLS subir (comum em Java)
-  (setq eglot-connect-timeout 120)
-  (setq eglot-request-timeout 60)
+   :config
+   ;; Increase eglot timeout to give JDTLS time to start up (common in Java)
+   (setq eglot-connect-timeout 120)
+   (setq eglot-request-timeout 60)
 
   (defun my/eglot-java-init-opts (server jdt)
     (let ((debug-jar "/home/nathanmcunha/.config/emacs/java-debug/debug-plugin.jar"))
@@ -914,53 +914,53 @@ Configuração leve usando Eglot, substituindo o lsp-java pesado.
   (setq eglot-java-user-init-opts-fn 'my/eglot-java-init-opts))
   #+end_src
 
-* Debugging (DAPE)
-Configuração moderna de debug sem dap-mode.
+ * Debugging (DAPE)
+ Modern debug configuration without dap-mode.
 
-#+begin_src emacs-lisp
-  (require 'which-func)
-  (which-function-mode 1)
+ #+begin_src emacs-lisp
+   (require 'which-func)
+   (which-function-mode 1)
 
-  (defun my/get-java-full-test-target (is-gradle)
-  "Retorna o alvo do teste com o pacote completo (ex: com.foo.Bar.test)."
-  (let* ((package-name (save-excursion
-                         (goto-char (point-min))
-                         (when (re-search-forward "^package \\([^; \n]+\\);" nil t)
-                           (match-string 1))))
-         (class-name (file-name-base (buffer-file-name)))
-         (method-name (which-function))
-         (clean-method (when (stringp method-name)
-                         (car (last (split-string method-name "\\.")))))
-         ;; Monta o FQN (Full Qualified Name)
-         (full-class (if package-name (concat package-name "." class-name) class-name)))
-    (cond
-     ((not clean-method) full-class)
+   (defun my/get-java-full-test-target (is-gradle)
+   "Return the test target with the full package (e.g., com.foo.Bar.test)."
+   (let* ((package-name (save-excursion
+                          (goto-char (point-min))
+                          (when (re-search-forward "^package \\([^; \n]+\\);" nil t)
+                            (match-string 1))))
+          (class-name (file-name-base (buffer-file-name)))
+          (method-name (which-function))
+          (clean-method (when (stringp method-name)
+                          (car (last (split-string method-name "\\.")))))
+          ;; Build the FQN (Fully Qualified Name)
+          (full-class (if package-name (concat package-name "." class-name) class-name)))
+     (cond
+      ((not clean-method) full-class)
 (is-gradle (format "*%s.%s" class-name clean-method))
 
-     (t (format "%s#%s" full-class clean-method)))))
+      (t (format "%s#%s" full-class clean-method)))))
 
-  (defun my/java-debug-test-at-point ()
-    "Inicializa a JVM em modo debug apenas para o método ou classe sob o cursor."
-    (interactive)
-    (unless (projectile-project-p)
-      (user-error "Não estamos em um projeto Projectile"))
-    
-    (let* ((project-root (projectile-project-root))
-           (is-gradle (or (string= (projectile-project-type) 'gradle)
-                          (file-exists-p (expand-file-name "gradlew" project-root))))
-           (test-target (my/get-java-full-test-target is-gradle))
-           (buf-name " *java-test-debug-process*")
-           ;; Constrói o comando específico
-           (cmd (if is-gradle
-                    (format "./gradlew test --tests \"%s\" --rerun-tasks --debug-jvm" test-target)
-                  (format "mvn -Dmaven.surefire.debug test -Dtest=\"%s\"" test-target))))
+   (defun my/java-debug-test-at-point ()
+     "Initialize JVM in debug mode only for the method or class under cursor."
+     (interactive)
+     (unless (projectile-project-p)
+       (user-error "Not in a Projectile project"))
 
-      ;; Limpa processos anteriores
-      (when (get-buffer buf-name)
-        (ignore-errors (delete-process (get-buffer-process buf-name)))
-        (kill-buffer buf-name))
+     (let* ((project-root (projectile-project-root))
+            (is-gradle (or (string= (projectile-project-type) 'gradle)
+                           (file-exists-p (expand-file-name "gradlew" project-root))))
+            (test-target (my/get-java-full-test-target is-gradle))
+            (buf-name " *java-test-debug-process*")
+            ;; Build the specific command
+            (cmd (if is-gradle
+                     (format "./gradlew test --tests \"%s\" --rerun-tasks --debug-jvm" test-target)
+                   (format "mvn -Dmaven.surefire.debug test -Dtest=\"%s\"" test-target))))
 
-      (message "Lançando JVM para: %s..." test-target)
+       ;; Clean up previous processes
+       (when (get-buffer buf-name)
+         (ignore-errors (delete-process (get-buffer-process buf-name)))
+         (kill-buffer buf-name))
+
+       (message "Launching JVM for: %s..." test-target)
       
       (let* ((default-directory project-root)
              (proc (start-process-shell-command "java-debug-proc" buf-name cmd)))
@@ -974,15 +974,15 @@ Configuração moderna de debug sem dap-mode.
                  (goto-char (point-max))
                  (insert output))))
            
-           (when (string-match-p "Listening for transport dt_socket" output)
-             (message "JVM pronta para [%s]! Use o Dape para anexar." test-target)))))))
-    
+            (when (string-match-p "Listening for transport dt_socket" output)
+              (message "JVM ready for [%s]! Use Dape to attach." test-target)))))))
+
         (defun my/show-java-debug-log ()
-              "Mostra o buffer de log do processo de debug atual."
+              "Show the log buffer of the current debug process."
               (interactive)
               (if (get-buffer " *java-test-debug-process*")
                   (display-buffer " *java-test-debug-process*")
-                (message "Nenhum log de debug ativo.")))
+                (message "No active debug log.")))
 
                 (use-package dape
                   :ensure t
@@ -992,15 +992,15 @@ Configuração moderna de debug sem dap-mode.
           (add-to-list 'dape-configs
              `(java-attach
                modes (java-mode java-ts-mode)
-               ensure (lambda (&rest _) (eglot-current-server))
-               ;; Aumentamos a resiliência da porta
-               port (lambda ()
-                      (let ((port (eglot-execute-command 
-                                   (eglot-current-server) 
-                                   "vscode.java.startDebugSession" nil)))
-                        ;; Um breve respiro para o Sentinel do Eglot não se perder
-                        (sit-for 0.2)
-                        port))
+                ensure (lambda (&rest _) (eglot-current-server))
+                ;; Increase port resilience
+                port (lambda ()
+                       (let ((port (eglot-execute-command
+                                    (eglot-current-server)
+                                    "vscode.java.startDebugSession" nil)))
+                         ;; A brief pause to prevent the Eglot Sentinel from getting lost
+                         (sit-for 0.2)
+                         port))
                :type "java"
                :request "attach"
                :hostName "127.0.0.1"
@@ -1020,22 +1020,22 @@ Configuração moderna de debug sem dap-mode.
 
     #+end_src
 
-* Visual Wrapping (Adaptive Wrap)
-Melhora a leitura de linhas longas em buffers de código, mantendo a indentação visual.
+ * Visual Wrapping (Adaptive Wrap)
+ Improves reading of long lines in code buffers, maintaining visual indentation.
 
-#+begin_src emacs-lisp
-  (use-package adaptive-wrap
-    :ensure t
-    :config
-    ;; Define quanto de recuo EXTRA adicionar nas linhas quebradas (padrão é 0).
-    ;; Colocar 2 ajuda a diferenciar visualmente a quebra de uma nova linha indentada.
-    (setq-default adaptive-wrap-extra-indent 2))
+ #+begin_src emacs-lisp
+   (use-package adaptive-wrap
+     :ensure t
+     :config
+     ;; Define how much EXTRA indentation to add on wrapped lines (default is 0).
+     ;; Setting to 2 helps visually distinguish the wrap from a new indented line.
+     (setq-default adaptive-wrap-extra-indent 2))
 
-  ;; Hook para ativar automaticamente em programação
-  (add-hook 'prog-mode-hook
-            (lambda ()
-              (visual-line-mode 1)          ;; Ativa a quebra de linha na borda da janela
-              (adaptive-wrap-prefix-mode 1))) ;; Ativa a correção inteligente da indentação
+   ;; Hook to automatically activate in programming
+   (add-hook 'prog-mode-hook
+             (lambda ()
+               (visual-line-mode 1)          ;; Enable line wrapping at window edge
+               (adaptive-wrap-prefix-mode 1))) ;; Enable smart indentation correction
 #+end_src
 * General Keybindings
 ** Window Management
@@ -1201,32 +1201,32 @@ Melhora a leitura de linhas longas em buffers de código, mantendo a indentaçã
 * Extras & Languages
 ** Gemini & Terminal
 #+begin_src emacs-lisp
-    ;; 1. Dependências (Eat e Popup)
-      (use-package eat
-        :ensure t
-        :config
-        (setq eat-kill-buffer-on-exit t))
+     ;; 1. Dependencies (Eat and Popup)
+       (use-package eat
+         :ensure t
+         :config
+         (setq eat-kill-buffer-on-exit t))
 
-      ;; Forçamos o carregamento do popup para garantir que ele exista antes do gemini-cli
-      (use-package popup
-        :ensure t
-        :demand t)
+       ;; Force loading popup to ensure it exists before gemini-cli
+       (use-package popup
+         :ensure t
+         :demand t)
 
-      ;; 2. Gemini CLI Wrapper
-      (use-package gemini-cli
-        :vc (:url "https://github.com/linchen2chris/gemini-cli.el" :rev :newest)
-        ;; AQUI ESTÁ A CORREÇÃO: Adicionamos 'popup' na lista :after
-        :after (eat popup)
-        :config
-        ;; Tenta encontrar o executável automaticamente (mesmo código que te passei antes)
-        (let ((gemini-path (string-trim (shell-command-to-string "mise which gemini"))))
-          (if (and (not (string-empty-p gemini-path))
-                   (file-executable-p gemini-path))
-              (setq gemini-cli-command gemini-path)
-            (setq gemini-cli-command (or (executable-find "gemini")
-                                         "~/.local/share/mise/installs/node/20.19.6/bin/gemini")))))
+       ;; 2. Gemini CLI Wrapper
+       (use-package gemini-cli
+         :vc (:url "https://github.com/linchen2chris/gemini-cli.el" :rev :newest)
+         ;; HERE IS THE FIX: We added 'popup' to the :after list
+         :after (eat popup)
+         :config
+         ;; Try to find the executable automatically (same code I gave you before)
+         (let ((gemini-path (string-trim (shell-command-to-string "mise which gemini"))))
+           (if (and (not (string-empty-p gemini-path))
+                    (file-executable-p gemini-path))
+               (setq gemini-cli-command gemini-path)
+             (setq gemini-cli-command (or (executable-find "gemini")
+                                          "~/.local/share/mise/installs/node/20.19.6/bin/gemini")))))
 
-      ;; 3. Integração com Evil Mode
+       ;; 3. Evil Mode Integration
       (use-package eat
         :defer t
         :hook (eat-mode . (lambda ()
