@@ -62,6 +62,26 @@ This config includes a set of CLI tools for maintenance:
 - **`bin/emacs-cli update`**: Updates all packages and prunes obsolete ones.
 - **`bin/validate-config`**: Checks `config.org` for syntax errors or unclosed source blocks.
 
+## 📂 Structure
+
+This configuration keeps your `~/.config/emacs/` clean by strictly separating configuration from generated data.
+
+```text
+~/.config/emacs/
+├── init.el             # Entry point (bootstraps the environment)
+├── config.org          # Main Literate Configuration (EDIT THIS)
+├── early-init.el       # Startup optimizations
+├── bin/                # CLI management tools
+└── .local/             # All generated/downloaded files (Git ignored)
+    ├── packages/       # Installed packages (ELPA), LSPs, Grammars
+    ├── state/          # Persistent history, bookmarks, sessions
+    ├── cache/          # Disposable cache, backups, autosaves
+    ├── docs/           # Documentation archive
+    └── etc/            # Misc configuration data
+```
+
+A backup of the essential configuration is maintained in `emacs-config.tar.gz`.
+
 ## 🚀 Installation
 
 1. **Backup your existing configuration:**
@@ -73,6 +93,10 @@ This config includes a set of CLI tools for maintenance:
    ```bash
    git clone <your-repo-url> ~/.config/emacs
    ```
+   *Alternatively, if restoring from a backup, extract the archive:*
+   ```bash
+   tar -xzf emacs-config.tar.gz -C ~/.config/emacs
+   ```
 
 3. **Install Fonts:**
    Ensure you have a [Nerd Font](https://www.nerdfonts.com/) installed (e.g., JetBrains Mono Nerd Font). After opening Emacs, run `M-x nerd-icons-install-fonts`.
@@ -81,211 +105,135 @@ This config includes a set of CLI tools for maintenance:
    ```bash
    ./bin/emacs-cli sync
    ```
+   *This will automatically populate `.local/packages/`.*
 
 ## ⌨️ Keybindings
 
 All keybindings use Doom-style leader keys:
-- **`SPC`**: Leader key (in normal/visual/insert modes)
-- **M-SPC`**: Global prefix leader key
+- **`SPC`**: Leader key (Normal/Visual states)
+- **`M-SPC`**: Global leader (Insert/Emacs states)
 
-### Files & Buffers
+### Top Level
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `SPC .` | `find-file` | Find file anywhere |
+| `SPC ,` | `switch-to-buffer` | Switch buffer |
+| `SPC TAB` | `mode-line-other-buffer` | Last buffer |
+| `SPC \`` | `evil-switch-to-windows-last-buffer` | Last window buffer |
+| `SPC SPC` | `execute-extended-command` | M-x |
+| `SPC ;` | `embark-act` | Embark Actions |
+| `SPC u` | `vundo` | Undo Tree |
 
-| Key | Action |
-| :--- | :--- |
-| `SPC .` | Find file anywhere |
-| `SPC ,` | Switch buffer |
-| `SPC TAB` | Last buffer / Switch workspace |
-| `SPC b b` | Switch buffer (project) |
-| `SPC b B` | Switch buffer (all) |
-| `SPC b i` | Ibuffer |
-| `SPC b n` / `SPC b p` | Next/Previous buffer |
-| `SPC b s` | Save buffer |
-| `SPC b S` | Save all buffers |
-| `SPC b r` | Revert buffer |
-| `SPC b k` | Kill buffer |
-| `SPC b K` | Kill all buffers |
-| `SPC b O` | Kill other buffers |
-| `SPC b N` | New buffer |
-| `SPC f f` | Find file in project |
-| `SPC f F` | Find file anywhere |
-| `SPC f r` | Recent files |
-| `SPC f s` | Save file |
-| `SPC f S` | Save as... |
-| `SPC f R` | Rename/move file |
-| `SPC f D` | Delete file |
-| `SPC f y` | Copy file path |
-| `SPC f Y` | Copy relative path |
-| `SPC f p` | Open config.org |
-| `SPC f e` | Open early-init.el |
-| `SPC f E` | Browse .emacs.d |
+### Buffer (`SPC b`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `b b` | `projectile-switch-to-buffer` | Switch buffer (Project) |
+| `b B` | `switch-to-buffer` | Switch buffer (Global) |
+| `b i` | `ibuffer` | IBuffer |
+| `b k` | `kill-current-buffer` | Kill buffer |
+| `b K` | `my/kill-all-buffers` | Kill all buffers |
+| `b O` | `my/kill-other-buffers` | Kill other buffers |
+| `b n/p` | `next/previous-buffer` | Next/Prev buffer |
+| `b s` | `save-buffer` | Save buffer |
+| `b S` | `evil-write-all` | Save all |
+| `b r` | `revert-buffer` | Revert buffer |
+| `b y` | `my/copy-this-file` | Copy file contents |
 
-### Windows
+### Code & LSP (`SPC c`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `c a` | `eglot-code-actions` | Code Actions |
+| `c r` | `eglot-rename` | Rename symbol |
+| `c f` | `apheleia-format-buffer` | Format buffer |
+| `c d` | `xref-find-definitions` | Go to definition |
+| `c D` | `xref-find-references` | Find references |
+| `c j n` | `eglot-java-create-project` | New Java Project |
+| `c j i` | `eglot-java-organize-imports` | Organize Imports |
+| `c j r` | `my/eglot-restart` | Restart JDTLS |
+| `c C t` | `my/java-coverage-toggle` | Toggle Coverage |
 
-| Key | Action |
-| :--- | :--- |
-| `SPC w h/j/k/l` | Navigate window left/down/up/right |
-| `SPC w w` | Next window |
-| `SPC w H/J/K/L` | Move window left/down/up/right |
-| `SPC w s` | Split horizontal |
-| `SPC w v` | Split vertical |
-| `SPC w c` | Close window |
-| `SPC w o` | Close other windows |
-| `SPC w =` | Balance windows |
+### Debug (`SPC d`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `d t` | `my/java-debug-test-at-point` | Debug Test (Cursor) |
+| `d b` | `dape-breakpoint-toggle` | Toggle Breakpoint |
+| `d c` | `dape-continue` | Continue |
+| `d n` | `dape-next` | Step Over |
+| `d i` | `dape-step-in` | Step In |
+| `d o` | `dape-step-out` | Step Out |
+| `d r` | `dape-restart` | Restart Session |
+| `d Q` | `dape-kill` | Quit Debugger |
 
-### Search (Consult)
+### Errors (`SPC e`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `e p` | `flymake-show-project-diagnostics` | Project Errors |
+| `e b` | `flymake-show-buffer-diagnostics` | Buffer Errors |
+| `e l` | `consult-flymake` | Search Buffer Errors |
+| `e L` | `my/consult-flymake-project` | Search Project Errors |
+| `e n/N` | `flymake-goto-next/prev-error` | Next/Prev Error |
 
-| Key | Action |
-| :--- | :--- |
-| `SPC s s` | Search in current buffer |
-| `SPC s S` | Search in all buffers |
-| `SPC s g` | Go to line |
-| `SPC s i` | Jump to symbol (imenu) |
-| `SPC s h` | Jump to heading |
-| `SPC s f` | Find file (live) |
-| `SPC s k` | Yank pop (kill ring) |
+### Files (`SPC f`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `f f` | `projectile-find-file` | Find in Project |
+| `f F` | `find-file` | Find Anywhere |
+| `f r` | `consult-recent-file` | Recent Files |
+| `f s` | `save-buffer` | Save |
+| `f S` | `write-file` | Save As... |
+| `f y` | `my/copy-file-path` | Copy Path |
+| `f Y` | `my/copy-file-path-relative...` | Copy Relative Path |
+| `f p` | *(lambda)* | Open Config |
 
-### Git (Magit)
+### Git (`SPC g`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `g s` | `magit-status` | Status |
+| `g /` | `magit-dispatch` | Dispatch Menu |
+| `g f` | `magit-find-file` | Find File in Git |
+| `g b` | `magit-blame-addition` | Blame |
+| `g t` | `git-timemachine-toggle` | Time Machine |
+| `g l c` | `magit-log-current` | Log Current Branch |
+| `g l g` | `magit-log-all` | Log All |
 
-| Key | Action |
-| :--- | :--- |
-| `SPC g s` | Magit status |
-| `SPC g S` | Magit status here |
-| `SPC g /` | Magit dispatch |
-| `SPC g .` | Magit file dispatch |
-| `SPC g f` | Find file in Git |
-| `SPC g b` | Blame addition |
-| `SPC g t` | Git time machine |
-| `SPC g i` | Initialize repo |
-| `SPC g l c` | Log current branch |
-| `SPC g l f` | Log current file |
-| `SPC g l g` | Log all branches |
-| `SPC g r` | Discard selection |
-| `SPC g s` | Stage selection (in visual mode) |
+### Project (`SPC p`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `p p` | `projectile-switch-project` | Switch Project |
+| `p f` | `projectile-find-file` | Find File |
+| `p /` | `consult-ripgrep` | Search (Grep) |
+| `p b` | `projectile-switch-to-buffer` | Switch Buffer |
+| `p c` | `projectile-compile-project` | Compile |
+| `p t` | `projectile-test-project` | Test |
+| `p !` | `projectile-run-shell-command...` | Run Cmd |
 
-### Project (Projectile)
+### Search (`SPC s`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `s s` | `consult-line` | Search Buffer |
+| `s S` | `consult-line-multi` | Search All Buffers |
+| `s g` | `consult-goto-line` | Go to Line |
+| `s i` | `consult-imenu` | Jump to Symbol |
+| `s f` | `consult-find` | Find File (Live) |
+| `s k` | `consult-yank-pop` | Yank Ring |
 
-| Key | Action |
-| :--- | :--- |
-| `SPC p p` | Switch project |
-| `SPC p P` | Switch project (with workspace/persp) |
-| `SPC p b` | Switch project buffer |
-| `SPC p f` | Find file in project |
-| `SPC p r` | Recent files |
-| `SPC p d` | Remove project |
-| `SPC p a` | Add project |
-| `SPC p s` | Save project buffers |
-| `SPC p k` | Kill project buffers |
-| `SPC p c` | Compile project |
-| `SPC p t` | Run tests |
-| `SPC p i` | Invalidate cache |
-| `SPC p !` | Run command in root |
-| `SPC p x` | Run async command in root |
-| `SPC p /` | Search in project (ripgrep) |
+### Windows (`SPC w`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `w h/j/k/l` | `evil-window-...` | Navigate |
+| `w H/J/K/L` | `evil-window-move-...` | Move Window |
+| `w s` | `evil-window-split` | Split Horizontal |
+| `w v` | `evil-window-vsplit` | Split Vertical |
+| `w c` | `evil-window-delete` | Close Window |
+| `w =` | `balance-windows` | Balance |
 
-### Workspace (Perspective)
-
-| Key | Action |
-| :--- | :--- |
-| `SPC W s` | Switch workspace |
-| `SPC W n` | New/switch workspace |
-| `SPC W k` | Kill workspace |
-| `SPC W r` | Rename workspace |
-
-### Explorer (Treemacs)
-
-| Key | Action |
-| :--- | :--- |
-| `SPC E e` | Toggle Treemacs |
-| `M-0` | Select Treemacs window |
-
-### Code & LSP
-
-| Key | Action |
-| :--- | :--- |
-| `SPC c a` | Code actions |
-| `SPC c r` | Rename |
-| `SPC c f` | Format buffer |
-| `SPC c d` | Go to definition |
-| `SPC c D` | Find references |
-| `SPC c j n` | Java: New project |
-| `SPC c j i` | Java: Organize imports |
-| `SPC c j r` | Java: Restart Eglot |
-| `SPC c j t` | Java: Switch to java-ts-mode |
-| `SPC c j I` | Java: Install tree-sitter |
-
-### Debug (DAPE)
-
-| Key | Action |
-| :--- | :--- |
-| `SPC d t` | Debug test at point |
-| `SPC d b` | Toggle breakpoint |
-| `SPC d c` | Continue |
-| `SPC d n` | Next (Step Over) |
-| `SPC d i` | Step In |
-| `SPC d o` | Step Out |
-| `SPC d r` | Restart |
-| `SPC d l` | Show layout |
-| `SPC d Q` | Quit debugger |
-
-### Errors (Flymake)
-
-| Key | Action |
-| :--- | :--- |
-| `SPC e p` | Show project errors |
-| `SPC e b` | Show buffer errors |
-| `SPC e l` | Search buffer errors |
-| `SPC e L` | Search project errors |
-| `SPC e n` | Next error |
-| `SPC e N` | Previous error |
-
-### Undo
-
-| Key | Action |
-| :--- | :--- |
-| `SPC u` | Visual undo tree (vundo) |
-
-### Notes (Org Roam)
-
-| Key | Action |
-| :--- | :--- |
-| `SPC n r` | Toggle Roam buffer |
-| `SPC n f` | Find node |
-| `SPC n i` | Insert node |
-| `SPC n d t` | Capture today's daily note |
-
-### Terminal
-
-| Key | Action |
-| :--- | :--- |
-| `SPC o t h` | Open terminal here |
-| `SPC o t p` | Open terminal in project |
-
-### Jump (Evil Easymotion)
-
-| Key | Action |
-| :--- | :--- |
-| `SPC j w` | Jump to word |
-| `SPC j l` | Jump to line |
-| `SPC j c` | Jump to char |
-| `SPC j s` | Jump to char (timer) |
-| `SPC j j` | Jump to line |
-
-### Utility
-
-| Key | Action |
-| :--- | :--- |
-| `SPC SPC` | M-x (execute extended command) |
-| `SPC h r r` | Reload config |
-| `SPC ;` | Embark act |
-| `SPC a` | Embark actions |
-
-## 📂 Structure
-
-- **`init.el`**: Entry point. Sets up performance and the package manager.
-- **`config.org`**: Main configuration. Edit this file to customize your Emacs.
-- **`bin/`**: CLI management scripts.
-- **`early-init.el`**: UI and performance optimizations for startup.
-- **`snippets/`**: Custom Yasnippet snippets.
+### Workspaces (`SPC W`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `W s` | `persp-switch` | Switch Workspace |
+| `W n` | `persp-switch` | New/Switch |
+| `W k` | `persp-kill` | Kill Workspace |
+| `W r` | `persp-rename` | Rename Workspace |
 
 ## 🔧 Customization
 

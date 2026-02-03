@@ -8,9 +8,178 @@
 #+end_src
 
 * Core Configuration
+** Custom Functions
+#+begin_src emacs-lisp
+;; 1. Defina a função em uma seção de utilitários ou no topo do arquivo
+;; --- Smart TAB Dispatcher (Doom Style) ---
+(defun my/yas-try-expand-first ()
+  "Try to expand a yasnippet, then handle completion or indentation.
+Following Doom Emacs priority: Minibuffer > Yasnippet > Corfu > Indent."
+  (interactive)
+  (cond
+   ;; 1. Minibuffer: Mantém o comportamento de completação do Vertico
+   ((active-minibuffer-window)
+    (if (and (bound-and-true-p vertico-mode) vertico--candidates)
+        (vertico-insert)
+      (minibuffer-complete)))
+
+   ;; 2. PRIORIDADE DOOM: Tenta expandir o snippet ANTES da navegação do menu
+   ((and (bound-and-true-p yas-minor-mode) (yas-expand))
+    t)
+
+   ;; 3. Corfu: Se o menu estiver aberto, o TAB navega entre os candidatos
+   ((and (bound-and-true-p corfu-mode) corfu--candidates)
+    (corfu-next))
+
+   ;; 4. Suporte para Magit (Toggle de seções)
+   ((derived-mode-p 'magit-mode)
+    (magit-section-toggle (magit-current-section)))
+
+   ;; 5. Fallback final: Indentação padrão
+   (t
+    (indent-for-tab-command))))
+
+;; --- Mapeamento Global e Evil ---
+(global-set-key (kbd "TAB") 'my/yas-try-expand-first)
+(global-set-key (kbd "<tab>") 'my/yas-try-expand-first)
+
+;; Garante que o Evil Mode em Insert State use esta lógica
+(with-eval-after-load 'evil
+  (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
+  (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first))
+
+;; --- Doom-like "K" Documentation Lookup ---
+(defun my/smart-lookup ()
+  "Lookup documentation for the thing at point.
+   1. Elisp: describe-symbol
+   2. Org Src Block (Elisp): describe-symbol
+   3. Eglot: eglot-help-at-point
+   4. Fallback: evil-lookup"
+  (interactive)
+  (cond
+   ;; 1. Emacs Lisp Mode
+   ((derived-mode-p 'emacs-lisp-mode)
+    (let ((sym (thing-at-point 'symbol)))
+      (if sym (describe-symbol sym)
+        (message "No symbol at point"))))
+
+   ;; 2. Org Mode Source Blocks
+   ((and (eq major-mode 'org-mode) (org-in-src-block-p))
+    (let ((lang (car (org-babel-get-src-block-info)))
+          (sym (thing-at-point 'symbol t)))
+      (if (and (string= lang "emacs-lisp") sym)
+          (describe-symbol (intern sym))
+        (call-interactively #'evil-lookup))))
+
+   ;; 3. LSP / Eglot
+   ((bound-and-true-p eglot--managed-mode)
+    (eglot-help-at-point))
+
+   ;; 4. Fallback
+   (t
+    (call-interactively #'evil-lookup))))
+
+(with-eval-after-load 'evil
+  (define-key evil-motion-state-map (kbd "K") #'my/smart-lookup))
+
+;; Doom-like utility functions for file operations
+(defun my/copy-this-file ()
+  "Copy the current file to a new location."
+  (interactive)
+  (let* ((filename (buffer-file-name))
+         (new-name (read-file-name "Copy file to: " filename)))
+    (copy-file filename new-name 1)
+    (find-file new-name)
+    (message "Copied '%s' to '%s'" filename new-name)))
+
+(defun my/move-this-file ()
+  "Move/rename the current file to a new location."
+  (interactive)
+  (let* ((filename (buffer-file-name))
+         (new-name (read-file-name "Move file to: " filename)))
+    (rename-file filename new-name 1)
+    (find-file new-name)
+    (set-visited-file-name new-name)
+    (message "Moved '%s' to '%s'" filename new-name)))
+
+(defun my/delete-this-file ()
+  "Delete the current file and kill its buffer."
+  (interactive)
+  (let ((filename (buffer-file-name)))
+    (when (and filename (y-or-n-p (format "Really delete '%s'?" filename)))
+      (delete-file filename)
+      (kill-current-buffer)
+      (message "Deleted '%s'" filename))))
+
+(defun my/copy-file-path ()
+  "Copy the current file's path to the kill ring."
+  (interactive)
+  (let ((filename (or (buffer-file-name) (error "Buffer not visiting a file"))))
+    (kill-new filename)
+    (message "Copied: %s" filename)))
+
+(defun my/copy-file-path-relative-to-project ()
+  "Copy the current file's path relative to project root to the kill ring."
+  (interactive)
+  (let* ((filename (or (buffer-file-name) (error "Buffer not visiting a file")))
+         (project-root (or (projectile-project-root) (error "Not in a project")))
+         (relative-path (file-relative-name filename project-root)))
+    (kill-new relative-path)
+    (message "Copied: %s" relative-path)))
+
+(defun my/kill-all-buffers ()
+  "Kill all buffers except the current one and special buffers."
+  (interactive)
+  (let ((current-buffer (current-buffer)))
+    (dolist (buffer (buffer-list))
+      (unless (or (eq buffer current-buffer)
+                  (string-match-p "\*.*\*" (buffer-name buffer)))
+        (kill-buffer buffer))))
+    (message "Killed all buffers"))
+
+(defun my/kill-other-buffers ()
+  "Kill all buffers except the current one."
+  (interactive)
+  (let ((current-buffer (current-buffer)))
+    (dolist (buffer (buffer-list))
+      (unless (eq buffer current-buffer)
+        (kill-buffer buffer))))
+    (message "Killed other buffers"))
+
+;; Terminal Launchers
+(defun my/launch-alacritty (dir) (call-process-shell-command (format "alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
+
+(defun my/open-terminal-here () (interactive) (my/launch-alacritty default-directory))
+(defun my/open-terminal-in-project () (interactive) (my/launch-alacritty 'projectile-project-info))
+#+end_src
 ** Defaults and UI
 We start by cleaning up the UI to make it look modern and minimal, similar to Doom's defaults.
 #+begin_src emacs-lisp
+  ;; --- Emacs Build Information ---
+  (defun my/emacs-build-info ()
+    "Display detailed information about Emacs build and features."
+    (interactive)
+    (with-output-to-temp-buffer "*Emacs Build Info*"
+      (princ (format "Emacs Version: %s\n\n" emacs-version))
+      (princ (format "System Configuration: %s\n\n" system-configuration))
+      (princ "Compilation Options:\n")
+      (princ "====================\n")
+      (dolist (opt (split-string system-configuration-options))
+        (princ (format "  %s\n" opt)))
+      (princ "\n\nNative Compilation:\n")
+      (princ "===================\n")
+      (princ (format "  Available: %s\n" (if (featurep 'native-compile) "Yes" "No")))
+      (when (featurep 'native-compile)
+        (princ (format "  Version: %s\n" native-comp-version))
+        (princ (format "  ELN Load Path: %s\n" native-comp-eln-load-path)))
+      (princ "\n\nFeatures:\n")
+      (princ "=========\n")
+      (dolist (feature features)
+        (when (string-match-p "^\\(jansson\\|libxml2\\|sqlite\\|json\\|tree-sitter\\|gnutls\\|imagemagick\\)" (symbol-name feature))
+          (princ (format "  %s\n" feature))))
+      (switch-to-buffer "*Emacs Build Info*")
+      (view-mode)))
+
   ;; Remove GUI clutter
   (setq inhibit-startup-message t)
   (scroll-bar-mode -1)        ; Disable visible scrollbar
@@ -34,7 +203,7 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
 
   ;; Visual column indicator (100 characters)
   (setopt display-fill-column-indicator-column 100)
-  (setq-default display-fill-column-indicator-character ?\|)
+  (setq-default display-fill-column-indicator-character ?|)
   (add-hook 'prog-mode-hook #'display-fill-column-indicator-mode)
   ;; (set-face-attribute 'fill-column-indicator nil :foreground "grey90" :background "transparent")
 
@@ -42,10 +211,11 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
   (dolist (mode '(org-mode-hook
                   term-mode-hook
                   shell-mode-hook
-                  treemacs-mode-hook
                   eshell-mode-hook
                   eat-mode-hook
-                  gemini-cli-mode-hook))
+                  gemini-cli-mode-hook
+                  dirvish-mode-hook
+                  dirvish-side-mode-hook))
     (add-hook mode (lambda () (display-line-numbers-mode 0))))
 
   ;; Zoom shortcuts
@@ -57,19 +227,19 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (interactive)
     (dired (expand-file-name "~/.config/emacs/")))
 
-  ;; Diminish: Clean up mode line by hiding minor modes
-  (use-package diminish :ensure t)
 
   ;; Recent files tracking
   (use-package recentf
+    :ensure nil
     :init
     (recentf-mode 1)
     :config
     (setq recentf-max-saved-items 200)
-    (setq recentf-exclude '("\\.git/" "\\.emacs\\.d/eln-cache/" "/tmp/" "/elpa/")))
+    (setq recentf-exclude '("\.git/" "\.emacs\.d/eln-cache/" "/tmp/" "/elpa/")))
 
   ;; Save Place (Restore cursor position)
   (use-package saveplace
+    :ensure nil
     :init (save-place-mode 1))
 
   ;; Super Save (Auto-save on focus change)
@@ -97,41 +267,6 @@ Start the Emacs server automatically to enable ~emacsclient~ connections.
 To mimic Doom's leader keys (~SPC~), we use ~general.el~.
 #+begin_src emacs-lisp
 (setq tab-always-indent 'complete)
-  (use-package general
-    :demand t
-    :config
-    (general-create-definer my-leader-def
-      :prefix "SPC"
-      :states '(normal visual insert emacs)
-      :keymaps 'override
-      :global-prefix "M-SPC") ;; Changed to M-SPC to free up C-SPC for completion
-
-    (my-leader-def
-      ""    nil
-      "SPC" '(execute-extended-command :which-key "M-x")
-
-      ;; Config Reload & Help
-      "h"   '(:ignore t :which-key "help/config")
-      "h r" '(:ignore t :which-key "reload")
-      "h r r" '((lambda () (interactive) (load-file user-init-file)) :which-key "reload config")
-
-      ;; Code (Eglot/LSP)
-      "c"   '(:ignore t :which-key "code")
-      "c a" '(eglot-code-actions :which-key "code action")
-      "c r" '(eglot-rename :which-key "rename")
-      "c f" '(apheleia-format-buffer :which-key "format")
-      "c d" '(xref-find-definitions :which-key "defintion")
-      "c D" '(xref-find-references :which-key "references")
-      
-      ;; Java
-      "c j" '(:ignore t :which-key "java project")
-      "c j n" '(eglot-java-create-project :which-key "new project")
-      "c j i" '(eglot-java-organize-imports :which-key "organize imports")
-      "c j r" '(my/eglot-restart :which-key "restart eglot")
-      "c j t" '(my/switch-to-java-ts-mode :which-key "switch to java-ts-mode")
-      "c j I" '(my/install-java-tree-sitter :which-key "install java grammar")
-
-      "f"   '(:ignore t :which-key "file")))
 #+end_src
 
 ** Which-Key
@@ -142,33 +277,52 @@ To mimic Doom's leader keys (~SPC~), we use ~general.el~.
     (setq which-key-idle-delay 0.3))
 #+end_src
 
+* Window Management (Popups & Rules)
+** Popper (Popup Behavior)
+   (use-package popper
+     :ensure t
+     :bind (("C-`"   . popper-toggle)
+            ("M-`"   . popper-cycle)
+            ("C-M-`" . popper-toggle-type))
+     :init
+     (setq popper-reference-buffers
+           '("\\*Messages\\*"
+             "Output\\*$"
+             "\\*Async Shell Command\\*"
+             "\\*Help\\*"
+             "\\*compilation\\*"
+             "\\*Flymake diagnostics\\*"
+             "\\*Warnings\\*"
+             help-mode
+             compilation-mode))
+     (popper-mode +1)
+     (popper-echo-mode +1)) ; Show status in echo area
+
+** Window Placement Rules (display-buffer-alist)
+   (use-package emacs
+     :config
+     ;; Prevent some buffers from taking over the whole frame
+     (setq display-buffer-alist
+           '(
+             ;; Bottom side buffers (Height 0.3)
+             ("\\*\\(Output\\|Injector\\|Async Shell Command\\).*"
+              (display-buffer-reuse-window display-buffer-at-bottom)
+              (window-height . 0.3))
+             
+             ;; Help buffers
+             ("\\*Help.*"
+              (display-buffer-reuse-window display-buffer-at-bottom)
+              (window-height . 0.4))
+             
+             ;; Magit: Let it do its own thing (it manages windows well)
+             ("Magit.*"
+              (display-buffer-same-window))
+             )))
+
 * Evil Mode (Vim Emulation)
 This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-collection`).
 #+begin_src emacs-lisp
-            (use-package evil
-              :demand t
-              :init
-              ;; Pre-load configuration is required for evil-collection
-              (setq evil-want-integration t)
-              (setq evil-want-keybinding nil)
-              (setq evil-want-C-u-scroll t)
-              (setq evil-undo-system 'undo-fu)
-              (setq evil-search-module 'evil-search)
-              :config
-              (evil-mode 1)
-              
-
-              ;; Bind TAB in insert state to trigger completion
-              (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
-              (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first)
-              ;; Set cursor colors
-              (setq evil-emacs-state-cursor    '("#649bce" box)
-                    evil-normal-state-cursor   '("#ebcb8b" box)
-                    evil-visual-state-cursor   '("#676f7d" box)
-                    evil-insert-state-cursor   '("#ebcb8b" bar)
-                    evil-replace-state-cursor  '("#ebcb8b" hbar)
-                    evil-operator-state-cursor '("#ebcb8b" hollow)))
-        (use-package evil-collection
+                  (use-package evil-collection
           :after evil
           :ensure t
           :custom
@@ -196,7 +350,6 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
               org
               )))          ; Man pages
 
-          (use-package undo-fu)
 #+end_src
 
 ** Evil Extensions
@@ -296,15 +449,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     :after evil
     :demand t
     :config
-    (evilem-default-keybindings "gs")
-    :general
-    (my-leader-def
-      "j"   '(:ignore t :which-key "jump")
-      "j w" '(evilem-motion-forward-word-begin :which-key "word")
-      "j l" '(evilem-motion-next-line :which-key "line")
-      "j c" '(evilem-motion-find-char :which-key "char")
-      "j s" '(evilem-motion-find-char-timer :which-key "find (timer)")
-      "j j" '(evilem-motion-next-line :which-key "line")))
+    (evilem-default-keybindings "gs"))
 #+end_src
 
  * Undo System
@@ -314,16 +459,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
  3. ~vundo~: Graphical visualizer of the undo tree (for when you get lost in undos/redos).
 
  #+begin_src emacs-lisp
-   (use-package undo-fu
-     :config
-     ;; Increase memory limits to prevent Emacs from aggressively deleting old history
-     ;; (Values copied from Doom Emacs)
-     (setq undo-limit 6710886400 ;; 64mb
-           undo-strong-limit 100663296 ;; 96mb
-           undo-outer-limit 1006632960) ;; 960mb
-     )
-
-  (use-package undo-fu-session
+     (use-package undo-fu-session
     :ensure t
     :init
     (undo-fu-session-global-mode)
@@ -336,11 +472,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
      :config
      ;; Use beautiful Unicode symbols for the tree
      (setq vundo-glyph-alist vundo-unicode-symbols)
-     (setq vundo-compact-display t)
-
-    :general
-    (my-leader-def
-      "u" '(vundo :which-key "undo tree (visual)")))
+     (setq vundo-compact-display t))
 #+end_src
 * Visuals & Themes
 #+begin_src emacs-lisp
@@ -396,8 +528,10 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     (define-key doom-modeline-mode-map (kbd "<mode-line> <flymake> <mouse-1>") 'my/doom-modeline-flymake-click))
 
   ;; Ansi Colors for Compilation
-  (use-package ansi-color :hook (compilation-filter . ansi-color-compilation-filter))
-  
+  (use-package ansi-color
+    :ensure nil
+    :hook (compilation-filter . ansi-color-compilation-filter))
+
   ;; Rainbow Identifiers
   (use-package rainbow-identifiers
     :ensure t
@@ -420,7 +554,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
                 ("C-f" . vertico-scroll-down)
                 ("C-b" . vertico-scroll-up)))
 
-  (use-package savehist :init (savehist-mode))
+  (use-package savehist :ensure nil :init (savehist-mode))
 
   (use-package orderless
     :ensure t
@@ -465,19 +599,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     (setq consult-widen-key ">")
     (setq consult-preview-key 'any)
     (autoload 'projectile-project-root "projectile")
-    (setq consult-project-function (lambda (_) (projectile-project-root)))
-    
-    :general
-    (my-leader-def
-      "s"   '(:ignore t :which-key "search")
-      "s s" '(consult-line :which-key "search buffer")
-      "s S" '(consult-line-multi :which-key "search all buffers")
-      "s g" '(consult-goto-line :which-key "goto line")
-      "s i" '(consult-imenu :which-key "jump to symbol")
-      "s h" '(consult-outline :which-key "jump to heading")
-      "s f" '(consult-find :which-key "find file (live)")
-      "s k" '(consult-yank-pop :which-key "yank pop")
-      "g M" '(consult-global-mark :which-key "jump to global mark")))
+    (setq consult-project-function (lambda (_) (projectile-project-root))))
 
   (use-package consult-dir
     :bind (("C-x C-d" . consult-dir)
@@ -498,15 +620,11 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     (setq prefix-help-command #'embark-prefix-help-command)
     :config
     (add-to-list 'display-buffer-alist
-                 '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
+                 '("\`\*Embark Collect \(Live\|Completions\)\*"
                    nil
                    (window-parameters (mode-line-format . none)))))
 
   (use-package embark-consult)
-
-  (my-leader-def
-    ";"   '(embark-act :which-key "act (embark)")
-    "a"   '(embark-act :which-key "actions"))
 #+end_src
 
 * In-Buffer Completion (Corfu + Cape)
@@ -544,15 +662,16 @@ Sets up the popup, cycling, and integration with icons.
           ("C-e" . corfu-send-shell)    ;; Send candidate to shell/minibuffer
           ("SPC" . corfu-insert-separator))) ;; Helps filtering with Orderless
 
-  ;; Pretty icons for Corfu
+;; Pretty icons for Corfu
   (use-package nerd-icons-corfu
+    :ensure (nerd-icons-corfu :host github :repo "LuigiPiucco/nerd-icons-corfu")
     :after corfu
     :config
     (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
- #+end_src
+#+end_src
 
 * Development Tools
- ** Snippets (Yasnippet)
+** Snippets (Yasnippet)
  #+begin_src emacs-lisp
      (use-package yasnippet
        :ensure t
@@ -578,8 +697,7 @@ Sets up the popup, cycling, and integration with icons.
      :config
      (add-to-list 'completion-at-point-functions #'yasnippet-capf))
 #+end_src
-
- ** Extended Backends (Cape)
+** Extended Backends (Cape)
  Configures additional completion backends and the specific TAB integration strategy.
  
 
@@ -602,51 +720,7 @@ Sets up the popup, cycling, and integration with icons.
     ;; --- Custom Tab Handling Strategy ---
     ;; This function tries to expand a snippet first.
     ;; If no snippet is available, it falls back to indentation (or completion if we were to bind it inside corfu-map).
-    (defun my/yas-try-expand-first ()
-      "Try to expand a yasnippet. If failed, indent the line.
-In minibuffer, delegate to completion system. Works with Vertico/Corfu."
-      (interactive)
-      (cond
-       ;; If in minibuffer, use proper completion
-       ((active-minibuffer-window)
-        (cond
-         ;; If Vertico is active and has candidates, use Vertico's TAB
-         ((and (bound-and-true-p vertico-mode)
-               vertico--candidates)
-          (vertico-insert))
-         
-         ;; If in any minibuffer completion context, use standard completion
-         ((minibuffer-completing-p)
-          (minibuffer-complete))
-         
-         ;; Otherwise, try standard minibuffer completion
-         (t
-          (minibuffer-complete))))
-       
-       ;; If Corfu is active, let Corfu handle TAB for completion navigation
-       ((and (bound-and-true-p corfu-mode)
-             corfu--candidates)
-        (corfu-send-tab))
-       
-       ;; If in Magit, delegate to the standard fold/unfold command
-       ((derived-mode-p 'magit-mode)
-        (magit-section-toggle (magit-current-section)))
-       
-       ;; If buffer is read-only, do nothing (avoids 'Buffer is read-only' errors)
-       (buffer-read-only
-        (message "Read-only buffer"))
-
-       ;; Otherwise, try snippet expansion or fallback to indentation
-       (t
-        (unless (and (bound-and-true-p yas-minor-mode)
-                     (yas-expand))
-          (indent-for-tab-command)))))
-
-    ;; Bind TAB globally to our custom function.
-    ;; Note: When Corfu is open, corfu-map takes precedence, so TAB will navigate candidates
-     ;; instead of expanding snippets. This is usually the desired behavior to avoid confusion.
-     (global-set-key (kbd "TAB") 'my/yas-try-expand-first)
-     (global-set-key (kbd "<tab>") 'my/yas-try-expand-first))
+)
 #+end_src
  
  ** Git (Magit)
@@ -674,13 +748,7 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
    (setq magit-repository-directories '(("~/Projects" . 2) ("~/org" . 0)))
 
    ;; Doom tip: Close Magit window and restore previous when pressing 'q'
-   (setq magit-bury-buffer-function #'magit-mode-quit-window)
-
-  ;; Standard Doom-style keybindings
-  :general
-  (my-leader-def
-    "g s" '(magit-status :which-key "magit status")
-    "g S" '(magit-status-here :which-key "magit status here")))
+   (setq magit-bury-buffer-function #'magit-mode-quit-window))
 #+end_src
     
 ** Projectile
@@ -703,35 +771,7 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
   (setq projectile-sort-order 'recently-active)
   
   (dolist (dir '(".idea" ".vscode" "node_modules" "target" "build" "dist" ".cache" ".git"))
-    (add-to-list 'projectile-globally-ignored-directories dir))
-
-   :general
-   (my-leader-def
-     "p"   '(:ignore t :which-key "project")
-
-     ;; Navigation and Switching (Doom-style)
-     "p p" '(projectile-switch-project :which-key "switch project")
-     "p b" '(projectile-switch-to-buffer :which-key "switch project buffer")
-     "p f" '(projectile-find-file :which-key "find file in project")
-
-     ;; Other project commands
-     "p r" '(projectile-recentf :which-key "recent files")
-     "p d" '(projectile-remove-known-project :which-key "remove project")
-     "p a" '(projectile-add-known-project :which-key "add project")
-
-     ;; Project Actions
-     "p s" '(projectile-save-project-buffers :which-key "save project")
-     "p k" '(projectile-kill-buffers :which-key "kill buffers")
-     "p c" '(projectile-compile-project :which-key "compile")
-     "p t" '(projectile-test-project :which-key "run tests")
-     "p i" '(projectile-invalidate-cache :which-key "invalidate cache")
-
-     ;; Utilities and Search
-     "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
-     "p x" '(projectile-run-async-shell-command-in-root :which-key "async cmd")
-
-     ;; Text search (grep/ripgrep) at project root
-     "p /" '(consult-ripgrep :which-key "search in project")))
+    (add-to-list 'projectile-globally-ignored-directories dir)))
     #+end_src
 
 ** Workspaces (Perspective)
@@ -740,13 +780,6 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
     :bind ("C-x k" . persp-kill-buffer*)
     :init
     (persp-mode)
-    (my-leader-def
-      "W"   '(:ignore t :which-key "workspaces")
-      "W s" '(persp-switch :which-key "switch workspace")
-      "W n" '(persp-switch :which-key "new/switch")
-      "W k" '(persp-kill :which-key "kill workspace")
-      "W r" '(persp-rename :which-key "rename workspace")
-      "TAB" '(persp-switch :which-key "workspace switch"))
     :custom
     (persp-mode-prefix-key (kbd "C-c M-p"))
     (persp-show-modestring nil)
@@ -757,59 +790,58 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
 
    (use-package persp-projectile
      :ensure t
-     :after (perspective projectile)
-     :init
-     (my-leader-def "p P" '(projectile-persp-switch-project :which-key "switch project (persp)")))
+     :after (perspective projectile))
 
-  (use-package treemacs-perspective
-    :after (treemacs perspective)
-    :ensure t
-    :config (treemacs-set-scope-type 'Perspectives))
+
 #+end_src
 
-** Treemacs
+** Dirvish
 #+begin_src emacs-lisp
-  (use-package treemacs
-    :defer t
-    :init
-    (setq treemacs-display-in-side-window t)
-    (setq treemacs-git-mode 'deferred)
-    (setq treemacs-filewatch-mode t)
-     (with-eval-after-load 'winum
-       (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
-     (my-leader-def "E" '(:ignore t :which-key "explorer")
-                    "E e" '(treemacs :which-key "toggle treemacs"))
-    :hook (projectile-after-switch-project . treemacs-add-and-display-current-project)
-    :config
-    (treemacs-follow-mode t)
-    (treemacs-project-follow-mode t)
-    ;; Eglot integration inside Treemacs config to avoid errors
-    (with-eval-after-load 'flymake
-      (setq treemacs-flymake-mode t)))
+    ;;; Dirvish (File Explorer - Vanilla Mode)
 
-  (use-package treemacs-nerd-icons
-    :ensure t :after treemacs
-    :config (treemacs-load-theme "nerd-icons"))
+      (use-package dirvish :ensure t :init
+        ;; Habilita o Dirvish globalmente (dirvish-override-dired-mode)
+        :custom ;; Atributos visuais (ícones, status git, tamanho, etc)
+        (dirvish-attributes '(vc-state nerd-icons file-size collapse subtree-state git-msg))
 
-  (use-package treemacs-evil :after (treemacs evil) :ensure t)
-  (use-package treemacs-projectile :after (treemacs projectile) :ensure t)
-  (use-package treemacs-magit :after (treemacs magit) :ensure t)
-#+end_src
+        ;; Layout dos cabeçalhos
+        (dirvish-header-line-format '(:left (path) :right (free-space))) (dirvish-mode-line-format '(:left (sort symlink) :right (omit yank index)))
+
+        :config ;; Habilita preview de arquivos
+        (dirvish-peek-mode)
+
+        ;; Ajustes padrão do Dired
+        (setq dired-listing-switches "-agho --group-directories-first" dired-recursive-deletes 'always dired-recursive-copies 'always delete-by-moving-to-trash t))
+
+      ;; Função para abrir na raiz do projeto
+      (defun my/dirvish-project () "Abre o Dirvish na raiz do projeto (se disponível) ou no diretório atual." (interactive) (let ((root (projectile-project-root))) (if root (dirvish root) (dirvish))))
+
+;;; Keybindings
+
+      ;; Menu Leader (SPC e)
+      (my-leader-def "e" '(:ignore t :which-key "explorer")
+        "ee" '(my/dirvish-project :which-key "project root");; Abre na raiz do projeto
+        "ef" '(dirvish-fd :which-key "find files (fd)");; Busca rápida (fd)
+        "e ." '(dirvish :which-key "current dir")) ;; Abre no diretório atual
+
+      ;; Navegação dentro do buffer do Dirvish
+      (general-define-key :keymaps 'dirvish-mode-map :states 'normal "q" 'dirvish-quit "h" 'dired-up-directory "l" 'dired-find-file "TAB" 'dirvish-subtree-toggle)
+  #+end_src
 
 ** Formatting (Apheleia)
-#+begin_src emacs-lisp
+  #+begin_src emacs-lisp
   (use-package apheleia
     :ensure t
     :init (apheleia-global-mode +1)
     :config
- (setq apheleia-log-only-errors nil)
+    (setq apheleia-log-only-errors nil)
     (setf (alist-get 'google-java-format apheleia-formatters)
           '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
     (push '(java-mode . google-java-format) apheleia-mode-alist)
     (push '(java-ts-mode . google-java-format) apheleia-mode-alist))
  #+end_src
 
- ** Linting (Flymake)
+** Linting (Flymake)
  Configured for Eglot and Consult integration. Replaces Flycheck for consistency.
  #+begin_src emacs-lisp
   ;; Simple flymake configuration - avoid eval-after-load to prevent macro expansion errors
@@ -822,7 +854,7 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
        
         ;; 1. Window Configuration (Clean Popup at Bottom)
        (add-to-list 'display-buffer-alist
-                    '("\\*Flymake diagnostics.*"
+                    '("\*Flymake diagnostics.*"
                       (display-buffer-reuse-window display-buffer-in-side-window)
                       (side . bottom)
                       (slot . 0)
@@ -848,47 +880,57 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
      (let ((diag-buffer (get-buffer "*Flymake diagnostics*")))
        (if (not diag-buffer)
            (message "Please wait... Eglot is still indexing errors.")
-        (with-current-buffer diag-buffer
-          (let ((entries-raw (if (functionp tabulated-list-entries)
+         (with-current-buffer diag-buffer
+           (let ((entries-raw (if (functionp tabulated-list-entries)
                                   (funcall tabulated-list-entries)
                                 tabulated-list-entries))
-                candidates)
-            (dolist (entry entries-raw)
-              (let* ((diag (car entry))
-                     (buffer (flymake-diagnostic-buffer diag)))
-                (when (buffer-live-p buffer)
-                  (let* ((line (line-number-at-pos (flymake-diagnostic-beg diag)))
-                         (type (flymake-diagnostic-type diag))
-                         (text (flymake-diagnostic-text diag))
-                         (file (buffer-name buffer))
-                         (face (flymake-diagnostic-type-face type))
-                         (type-str (propertize (symbol-name type) 'face face))
-                         (cand-str (format "%-20s %-8s %s" 
-                                           (propertize file 'face 'font-lock-variable-name-face)
-                                           type-str
-                                           (propertize text 'face 'shadow))))
-                    (push (propertize cand-str 
-                                      'consult--candidate 
-                                      (cons (set-marker (make-marker) (flymake-diagnostic-beg diag)) buffer))
-                          candidates)))))
-            (if candidates
-                (consult--read (nreverse candidates)
-                               :prompt "Project Issues: "
-                               :category 'consult-location
-                               :sort nil
-                               :lookup #'consult--lookup-candidate)
-                             (message "No errors found in project.")))))))
-
-  ;; Keybindings for flymake
-  (my-leader-def
-    "e"   '(:ignore t :which-key "errors")
-    "e p" '(flymake-show-project-diagnostics :which-key "panel (project)")
-    "e b" '(flymake-show-buffer-diagnostics :which-key "panel (buffer)")
-    "e l" '(consult-flymake :which-key "search buffer")
-    "e L" '(my/consult-flymake-project :which-key "search project")
-    "e n" '(flymake-goto-next-error :which-key "next")
-    "e N" '(flymake-goto-prev-error :which-key "prev"))
+                 candidates)
+             (dolist (entry entries-raw)
+               (let* ((diag (car entry))
+                      (buffer (flymake-diagnostic-buffer diag)))
+                 (when (buffer-live-p buffer)
+                   (let* ((line (line-number-at-pos (flymake-diagnostic-beg diag)))
+                          (type (flymake-diagnostic-type diag))
+                          (text (flymake-diagnostic-text diag))
+                          (file (buffer-name buffer))
+                          (face (flymake-diagnostic-type-face type))
+                          (type-str (propertize (symbol-name type) 'face face))
+                          (cand-str (format "%-20s %-8s %s" 
+                                            (propertize file 'face 'font-lock-variable-name-face)
+                                            type-str
+                                            (propertize text 'face 'shadow))))
+                     (push (propertize cand-str 
+                                       'consult--candidate 
+                                       (cons (set-marker (make-marker) (flymake-diagnostic-beg diag)) buffer))
+                           candidates)))))
+             (if candidates
+                 (consult--read (nreverse candidates)
+                                :prompt "Project Issues: "
+                                :category 'consult-location
+                                :sort nil
+                                :lookup #'consult--lookup-candidate)
+               (message "No errors found in project.")))))))
 #+end_src
+
+ * Tree-Sitter Configuration
+ Configure Tree-sitter for better syntax highlighting and ensure grammars are installed.
+
+ #+begin_src emacs-lisp
+ (use-package treesit
+   :ensure nil
+   :config
+   (setq treesit-language-source-alist
+         '((java "https://github.com/tree-sitter/tree-sitter-java")
+           (javascript "https://github.com/tree-sitter/tree-sitter-javascript")
+           (typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
+           (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")))
+
+   (defun my/install-java-tree-sitter ()
+     "Install the Java tree-sitter grammar."
+     (interactive)
+     (treesit-install-language-grammar 'java)
+     (message "Java grammar installed! Restart Emacs or reload the mode.")))
+ #+end_src
 
  * Java Development (Eglot + JDTLS)
  Lightweight configuration using Eglot, replacing the heavy lsp-java.
@@ -914,111 +956,7 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
   (setq eglot-java-user-init-opts-fn 'my/eglot-java-init-opts))
   #+end_src
 
- * Debugging (DAPE)
- Modern debug configuration without dap-mode.
 
- #+begin_src emacs-lisp
-   (require 'which-func)
-   (which-function-mode 1)
-
-   (defun my/get-java-full-test-target (is-gradle)
-   "Return the test target with the full package (e.g., com.foo.Bar.test)."
-   (let* ((package-name (save-excursion
-                          (goto-char (point-min))
-                          (when (re-search-forward "^package \\([^; \n]+\\);" nil t)
-                            (match-string 1))))
-          (class-name (file-name-base (buffer-file-name)))
-          (method-name (which-function))
-          (clean-method (when (stringp method-name)
-                          (car (last (split-string method-name "\\.")))))
-          ;; Build the FQN (Fully Qualified Name)
-          (full-class (if package-name (concat package-name "." class-name) class-name)))
-     (cond
-      ((not clean-method) full-class)
-(is-gradle (format "*%s.%s" class-name clean-method))
-
-      (t (format "%s#%s" full-class clean-method)))))
-
-   (defun my/java-debug-test-at-point ()
-     "Initialize JVM in debug mode only for the method or class under cursor."
-     (interactive)
-     (unless (projectile-project-p)
-       (user-error "Not in a Projectile project"))
-
-     (let* ((project-root (projectile-project-root))
-            (is-gradle (or (string= (projectile-project-type) 'gradle)
-                           (file-exists-p (expand-file-name "gradlew" project-root))))
-            (test-target (my/get-java-full-test-target is-gradle))
-            (buf-name " *java-test-debug-process*")
-            ;; Build the specific command
-            (cmd (if is-gradle
-                     (format "./gradlew test --tests \"%s\" --rerun-tasks --debug-jvm" test-target)
-                   (format "mvn -Dmaven.surefire.debug test -Dtest=\"%s\"" test-target))))
-
-       ;; Clean up previous processes
-       (when (get-buffer buf-name)
-         (ignore-errors (delete-process (get-buffer-process buf-name)))
-         (kill-buffer buf-name))
-
-       (message "Launching JVM for: %s..." test-target)
-      
-      (let* ((default-directory project-root)
-             (proc (start-process-shell-command "java-debug-proc" buf-name cmd)))
-        
-        (set-process-filter
-         proc
-         (lambda (process output)
-           (when (buffer-live-p (process-buffer process))
-             (with-current-buffer (process-buffer process)
-               (save-excursion
-                 (goto-char (point-max))
-                 (insert output))))
-           
-            (when (string-match-p "Listening for transport dt_socket" output)
-              (message "JVM ready for [%s]! Use Dape to attach." test-target)))))))
-
-        (defun my/show-java-debug-log ()
-              "Show the log buffer of the current debug process."
-              (interactive)
-              (if (get-buffer " *java-test-debug-process*")
-                  (display-buffer " *java-test-debug-process*")
-                (message "No active debug log.")))
-
-                (use-package dape
-                  :ensure t
-                  :config
-                  (setq dape-buffer-window-arrangement 'right)
-                  
-          (add-to-list 'dape-configs
-             `(java-attach
-               modes (java-mode java-ts-mode)
-                ensure (lambda (&rest _) (eglot-current-server))
-                ;; Increase port resilience
-                port (lambda ()
-                       (let ((port (eglot-execute-command
-                                    (eglot-current-server)
-                                    "vscode.java.startDebugSession" nil)))
-                         ;; A brief pause to prevent the Eglot Sentinel from getting lost
-                         (sit-for 0.2)
-                         port))
-               :type "java"
-               :request "attach"
-               :hostName "127.0.0.1"
-               :port 5005))
-          :general
-                  (my-leader-def
-                    "d"   '(:ignore t :which-key "debug")
-                    "dt"  '(my/java-debug-test-at-point  :which-key "Debug Test")
-                    "db"  '(dape-breakpoint-toggle :which-key "Toggle Breakpoint")
-                    "dc"  '(dape-continue :which-key "Continue")
-                    "dn"  '(dape-next :which-key "Next (Step Over)")
-                    "di"  '(dape-step-in :which-key "Step In")
-                    "do"  '(dape-step-out :which-key "Step Out")
-                    "dr"  '(dape-restart :which-key "Restart")
-                    "dl"  '(dape-info-setup :which-key "Show Layout")
-                    "dQ"  '(dape-kill :which-key "Quit Debugger")))
-
-    #+end_src
 
  * Visual Wrapping (Adaptive Wrap)
  Improves reading of long lines in code buffers, maintaining visual indentation.
@@ -1037,186 +975,19 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
                (visual-line-mode 1)          ;; Enable line wrapping at window edge
                (adaptive-wrap-prefix-mode 1))) ;; Enable smart indentation correction
 #+end_src
-* General Keybindings
-** Window Management
-#+begin_src emacs-lisp
-  (my-leader-def
-    "w"   '(:ignore t :which-key "window")
-    "wh"  '(evil-window-left :which-key "left")
-    "wj"  '(evil-window-down :which-key "down")
-    "wk"  '(evil-window-up :which-key "up")
-    "wl"  '(evil-window-right :which-key "right")
-    "ww"  '(evil-window-next :which-key "next window")
-    "wH"  '(evil-window-move-far-left :which-key "move left")
-    "wJ"  '(evil-window-move-very-bottom :which-key "move down")
-    "wK"  '(evil-window-move-very-top :which-key "move up")
-    "wL"  '(evil-window-move-far-right :which-key "move right")
-    "ws"  '(evil-window-split :which-key "split horizontal")
-    "wv"  '(evil-window-vsplit :which-key "split vertical")
-    "wc"  '(evil-window-delete :which-key "close window")
-    "wo"  '(delete-other-windows :which-key "close others")
-    "w="  '(balance-windows :which-key "balance"))
-#+end_src
-
-** Doom Utility Functions
-#+begin_src emacs-lisp
-  ;; Doom-like utility functions for file operations
-  
-  (defun my/copy-this-file ()
-    "Copy the current file to a new location."
-    (interactive)
-    (let* ((filename (buffer-file-name))
-           (new-name (read-file-name "Copy file to: " filename)))
-      (copy-file filename new-name 1)
-      (find-file new-name)
-      (message "Copied '%s' to '%s'" filename new-name)))
-  
-  (defun my/move-this-file ()
-    "Move/rename the current file to a new location."
-    (interactive)
-    (let* ((filename (buffer-file-name))
-           (new-name (read-file-name "Move file to: " filename)))
-      (rename-file filename new-name 1)
-      (find-file new-name)
-      (set-visited-file-name new-name)
-      (message "Moved '%s' to '%s'" filename new-name)))
-  
-  (defun my/delete-this-file ()
-    "Delete the current file and kill its buffer."
-    (interactive)
-    (let ((filename (buffer-file-name)))
-      (when (and filename (y-or-n-p (format "Really delete '%s'?" filename)))
-        (delete-file filename)
-        (kill-current-buffer)
-        (message "Deleted '%s'" filename))))
-  
-  (defun my/copy-file-path ()
-    "Copy the current file's path to the kill ring."
-    (interactive)
-    (let ((filename (or (buffer-file-name) (error "Buffer not visiting a file"))))
-      (kill-new filename)
-      (message "Copied: %s" filename)))
-  
-  (defun my/copy-file-path-relative-to-project ()
-    "Copy the current file's path relative to project root to the kill ring."
-    (interactive)
-    (let* ((filename (or (buffer-file-name) (error "Buffer not visiting a file")))
-           (project-root (or (projectile-project-root) (error "Not in a project")))
-           (relative-path (file-relative-name filename project-root)))
-      (kill-new relative-path)
-      (message "Copied: %s" relative-path)))
-  
-  (defun my/kill-all-buffers ()
-    "Kill all buffers except the current one and special buffers."
-    (interactive)
-    (let ((current-buffer (current-buffer)))
-      (dolist (buffer (buffer-list))
-        (unless (or (eq buffer current-buffer)
-                    (string-match-p "\\*.*\\*" (buffer-name buffer)))
-          (kill-buffer buffer))))
-      (message "Killed all buffers"))
-  
-  (defun my/kill-other-buffers ()
-    "Kill all buffers except the current one."
-    (interactive)
-    (let ((current-buffer (current-buffer)))
-      (dolist (buffer (buffer-list))
-        (unless (eq buffer current-buffer)
-          (kill-buffer buffer))))
-      (message "Killed other buffers"))
-
-#+end_src
-
-** Buffer & Files (Doom-style)
-#+begin_src emacs-lisp
-  (my-leader-def
-    "TAB" '(mode-line-other-buffer :which-key "last buffer")
-    "."   '(find-file :which-key "find file")          ; Doom-style: find file anywhere
-    ","   '(switch-to-buffer :which-key "switch buffer") ; Doom-style: switch buffer
-    "`"   '(evil-switch-to-windows-last-buffer :which-key "last buffer")
-    
-    ;; --- Buffer Management (Doom: b prefix) ---
-    "b"   '(:ignore t :which-key "buffer")
-    "b b" '(projectile-switch-to-buffer :which-key "switch buffer") ; Doom-style: projectile buffer switch
-    "b B" '(switch-to-buffer :which-key "switch buffer (all)") ; All buffers, not just project
-    "b i" '(ibuffer :which-key "ibuffer")
-    "b n" '(next-buffer :which-key "next buffer")
-    "b p" '(previous-buffer :which-key "previous buffer")
-    "b s" '(save-buffer :which-key "save buffer")
-    "b S" '(evil-write-all :which-key "save all buffers")
-    "b r" '(revert-buffer :which-key "revert buffer")
-    "b k" '(kill-current-buffer :which-key "kill buffer")
-    "b K" '(my/kill-all-buffers :which-key "kill all buffers")
-    "b O" '(my/kill-other-buffers :which-key "kill other buffers")
-    "b N" '(evil-buffer :which-key "new buffer")
-    "b y" '(my/copy-this-file :which-key "copy file contents")
-    "b R" '(rename-buffer :which-key "rename buffer")
-    "b Y" '(bury-buffer :which-key "bury buffer")
-    
-    ;; --- File Management (Doom: f prefix) ---
-    "f"   '(:ignore t :which-key "file")
-    "f f" '(projectile-find-file :which-key "find file in project") ; Doom-style: find file in project
-    "f F" '(find-file :which-key "find file anywhere") ; Alternative to SPC .
-    "f r" '(consult-recent-file :which-key "recent files")
-    "f s" '(save-buffer :which-key "save file")
-    "f S" '(write-file :which-key "save as...")
-    "f R" '(my/move-this-file :which-key "rename/move file")
-    "f D" '(my/delete-this-file :which-key "delete file")
-    "f y" '(my/copy-file-path :which-key "copy file path")
-    "f Y" '(my/copy-file-path-relative-to-project :which-key "copy relative path")
-    "f p" '((lambda () (interactive) (find-file (expand-file-name "config.org" user-emacs-directory))) :which-key "open config")
-    "f e" '((lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) :which-key "open early-init")
-    "f E" '((lambda () (interactive) (dired (expand-file-name user-emacs-directory))) :which-key "browse emacs.d"))
-    
-    ;; --- Search (Doom: s prefix) ---
-    ;; Search bindings are defined in the Consult section above
-
-    ;; --- Git/Version Control (Doom: g prefix) ---
-    "g"   '(:ignore t :which-key "git")
-    "g/"  '(magit-dispatch :which-key "Magit dispatch")
-    "g."  '(magit-file-dispatch :which-key "Magit file dispatch")
-    "gf"  '(magit-find-file :which-key "Find file")
-    "gb"  '(magit-blame-addition :which-key "Blame")
-    "gt"  '(git-timemachine-toggle :which-key "Time machine")
-    "gi"  '(magit-init :which-key "Initialize repo")
-    
-    ;; Git logs
-    "gl"  '(:ignore t :which-key "log")
-    "glc" '(magit-log-current :which-key "Log current branch")
-    "glf" '(magit-log-buffer-file :which-key "Log current file")
-    "glg" '(magit-log-all :which-key "Log all branches")
-    
-    ;; Visual mode git operations
-    "g m" '(magit-file-dispatch :which-key "Git selection menu")
-    "g r" '((lambda () 
-              (interactive) 
-              (call-interactively 'magit-discard)) 
-            :which-key "Git discard selection")
-    "g s" '((lambda () 
-              (interactive) 
-              (call-interactively 'magit-stage)) 
-            :which-key "Git stage selection")
-#+end_src
-
-* Extras & Languages
+** Extras & Languages
 ** Gemini & Terminal
 #+begin_src emacs-lisp
      ;; 1. Dependencies (Eat and Popup)
-       (use-package eat
-         :ensure t
-         :config
-         (setq eat-kill-buffer-on-exit t))
-
        ;; Force loading popup to ensure it exists before gemini-cli
        (use-package popup
          :ensure t
          :demand t)
 
        ;; 2. Gemini CLI Wrapper
-       (use-package gemini-cli
-         :vc (:url "https://github.com/linchen2chris/gemini-cli.el" :rev :newest)
-         ;; HERE IS THE FIX: We added 'popup' to the :after list
-         :after (eat popup)
+     (use-package gemini-cli
+  :ensure(gemini-cli :host github :repo "linchen2chris/gemini-cli.el")
+  :after (eat popup)
          :config
          ;; Try to find the executable automatically (same code I gave you before)
          (let ((gemini-path (string-trim (shell-command-to-string "mise which gemini"))))
@@ -1229,11 +1000,11 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
        ;; 3. Evil Mode Integration
       (use-package eat
         :defer t
-        :hook (eat-mode . (lambda ()
+        :hook (eat-mode . (lambda () 
                             (evil-local-mode 1)
                             (evil-define-key* 'insert eat-mode-map (kbd "C-c C-k") #'eat-reset)))
         :config
-        (add-hook 'eat-mode-hook (lambda ()
+        (add-hook 'eat-mode-hook (lambda () 
                                    (add-hook 'evil-insert-state-entry-hook #'eat-emulate-es-mode nil t)
                                    (add-hook 'evil-normal-state-entry-hook #'eat-emulate-scroll-mode nil t))))
 
@@ -1245,84 +1016,67 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
         (setq electric-pair-inhibit-predicate
               `(lambda (c)
                  (if (char-equal c ?<) t (electric-pair-default-inhibit c)))))
-
-      ;; Terminal Launchers
-      (defun my/launch-alacritty (dir) (call-process-shell-command (format "alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
-
-      (defun my/open-terminal-here () (interactive) (my/launch-alacritty default-directory))
-      (defun my/open-terminal-in-project () (interactive) (my/launch-alacritty 'projectile-project-info))
-      (my-leader-def "o t" '(:ignore t :which-key "open terminal")
-                     "o t h" '(my/open-terminal-here :which-key "here")
-
-                     "o t p" '(my/open-terminal-in-project :which-key "project")
-                     )
 #+end_src
 
 ** Org Mode
 #+begin_src emacs-lisp
-      (use-package org
-        :hook ((org-mode . visual-line-mode)
-               (org-mode . org-indent-mode))
-        :config
-    (require 'org-tempo)
-        (setq org-ellipsis " ▾"
-              org-hide-emphasis-markers t
-              org-src-fontify-natively t
-              org-fontify-quote-and-verse-blocks t
-              org-src-tab-acts-natively t
-              org-edit-src-content-indentation 2
-              org-hide-block-startup nil
-              org-src-preserve-indentation nil
-              org-startup-folded 'content)
-(defun my/org-tab-dwim ()
-    (interactive)
-    (or (and (bound-and-true-p yas-minor-mode)
-             (yas-expand))
-        (and (fboundp 'completion-at-point)
-             (completion-at-point))
-        (org-cycle)))
+        (use-package org
+          :ensure nil
+          :hook ((org-mode . visual-line-mode)
+                 (org-mode . org-indent-mode))
+          :config
+      (require 'org-tempo)
+          (setq org-ellipsis " ▾"
+                org-hide-emphasis-markers t
+                org-src-fontify-natively t
+                org-fontify-quote-and-verse-blocks t
+                org-src-tab-acts-natively t
+                org-edit-src-content-indentation 2
+                org-hide-block-startup nil
+                org-src-preserve-indentation nil
+                org-startup-folded 'content)
+  (defun my/org-tab-dwim ()
+      (interactive)
+      (or (and (bound-and-true-p yas-minor-mode)
+               (yas-expand))
+          (and (fboundp 'completion-at-point)
+               (completion-at-point))
+          (org-cycle)))
 
-        )
+          )
 
-  (use-package org-modern
-        :ensure t
-        :hook (org-mode . org-modern-mode)
-        :config
-        (setq org-modern-star '("◉" "○" "◈" "◇" "✳" "◆" "□")
-              org-modern-table-vertical 1
-              org-modern-table-horizontal 0.2
-              org-modern-list '((43 . "➤") (45 . "–") (42 . "•"))
-              org-modern-todo nil org-modern-tag nil org-modern-priority nil))
+    (use-package org-modern
+          :ensure t
+          :hook (org-mode . org-modern-mode)
+          :config
+          (setq org-modern-star '("◉" "○" "◈" "◇" "✳" "◆" "□")
+                org-modern-table-vertical 1
+                org-modern-table-horizontal 0.2
+                org-modern-list '((43 . "➤") (45 . "–") (42 . "•"))
+                org-modern-todo nil org-modern-tag nil org-modern-priority nil))
 
-      (use-package mixed-pitch
-        :hook (org-mode . mixed-pitch-mode)
-        :config (setq mixed-pitch-set-height t))
+        (use-package mixed-pitch
+          :hook (org-mode . mixed-pitch-mode)
+          :config (setq mixed-pitch-set-height t))
 
-      (use-package ob-mermaid :ensure t :after org
-        :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (emacs-lisp . t))))
+        (use-package ob-mermaid :ensure t :after org
+          :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (emacs-lisp . t))))
 
-      (use-package org-roam
-        :ensure t
-        :init
-        (setq org-roam-v2-ack t)
-        (my-leader-def
-          "n"   '(:ignore t :which-key "notes")
-          "n r" '(org-roam-buffer-toggle :which-key "roam toggle")
-          "n f" '(org-roam-node-find :which-key "find node")
-          "n i" '(org-roam-node-insert :which-key "insert node")
-          "n d"   '(:ignore t :which-key "dailies")
-          "n d t" '(org-roam-dailies-capture-today :which-key "capture today"))
-        :custom
-        (org-roam-directory (file-truename "~/org"))
-        (org-roam-completion-everywhere nil)
-        :config (org-roam-db-autosync-mode))
+        (use-package org-roam
+          :ensure t
+          :init
+          (setq org-roam-v2-ack t)
+          :custom
+          (org-roam-directory (file-truename "~/org"))
+          (org-roam-completion-everywhere nil)
+          :config (org-roam-db-autosync-mode))
 #+end_src
 
 ** Markdown
 #+begin_src emacs-lisp
   (use-package markdown-mode
     :ensure t
-    :mode ("README\\.md\\'" . gfm-mode)
+    :mode ("README\.md\'" . gfm-mode)
     :init (setq markdown-command "multimarkdown")
     :config (setq markdown-fontify-code-blocks-natively t))
 #+end_src
@@ -1335,3 +1089,421 @@ In minibuffer, delegate to completion system. Works with Vertico/Corfu."
     :config (add-to-list 'exec-path (expand-file-name "~/.local/bin")))
 #+end_src
 
+** Debugging (DAPE)
+Modern debug configuration without dap-mode.
+
+#+begin_src emacs-lisp
+  (require 'which-func)
+  (which-function-mode 1)
+
+  (defun my/get-java-full-test-target (is-gradle)
+    "Return the test target with the full package (e.g., com.foo.Bar.test)."
+    (let* ((package-name (save-excursion
+                           (goto-char (point-min))
+                           (when (re-search-forward "^package \\(.+\\);" nil t)
+                             (match-string 1))))
+           (class-name (file-name-base (buffer-file-name)))
+           (method-name (which-function))
+           (clean-method (when (stringp method-name)
+                           (car (last (split-string method-name "\\.")))))
+           ;; Build the FQN (Fully Qualified Name)
+           (full-class (if package-name (concat package-name "." class-name) class-name)))
+      (cond
+       ((not clean-method) full-class)
+       (is-gradle (format "*%s.%s" class-name clean-method))
+       (t (format "%s#%s" full-class clean-method)))))
+
+  (defun my/java-debug-test-at-point ()
+    "Initialize JVM in debug mode only for the method or class under cursor."
+    (interactive)
+    (unless (projectile-project-p)
+      (user-error "Not in a Projectile project"))
+
+    (let* ((project-root (projectile-project-root))
+           (is-gradle (or (string= (projectile-project-type) 'gradle)
+                          (file-exists-p (expand-file-name "gradlew" project-root))))
+           (test-target (my/get-java-full-test-target is-gradle))
+           (buf-name " *java-test-debug-process*")
+           ;; Build the specific command
+           (cmd (if is-gradle
+                    (format "./gradlew test --tests \"%s\" --rerun-tasks --debug-jvm" test-target)
+                  (format "mvn -Dmaven.surefire.debug test -Dtest=\"%s\"" test-target))))
+
+      ;; Clean up previous processes
+      (when (get-buffer buf-name)
+        (ignore-errors (delete-process (get-buffer-process buf-name)))
+        (kill-buffer buf-name))
+
+      (message "Launching JVM for: %s..." test-target)
+      
+      (let* ((default-directory project-root)
+             (proc (start-process-shell-command "java-debug-proc" buf-name cmd)))
+        
+        (set-process-filter
+         proc
+         (lambda (process output)
+           (when (buffer-live-p (process-buffer process))
+             (with-current-buffer (process-buffer process)
+               (save-excursion
+                 (goto-char (point-max))
+                 (insert output))))
+           
+           (when (string-match-p "Listening for transport dt_socket" output)
+             (message "JVM ready for [%s]! Use Dape to attach." test-target)))))))
+
+  (defun my/show-java-debug-log ()
+    "Show the log buffer of the current debug process."
+    (interactive)
+    (if (get-buffer " *java-test-debug-process*")
+        (display-buffer " *java-test-debug-process*")
+      (message "No active debug log.")))
+
+  (use-package dape
+    :ensure t
+    :config
+    (setq dape-buffer-window-arrangement 'right)
+    
+    (add-to-list 'dape-configs
+                 `(java-attach
+                   modes (java-mode java-ts-mode)
+                   ensure (lambda (&rest _) (eglot-current-server))
+                   ;; Increase port resilience
+                   port (lambda ()
+                          (let ((port (eglot-execute-command
+                                       (eglot-current-server)
+                                       "vscode.java.startDebugSession" nil)))
+                            ;; A brief pause to prevent the Eglot Sentinel from getting lost
+                            (sit-for 0.2)
+                            port))
+                   :type "java"
+                   :request "attach"
+                   :hostName "127.0.0.1"
+                   :port 5005)))
+#+end_src
+
+** Java Test Coverage (JaCoCo)
+Módulo para visualização sutil de cobertura.
+
+#+begin_src emacs-lisp
+  (defvar my/java-coverage-overlays nil "Lista global de overlays ativos.")
+  (defvar-local my/java-coverage-visible nil "Estado da cobertura no buffer.")
+
+  (defface my/jacoco-lens-face
+    '((t :inherit shadow :slant italic :height 0.9 :foreground "green"))
+    "Face para a porcentagem de cobertura acima dos métodos.")
+
+  (defface my/jacoco-missed-line-face
+    '((t :underline (:style wave :color "orange")))
+    "Face sutil (onda laranja) para linhas não cobertas.")
+
+  (defun my/java-get-jacoco-path ()
+    "Localiza o relatório JaCoCo XML via Projectile."
+    (let ((gradle-path "build/reports/jacoco/test/jacocoTestReport.xml")
+          (maven-path "target/site/jacoco/jacocoTestReport.xml"))
+      (cond
+       ((and (projectile-project-p) (file-exists-p (expand-file-name gradle-path (projectile-project-root))))
+        (expand-file-name gradle-path (projectile-project-root)))
+       ((and (projectile-project-p) (file-exists-p (expand-file-name maven-path (projectile-project-root))))
+        (expand-file-name maven-path (projectile-project-root)))
+       (t nil))))
+
+  (defun my/java-coverage-browse-report ()
+    "Abre o relatório HTML do JaCoCo no navegador."
+    (interactive)
+    (let ((gradle-html "build/reports/jacoco/test/html/index.html")
+          (maven-html "target/site/jacoco/index.html"))
+      (cond
+       ((and (projectile-project-p) (file-exists-p (expand-file-name gradle-html (projectile-project-root))))
+        (browse-url (expand-file-name gradle-html (projectile-project-root))))
+       ((and (projectile-project-p) (file-exists-p (expand-file-name maven-html (projectile-project-root))))
+        (browse-url (expand-file-name maven-html (projectile-project-root))))
+       (t (message "Relatório HTML não encontrado.")))))
+
+  (defun my/java-coverage-clear ()
+    "Remove todos os overlays e limpa a lista."
+    (interactive)
+    (when (boundp 'my/java-coverage-overlays)
+      (mapc #'delete-overlay my/java-coverage-overlays)
+      (setq my/java-coverage-overlays nil)))
+
+  (defun my/java-coverage-toggle ()
+    "Alterna a visualização da cobertura."
+    (interactive)
+    (if my/java-coverage-visible
+        (progn
+          (my/java-coverage-clear)
+          (setq-local my/java-coverage-visible nil)
+          (message "Cobertura desativada."))
+      (setq-local my/java-coverage-visible t)
+      (my/java-apply-subtle-coverage)
+      (message "Cobertura ativada.")))
+
+  (defun my/java-apply-subtle-coverage ()
+    "Aplica lenses na assinatura e highlights laranja com tooltips no corpo."
+    (let ((report-path (my/java-get-jacoco-path))
+          (relative-path (and (projectile-project-p) 
+                              (file-relative-name (buffer-file-name) (projectile-project-root)))))
+      (when (and report-path relative-path)
+        (let* ((xml (xml-parse-file report-path))
+               (report (car xml)))
+          (my/java-coverage-clear)
+
+          (dolist (pkg (xml-get-children report 'package))
+            ;; 1. Lenses na Assinatura
+            (dolist (cls (xml-get-children pkg 'class))
+              (when (string-suffix-p (concat (xml-get-attribute cls 'name) ".java") relative-path)
+                (dolist (method (xml-get-children cls 'method))
+                  (let* ((line-num (string-to-number (xml-get-attribute method 'line)))
+                         (counters (xml-get-children method 'counter))
+                         (line-c (seq-find (lambda (c) (string= (xml-get-attribute c 'type) "LINE")) counters))
+                         (m (string-to-number (or (xml-get-attribute line-c 'missed) "0")))
+                         (c (string-to-number (or (xml-get-attribute line-c 'covered) "0")))
+                         (pct (if (> (+ m c) 0) (/ (* c 100) (+ m c)) 0))
+                         (icon (if (= pct 100) (nerd-icons-faicon "nf-fa-check_circle" :face 'success) ""))
+                         (text (format "%s Coverage: %d%%" icon pct)))
+                    (my/java--create-lens-at-signature line-num text)))))
+
+            ;; 2. Highlights Laranja em linhas perdidas com Tooltip
+            (dolist (src (xml-get-children pkg 'sourcefile))
+              (when (string-suffix-p (xml-get-attribute src 'name) relative-path)
+                (dolist (line (xml-get-children src 'line))
+                  (let ((missed (string-to-number (xml-get-attribute line 'mi)))
+                        (covered (string-to-number (xml-get-attribute line 'ci)))
+                        (line-num (string-to-number (xml-get-attribute line 'nr))))
+                    (when (> missed 0)
+                      (my/java--highlight-missed-line 
+                       line-num 
+                       (format "JaCoCo: Missed %s instructions (Covered: %s)" missed covered))))))))))))
+
+  (defun my/java--create-lens-at-signature (line text)
+    (save-excursion
+      (goto-char (point-min))
+      (forward-line (1- line))
+      (while (and (> (line-number-at-pos) 1)
+                  (looking-at "^[[:space:]]*\\(\{\\|$\\|@\\)"))
+        (forward-line -1))
+      (let ((ov (make-overlay (line-beginning-position) (line-beginning-position))))
+        (overlay-put ov 'before-string 
+                     (propertize (format "%s%s\n" (make-string (current-indentation) ?\s) text) 
+                                 'face 'my/jacoco-lens-face))
+        (push ov my/java-coverage-overlays))))
+
+  (defun my/java--highlight-missed-line (line tooltip-text)
+    "Aplica sublinhado laranja e adiciona um help-echo (tooltip)."
+    (save-excursion
+      (goto-char (point-min))
+      (when (= 0 (forward-line (1- line)))
+        (let ((ov (make-overlay (line-beginning-position) (line-end-position))))
+          (overlay-put ov 'face 'my/jacoco-missed-line-face)
+          (overlay-put ov 'help-echo tooltip-text) ;; Este é o Tooltip nativo
+          (push ov my/java-coverage-overlays)))))
+
+  ;; Auto-refresh integrado
+  (advice-add 'projectile-test-project :after 
+              (lambda (&rest _) (when my/java-coverage-visible (my/java-apply-subtle-coverage))))
+#+end_src
+
+* Keybindings Configuration
+** Centralized Leader Definer
+#+begin_src emacs-lisp
+(my-leader-def
+  ""    nil
+  "SPC" '(execute-extended-command :which-key "M-x")
+
+  ;; --- Help & Config (h) ---
+  "h"   '(:ignore t :which-key "help/config")
+  "h b" '(:ignore t :which-key "build")
+  "h b i" '(my/emacs-build-info :which-key "Emacs build info")
+  "h r" '(:ignore t :which-key "reload")
+  "h r r" '((lambda () (interactive) (load-file user-init-file)) :which-key "reload config")
+
+  ;; --- Buffer (b) ---
+  "TAB" '(mode-line-other-buffer :which-key "last buffer")
+  "."   '(find-file :which-key "find file")
+  ","   '(switch-to-buffer :which-key "switch buffer")
+  "`"   '(evil-switch-to-windows-last-buffer :which-key "last buffer")
+  
+  "b"   '(:ignore t :which-key "buffer")
+  "b b" '(projectile-switch-to-buffer :which-key "switch buffer")
+  "b B" '(switch-to-buffer :which-key "switch buffer (all)")
+  "b i" '(ibuffer :which-key "ibuffer")
+  "b n" '(next-buffer :which-key "next buffer")
+  "b p" '(previous-buffer :which-key "previous buffer")
+  "b s" '(save-buffer :which-key "save buffer")
+  "b S" '(evil-write-all :which-key "save all buffers")
+  "b r" '(revert-buffer :which-key "revert buffer")
+  "b k" '(kill-current-buffer :which-key "kill buffer")
+  "b K" '(my/kill-all-buffers :which-key "kill all buffers")
+  "b O" '(my/kill-other-buffers :which-key "kill other buffers")
+  "b N" '(evil-buffer :which-key "new buffer")
+  "b y" '(my/copy-this-file :which-key "copy file contents")
+  "b R" '(rename-buffer :which-key "rename buffer")
+  "b Y" '(bury-buffer :which-key "bury buffer")
+
+  ;; --- Code & LSP (c) ---
+  "c"   '(:ignore t :which-key "code")
+  "c a" '(eglot-code-actions :which-key "code action")
+  "c r" '(eglot-rename :which-key "rename")
+  "c f" '(apheleia-format-buffer :which-key "format")
+  "c d" '(xref-find-definitions :which-key "definition")
+  "c D" '(xref-find-references :which-key "references")
+  
+  ;; Java Specific
+  "c j" '(:ignore t :which-key "java project")
+  "c j n" '(eglot-java-create-project :which-key "new project")
+  "c j i" '(eglot-java-organize-imports :which-key "organize imports")
+  "c j r" '(my/eglot-restart :which-key "restart eglot")
+  "c j t" '(my/switch-to-java-ts-mode :which-key "switch to java-ts-mode")
+  "c j I" '(my/install-java-tree-sitter :which-key "install java grammar")
+
+  ;; Java Coverage
+  "c C"   '(:ignore t :which-key "coverage")
+  "c C t" '(my/java-coverage-toggle :which-key "toggle coverage lenses")
+  "c C h" '(my/java-coverage-browse-report :which-key "open html report")
+
+  ;; --- Debug (d) ---
+  "d"   '(:ignore t :which-key "debug")
+  "dt"  '(my/java-debug-test-at-point  :which-key "Debug Test")
+  "db"  '(dape-breakpoint-toggle :which-key "Toggle Breakpoint")
+  "dc"  '(dape-continue :which-key "Continue")
+  "dn"  '(dape-next :which-key "Next (Step Over)")
+  "di"  '(dape-step-in :which-key "Step In")
+  "do"  '(dape-step-out :which-key "Step Out")
+  "dr"  '(dape-restart :which-key "Restart")
+  "dl"  '(dape-info-setup :which-key "Show Layout")
+  "dQ"  '(dape-kill :which-key "Quit Debugger")
+
+  ;; --- Errors/Flymake (e) ---
+  "e"   '(:ignore t :which-key "errors")
+  "e p" '(flymake-show-project-diagnostics :which-key "panel (project)")
+  "e b" '(flymake-show-buffer-diagnostics :which-key "panel (buffer)")
+  "e l" '(consult-flymake :which-key "search buffer")
+  "e L" '(my/consult-flymake-project :which-key "search project")
+  "e n" '(flymake-goto-next-error :which-key "next")
+  "e N" '(flymake-goto-prev-error :which-key "prev")
+
+  ;; --- Explorer (E) ---
+
+  ;; --- File (f) ---
+  "f"   '(:ignore t :which-key "file")
+  "f f" '(projectile-find-file :which-key "find file in project")
+  "f F" '(find-file :which-key "find file anywhere")
+  "f r" '(consult-recent-file :which-key "recent files")
+  "f s" '(save-buffer :which-key "save file")
+  "f S" '(write-file :which-key "save as...")
+  "f R" '(my/move-this-file :which-key "rename/move file")
+  "f D" '(my/delete-this-file :which-key "delete file")
+  "f y" '(my/copy-file-path :which-key "copy file path")
+  "f Y" '(my/copy-file-path-relative-to-project :which-key "copy relative path")
+  "f p" '((lambda () (interactive) (find-file (expand-file-name "config.org" user-emacs-directory))) :which-key "open config")
+  "f e" '((lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) :which-key "open early-init")
+  "f E" '((lambda () (interactive) (dired (expand-file-name user-emacs-directory))) :which-key "browse emacs.d")
+
+  ;; --- Git (g) ---
+  "g"   '(:ignore t :which-key "git")
+  "g s" '(magit-status :which-key "magit status")
+  "g S" '(magit-status-here :which-key "magit status here")
+  "g/"  '(magit-dispatch :which-key "Magit dispatch")
+  "g."  '(magit-file-dispatch :which-key "Magit file dispatch")
+  "gf"  '(magit-find-file :which-key "Find file")
+  "gb"  '(magit-blame-addition :which-key "Blame")
+  "gt"  '(git-timemachine-toggle :which-key "Time machine")
+  "gi"  '(magit-init :which-key "Initialize repo")
+  "g M" '(consult-global-mark :which-key "jump to global mark")
+  
+  "gl"  '(:ignore t :which-key "log")
+  "glc" '(magit-log-current :which-key "Log current branch")
+  "glf" '(magit-log-buffer-file :which-key "Log current file")
+  "glg" '(magit-log-all :which-key "Log all branches")
+  
+  "g m" '(magit-file-dispatch :which-key "Git selection menu")
+  "g r" '((lambda () 
+            (interactive) 
+            (call-interactively 'magit-discard))
+          :which-key "Git discard selection")
+  "g s" '((lambda () 
+            (interactive) 
+            (call-interactively 'magit-stage))
+          :which-key "Git stage selection")
+
+  ;; --- Jump (j) ---
+  "j"   '(:ignore t :which-key "jump")
+  "j w" '(evilem-motion-forward-word-begin :which-key "word")
+  "j l" '(evilem-motion-next-line :which-key "line")
+  "j c" '(evilem-motion-find-char :which-key "char")
+  "j s" '(evilem-motion-find-char-timer :which-key "find (timer)")
+  "j j" '(evilem-motion-next-line :which-key "line")
+
+  ;; --- Notes (n) ---
+  "n"   '(:ignore t :which-key "notes")
+  "n r" '(org-roam-buffer-toggle :which-key "roam toggle")
+  "n f" '(org-roam-node-find :which-key "find node")
+  "n i" '(org-roam-node-insert :which-key "insert node")
+  "n d"   '(:ignore t :which-key "dailies")
+  "n d t" '(org-roam-dailies-capture-today :which-key "capture today")
+
+  ;; --- Open (o) ---
+  "o p" '(popper-toggle :which-key "toggle popup")
+  "o t" '(:ignore t :which-key "open terminal")
+  "o t h" '(my/open-terminal-here :which-key "here")
+  "o t p" '(my/open-terminal-in-project :which-key "project")
+
+  ;; --- Project (p) ---
+  "p"   '(:ignore t :which-key "project")
+  "p p" '(projectile-switch-project :which-key "switch project")
+  "p P" '(projectile-persp-switch-project :which-key "switch project (persp)")
+  "p b" '(projectile-switch-to-buffer :which-key "switch project buffer")
+  "p f" '(projectile-find-file :which-key "find file in project")
+  "p r" '(projectile-recentf :which-key "recent files")
+  "p d" '(projectile-remove-known-project :which-key "remove project")
+  "p a" '(projectile-add-known-project :which-key "add project")
+  "p s" '(projectile-save-project-buffers :which-key "save project")
+  "p k" '(projectile-kill-buffers :which-key "kill buffers")
+  "p c" '(projectile-compile-project :which-key "compile")
+  "p t" '(projectile-test-project :which-key "run tests")
+  "p i" '(projectile-invalidate-cache :which-key "invalidate cache")
+  "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
+  "p x" '(projectile-run-async-shell-command-in-root :which-key "async cmd")
+  "p /" '(consult-ripgrep :which-key "search in project")
+
+  ;; --- Search (s) ---
+  "s"   '(:ignore t :which-key "search")
+  "s s" '(consult-line :which-key "search buffer")
+  "s S" '(consult-line-multi :which-key "search all buffers")
+  "s g" '(consult-goto-line :which-key "goto line")
+  "s i" '(consult-imenu :which-key "jump to symbol")
+  "s h" '(consult-outline :which-key "jump to heading")
+  "s f" '(consult-find :which-key "find file (live)")
+  "s k" '(consult-yank-pop :which-key "yank pop")
+
+  ;; --- Undo (u) ---
+  "u" '(vundo :which-key "undo tree (visual)")
+
+  ;; --- Window (w) ---
+  "w"   '(:ignore t :which-key "window")
+  "wh"  '(evil-window-left :which-key "left")
+  "wj"  '(evil-window-down :which-key "down")
+  "wk"  '(evil-window-up :which-key "up")
+  "wl"  '(evil-window-right :which-key "right")
+  "ww"  '(evil-window-next :which-key "next window")
+  "wH"  '(evil-window-move-far-left :which-key "move left")
+  "wJ"  '(evil-window-move-very-bottom :which-key "move down")
+  "wK"  '(evil-window-move-very-top :which-key "move up")
+  "wL"  '(evil-window-move-far-right :which-key "move right")
+  "ws"  '(evil-window-split :which-key "split horizontal")
+  "wv"  '(evil-window-vsplit :which-key "split vertical")
+  "wc"  '(evil-window-delete :which-key "close window")
+  "wo"  '(delete-other-windows :which-key "close others")
+  "w="  '(balance-windows :which-key "balance")
+
+  ;; --- Workspace (W) ---
+  "W"   '(:ignore t :which-key "workspaces")
+  "W s" '(persp-switch :which-key "switch workspace")
+  "W n" '(persp-switch :which-key "new/switch")
+  "W k" '(persp-kill :which-key "kill workspace")
+  "W r" '(persp-rename :which-key "rename workspace")
+
+  ;; --- Other ---
+  ";"   '(embark-act :which-key "act (embark)")
+  "a"   '(embark-act :which-key "actions"))
+#+end_src

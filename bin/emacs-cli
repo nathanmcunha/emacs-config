@@ -1,12 +1,18 @@
 #!/bin/bash
 set -e
 
-# Emacs CLI Manager
-# A simple CLI to manage Emacs packages, inspired by Doom Emacs' bin/doom.
+# --- Environment Setup ---
+# Explicitly add standard paths to ensure Git is found
+export PATH="/usr/bin:/usr/local/bin:$PATH"
 
+# Load mise environment if available
+if command -v mise &> /dev/null; then
+    eval "$(mise activate bash --shims)"
+fi
+
+# --- Configuration Paths ---
 EMACS="emacs"
 EMACSCLIENT="emacsclient"
-# Determine the directory where this script resides, then go up one level to root
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INIT_FILE="$PROJECT_ROOT/init.el"
 
@@ -14,10 +20,10 @@ function print_usage() {
     echo "Usage: $(basename "$0") [command]"
     echo ""
     echo "Commands:"
-    echo "  sync     Stop server, install missing packages"
-    echo "  update   Stop server, update all packages"
-    echo "  build    Recompile (byte-compile) all installed packages"
-    echo "  doctor   Check for issues (basic check)"
+    echo "  sync     Install missing packages and prune orphans (Batch mode)"
+    echo "  update   Update all packages to their latest versions"
+    echo "  purge    Remove builds and caches (to fix compilation errors)"
+    echo "  doctor   Check system health and config.org integrity"
     echo "  help     Show this help message"
 }
 
@@ -26,111 +32,69 @@ function log_info() {
 }
 
 function stop_server() {
-    log_info "Stopping running Emacs server..."
-    # Try to kill the server gracefully
+    log_info "Stopping Emacs server..."
     $EMACSCLIENT -e '(kill-emacs)' -a '' >/dev/null 2>&1 || true
 }
 
 function cmd_sync() {
     stop_server
-    log_info "Syncing configuration..."
-    
-    REFRESH_FLAG="nil"
-    if [[ "$1" == "-r" || "$1" == "--refresh" ]]; then
-        log_info "Refeshing package archives (network)..."
-        REFRESH_FLAG="t"
-    fi
+    log_info "Syncing packages with Elpaca..."
 
-    # Optimization:
-    # 1. gc-cons-threshold: High value to prevent GC during load
-    # 2. use-package-expand-minimally: Speed up macro expansion
-    # 3. use-package-compute-statistics: Disable for CLI
-    # 4. my-cli-force-refresh: Only if requested
+    # Run Emacs in batch mode to trigger Elpaca's installation logic
     $EMACS --batch \
            --eval "(setq gc-cons-threshold 100000000)" \
-           --eval "(setq use-package-expand-minimally t)" \
-           --eval "(setq use-package-compute-statistics nil)" \
-           --eval "(setq my-cli-force-refresh $REFRESH_FLAG)" \
            -l "$INIT_FILE" \
-           --eval "(message \"Sync complete.\")"
+           --eval "(elpaca-wait)" \
+           --eval "(message \"✨ Sync complete.\")"
 }
 
 function cmd_update() {
     stop_server
-    log_info "Updating packages..."
-    # Update implies refresh
+    log_info "Checking for package updates..."
+
     $EMACS --batch \
-           --eval "(setq gc-cons-threshold 100000000)" \
-           -l "$INIT_FILE" --eval "
-          (progn
-            (require 'package)
-            (defalias 'yes-or-no-p 'always)
-            (defalias 'y-or-n-p 'always)
-            (message \"Refreshing package contents...\")
-            (package-refresh-contents)
-            (message \"Upgrading packages...\")
-            (condition-case err
-                (package-upgrade-all)
-              (error (message \"Error during upgrade: %s\" err)))
-            (message \"Autoremoving obsolete packages...\")
-            (package-autoremove))"
+           -l "$INIT_FILE" \
+           --eval "(progn
+                     (message \"Updating all packages via Elpaca...\")
+                     (elpaca-update-all)
+                     (elpaca-wait))"
 }
 
-function cmd_build() {
-    log_info "Rebuilding (byte-compiling) packages..."
-    $EMACS --batch -l "$INIT_FILE" --eval "
-      (progn
-        (require 'package)
-        (message \"Compiling packages in %s...\" package-user-dir)
-        (byte-recompile-directory package-user-dir 0 t))"
+function cmd_purge() {
+    log_info "Purging Elpaca build directories..."
+    # Targets the custom local package directory
+    rm -rf "$PROJECT_ROOT/.local/packages/elpaca/builds/"
+    log_info "Purge complete. Run 'sync' to rebuild."
 }
 
 function cmd_doctor() {
     log_info "Running Doctor..."
-    echo "Emacs version:"
-    $EMACS --version | head -n 1
-    echo "Config location: $PROJECT_ROOT"
-    if [ -f "$INIT_FILE" ]; then
-        echo "Init file found."
-    else
-        echo "WARNING: Init file not found at $INIT_FILE"
-    fi
-    # Check for native comp
-    $EMACS --batch --eval "(if (native-comp-available-p) (message \"Native compilation: Available\") (message \"Native compilation: Not available\"))"
+    echo "Emacs version: $($EMACS --version | head -n 1)"
+    echo "Git path: $(which git)"
 
-    # Check Org structure
     if [ -f "$PROJECT_ROOT/bin/validate-org-blocks" ]; then
-        echo "Checking config.org blocks..."
+        echo "Validating config.org blocks..."
         "$PROJECT_ROOT/bin/validate-org-blocks" "$PROJECT_ROOT/config.org"
+    fi
+
+    if [ -d "$PROJECT_ROOT/.local/packages/elpaca" ]; then
+        echo "✅ Elpaca directory found."
+    else
+        echo "⚠️ Elpaca directory not found. Run 'sync' to initialize."
     fi
 }
 
-# Main dispatch
+# --- Command Dispatch ---
 if [ -z "$1" ]; then
     print_usage
     exit 1
 fi
 
 case "$1" in
-    sync|install)
-        shift
-        cmd_sync "$@"
-        ;; 
-    update|upgrade)
-        cmd_update
-        ;; 
-    build|rebuild|compile)
-        cmd_build
-        ;; 
-    doctor)
-        cmd_doctor
-        ;; 
-    help|--help|-h)
-        print_usage
-        ;; 
-    *)
-        echo "Unknown command: $1"
-        print_usage
-        exit 1
-        ;; 
+    sync|install) shift; cmd_sync "$@" ;;
+    update|upgrade) cmd_update ;;
+    purge) cmd_purge ;;
+    doctor) cmd_doctor ;;
+    help|--help|-h) print_usage ;;
+    *) echo "Unknown command: $1"; print_usage; exit 1 ;;
 esac
