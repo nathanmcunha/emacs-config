@@ -10,43 +10,41 @@
 * Core Configuration
 ** Custom Functions
 #+begin_src emacs-lisp
-;; 1. Defina a função em uma seção de utilitários ou no topo do arquivo
-;; --- Smart TAB Dispatcher (Doom Style) ---
+ ;; 1. Define the function in a utilities section or at the top of the file
+ ;; --- Smart TAB Dispatcher (Doom Style) ---
 (defun my/yas-try-expand-first ()
   "Try to expand a yasnippet, then handle completion or indentation.
 Following Doom Emacs priority: Minibuffer > Yasnippet > Corfu > Indent."
   (interactive)
   (cond
-   ;; 1. Minibuffer: Mantém o comportamento de completação do Vertico
-   ((active-minibuffer-window)
+    ;; 1. Minibuffer: Keep Vertico completion behavior
+    ((active-minibuffer-window)
     (if (and (bound-and-true-p vertico-mode) vertico--candidates)
         (vertico-insert)
       (minibuffer-complete)))
 
-   ;; 2. PRIORIDADE DOOM: Tenta expandir o snippet ANTES da navegação do menu
-   ((and (bound-and-true-p yas-minor-mode) (yas-expand))
+    ;; 2. DOOM PRIORITY: Try to expand snippet BEFORE menu navigation
+    ((and (bound-and-true-p yas-minor-mode) (yas-expand))
     t)
 
-   ;; 3. Corfu: Se o menu estiver aberto, o TAB navega entre os candidatos
-   ((and (bound-and-true-p corfu-mode) corfu--candidates)
+    ;; 3. Corfu: If menu is open, TAB navigates between candidates
+    ((and (bound-and-true-p corfu-mode) corfu--candidates)
     (corfu-next))
 
-   ;; 4. Suporte para Magit (Toggle de seções)
-   ((derived-mode-p 'magit-mode)
+    ;; 4. Support for Magit (Toggle sections)
+    ((derived-mode-p 'magit-mode)
     (magit-section-toggle (magit-current-section)))
 
-   ;; 5. Fallback final: Indentação padrão
-   (t
+    ;; 5. Final fallback: Standard indentation
+    (t
     (indent-for-tab-command))))
 
-;; --- Mapeamento Global e Evil ---
+ ;; --- Global and Evil Mapping ---
 (global-set-key (kbd "TAB") 'my/yas-try-expand-first)
-(global-set-key (kbd "<tab>") 'my/yas-try-expand-first)
 
-;; Garante que o Evil Mode em Insert State use esta lógica
-(with-eval-after-load 'evil
-  (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
-  (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first))
+ ;; Ensure Evil Mode in Insert State uses this logic
+  (with-eval-after-load 'evil
+    (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first))
 
 ;; --- Doom-like "K" Documentation Lookup ---
 (defun my/smart-lookup ()
@@ -122,7 +120,7 @@ Following Doom Emacs priority: Minibuffer > Yasnippet > Corfu > Indent."
   "Copy the current file's path relative to project root to the kill ring."
   (interactive)
   (let* ((filename (or (buffer-file-name) (error "Buffer not visiting a file")))
-         (project-root (or (projectile-project-root) (error "Not in a project")))
+         (project-root (or (and (project-current) (project-root (project-current))) default-directory))
          (relative-path (file-relative-name filename project-root)))
     (kill-new relative-path)
     (message "Copied: %s" relative-path)))
@@ -150,7 +148,13 @@ Following Doom Emacs priority: Minibuffer > Yasnippet > Corfu > Indent."
 (defun my/launch-alacritty (dir) (call-process-shell-command (format "alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
 
 (defun my/open-terminal-here () (interactive) (my/launch-alacritty default-directory))
-(defun my/open-terminal-in-project () (interactive) (my/launch-alacritty 'projectile-project-info))
+(defun my/open-terminal-in-project ()
+  "Launch Alacritty terminal in the current project root."
+  (interactive)
+  (let ((project (project-current)))
+    (if project
+        (my/launch-alacritty (project-root project))
+      (message "Not in a project"))))
 #+end_src
 ** Defaults and UI
 We start by cleaning up the UI to make it look modern and minimal, similar to Doom's defaults.
@@ -192,10 +196,10 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
   (setq frame-resize-pixelwise t)
   (add-to-list 'default-frame-alist '(fullscreen . maximized))
 
-  ;; Line Numbers & Visuals
+   ;; Line Numbers & Visuals
   (global-display-line-numbers-mode t)
-  (setq display-line-numbers-type t)       ; Use 'relative for Doom style
-  (setq display-line-numbers-grow-only t)  ; Prevent jitter
+  (setopt display-line-numbers-type t)       ; Use 'relative for Doom style
+  (setopt display-line-numbers-grow-only t)  ; Prevent jitter
 
   ;; Indentation (2 Spaces)
   (setq-default tab-width 2)
@@ -228,40 +232,43 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (dired (expand-file-name "~/.config/emacs/")))
 
 
-  ;; Recent files tracking
+   ;; Recent files tracking
   (use-package recentf
-    :ensure nil
-    :init
-    (recentf-mode 1)
-    :config
-    (setq recentf-max-saved-items 200)
-    (setq recentf-exclude '("\.git/" "\.emacs\.d/eln-cache/" "/tmp/" "/elpa/")))
+     :ensure nil
+     :init
+     (recentf-mode 1)
+     :config
+     (setopt recentf-max-saved-items 200)
+     (setopt recentf-exclude '("\.git/" "\.emacs\.d/eln-cache/" "/tmp/" "/elpa/")))
 
   ;; Save Place (Restore cursor position)
   (use-package saveplace
     :ensure nil
     :init (save-place-mode 1))
 
-  ;; Super Save (Auto-save on focus change)
+   ;; Super Save (Auto-save on focus change)
   (use-package super-save
-    :ensure t
-    :defer t
-    :config
-    (super-save-mode +1)
-    (setq super-save-auto-save-when-idle nil)
-    (setq super-save-idle-duration 60.0)
-    (setq super-save-triggers
-          '(evil-window-next evil-window-prev balance-windows other-window)))
+     :ensure t
+     :defer t
+     :config
+     (super-save-mode +1)
+    (setopt super-save-auto-save-when-idle nil)
+    (setopt super-save-idle-duration 60.0)
+    (setopt super-save-triggers
+           '(evil-window-next evil-window-prev balance-windows other-window)))
 #+end_src
 
-** Server Mode
-Start the Emacs server automatically to enable ~emacsclient~ connections.
-#+begin_src emacs-lisp
-  (use-package server
-    :ensure nil
-    :config
-    (unless (server-running-p)
-      (server-start)))
+ ** Server Mode
+ Start the Emacs server automatically to enable ~emacsclient~ connections.
+ #+begin_src emacs-lisp
+   (use-package server
+     :ensure nil
+     :config
+     (unless (server-running-p)
+       (server-start)))
+
+   ;; Repeat Mode (Emacs 28+) - Repeat commands without prefix keys
+   (repeat-mode 1)
 #+end_src
 ** Keybinding Helper (General.el)
 To mimic Doom's leader keys (~SPC~), we use ~general.el~.
@@ -518,7 +525,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     
     (column-number-mode -1)
 
-    ;; Integração de clique para Flymake
+    ;; Click integration for Flymake
     (defun my/doom-modeline-flymake-click ()
       (interactive)
       (if (bound-and-true-p flymake-mode)
@@ -571,13 +578,13 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
        ((string-suffix-p "~" pattern) `(orderless-flex . ,(substring pattern 0 -1)))))
     (setq orderless-style-dispatchers '(my/orderless-dispatch)))
 
-  (use-package marginalia
-    :after vertico
-    :custom
-    (marginalia-max-relative-age 0)
-    (marginalia-align 'right)
-    :init (marginalia-mode)
-    :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle)))
+   (use-package marginalia
+     :after vertico
+     :custom
+     (setopt marginalia-max-relative-age 0)
+     (setopt marginalia-align 'right)
+     :init (marginalia-mode)
+     :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle)))
 
   (use-package nerd-icons-completion
     :after marginalia
@@ -598,8 +605,8 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     (setq consult-narrow-key "<")
     (setq consult-widen-key ">")
     (setq consult-preview-key 'any)
-    (autoload 'projectile-project-root "projectile")
-    (setq consult-project-function (lambda (_) (projectile-project-root))))
+    (autoload 'project-root "project")
+    (setq consult-project-function (lambda (_) (project-root (project-current)))))
 
   (use-package consult-dir
     :bind (("C-x C-d" . consult-dir)
@@ -751,82 +758,236 @@ Sets up the popup, cycling, and integration with icons.
    (setq magit-bury-buffer-function #'magit-mode-quit-window))
 #+end_src
     
-** Projectile
-#+begin_src emacs-lisp
-(use-package projectile
-  :diminish projectile-mode
-  :init
-  (projectile-mode +1)
-   :config
-   ;; Set the default completion system (if using native Projectile commands)
-   (setq projectile-completion-system 'default)
+ ** Enhanced project.el (Native)
+ Extend built-in project.el with Projectile-like features.
+ #+begin_src emacs-lisp
+   (use-package project
+     :ensure nil
+     :config
+     (setq project-list-file (expand-file-name "projects" user-emacs-directory))
 
-   ;; Action when switching projects: List project files with consult-find
-   (setq projectile-switch-project-action
-         #'(lambda ()
-             (let ((default-directory (projectile-project-root)))
-               (consult-find default-directory))))
+     ;; 0. Project Type Detection
+     (defun my/project-type (dir)
+       "Return the project type for DIR (gradle, maven, npm, rust)."
+       (cond
+        ((or (file-exists-p (expand-file-name "build.gradle" dir))
+             (file-exists-p (expand-file-name "build.gradle.kts" dir))) 'gradle)
+        ((file-exists-p (expand-file-name "pom.xml" dir)) 'maven)
+        ((file-exists-p (expand-file-name "package.json" dir)) 'npm)
+        ((file-exists-p (expand-file-name "Cargo.toml" dir)) 'rust)
+        (t nil)))
 
-  (setq projectile-project-search-path '("~/projects" "~/workspace" "~/git"))
-  (setq projectile-sort-order 'recently-active)
-  
-  (dolist (dir '(".idea" ".vscode" "node_modules" "target" "build" "dist" ".cache" ".git"))
-    (add-to-list 'projectile-globally-ignored-directories dir)))
-    #+end_src
+     (defun my/project-type-current ()
+       "Return the project type for the current project."
+       (let ((project (project-current)))
+         (when project
+           (my/project-type (project-root project)))))
 
-** Workspaces (Perspective)
-#+begin_src emacs-lisp
-  (use-package perspective
-    :bind ("C-x k" . persp-kill-buffer*)
-    :init
-    (persp-mode)
-    :custom
-    (persp-mode-prefix-key (kbd "C-c M-p"))
-    (persp-show-modestring nil)
-    :config
-    (with-eval-after-load 'consult
-      (consult-customize consult-source-buffer :hidden t :default nil)
-      (add-to-list 'consult-buffer-sources 'persp-consult-source)))
+     ;; 1. Add More Project Markers (as fallback)
+     (defun my/project-try-local (dir)
+       "Detect project by common markers (Gemfile, package.json, etc.)."
+       (catch 'found
+         (let ((home (expand-file-name "~")))
+           (dolist (file '("Gemfile" "package.json" "Cargo.toml" "go.mod"
+                           "pom.xml" "build.gradle" "build.gradle.kts" "settings.gradle"
+                           "pyproject.toml" "setup.py" "Makefile" "CMakeLists.txt"
+                           "meson.build" "project.clj" "deps.edn" "mix.exs"
+                           "shard.yml" "pubspec.yaml" "Platformio.ini" "platformio.ini"))
+             (let ((path (locate-dominating-file dir file)))
+               (when (and path (not (file-equal-p path home)))
+                 (throw 'found (cons 'transient path))))))))
 
-   (use-package persp-projectile
-     :ensure t
-     :after (perspective projectile))
+     ;; Append to hook so VC backend (git) is tried first
+     (add-hook 'project-find-functions 'my/project-try-local 100)
 
+     ;; 2. Smart Find File (fallback to find-file if not in project)
+     (defun my/project-find-file ()
+       "Find file in project or current directory."
+       (interactive)
+       (if (project-current)
+           (project-find-file)
+         (call-interactively 'find-file)))
+
+     ;; 3. Project-aware Recent Files
+     (defun my/project-recent-files ()
+       "Show recent files in current project using consult."
+       (interactive)
+       (let* ((project (project-current))
+              (root (and project (project-root project)))
+              (recent-files (and root (seq-filter (lambda (f) (string-prefix-p root f)) recentf-list))))
+         (if recent-files
+             (find-file (completing-read "Recent (project): " recent-files))
+           (message "No recent files in this project."))))
+
+     ;; 4. Improve project switching (mimic Projectile)
+     (setq project-switch-commands
+           '((project-find-file "Find file" "f")
+             (project-dired "Dired" "d")
+             (project-vc-dir "VC Dir" "v")
+             (project-eshell "Eshell" "e")
+             (my/project-dispatch "Menu" "m")))
+
+     ;; 5. Project Command Palette
+     (defun my/project-dispatch ()
+       "Projectile-like command dispatcher for project.el."
+       (interactive)
+       (let ((choices '(("f" "Find file" project-find-file)
+                        ("b" "Switch buffer" project-switch-to-buffer)
+                        ("s" "Search in project" project-search)
+                        ("R" "Recent files" my/project-recent-files)
+                        ("d" "Dired" project-dired)
+                        ("v" "VC Dir" project-vc-dir)
+                        ("k" "Kill buffers" project-kill-buffers)
+                        ("r" "Find regexp" project-find-regexp)
+                        ("e" "Eshell" project-eshell))))
+         (let* ((choice (completing-read "Project action: " choices nil t))
+                (action (nth 2 (assoc choice choices))))
+           (call-interactively action)))))
+
+     ;; 5. Benchmark Current Project
+     (defun my/benchmark-current-project ()
+       "Run performance benchmarks on the current project."
+       (interactive)
+       (let ((project-root (or (project-root (project-current))
+                               (project-root (project-current))
+                               default-directory)))
+         (let ((buffer (get-buffer-create "*Benchmark Results*"))
+               (script (expand-file-name "scripts/benchmark-project.el" user-emacs-directory)))
+           (if (file-exists-p script)
+               (progn
+                 (message "Running benchmark on %s..." project-root)
+                 (with-current-buffer buffer
+                   (read-only-mode -1)
+                   (erase-buffer)
+                   (call-process (concat invocation-directory invocation-name)
+                                 nil buffer t
+                                 "-Q" "--script" script "--" project-root)
+                   (goto-char (point-min))
+                   (read-only-mode 1))
+                 (display-buffer buffer)
+                 (message "Benchmark complete! See *Benchmark Results* buffer."))
+             (message "Benchmark script not found: %s" script)))))
+
+     ;; 6. Project Compilation and Testing (Like Projectile)
+     (defun my/project-compile ()
+       "Compile the current project."
+       (interactive)
+       (let* ((project (project-current t))
+              (root (project-root project))
+              (type (my/project-type root))
+              (command (cond
+                        ((eq type 'gradle) "./gradlew build")
+                        ((eq type 'maven) "mvn compile")
+                        ((eq type 'npm) "npm run build")
+                        ((eq type 'rust) "cargo build")
+                        (t (read-string "Compile command: " "make -k ")))))
+         (let ((default-directory root))
+           (compile command))))
+
+     (defun my/project-test ()
+       "Run tests for the current project."
+       (interactive)
+       (let* ((project (project-current t))
+              (root (project-root project))
+              (type (my/project-type root))
+              (command (cond
+                        ((eq type 'gradle) "./gradlew test")
+                        ((eq type 'maven) "mvn test")
+                        ((eq type 'npm) "npm test")
+                        ((eq type 'rust) "cargo test")
+                        (t (read-string "Test command: " "make test ")))))
+         (let ((default-directory root))
+           (compile command))))
+
+     (defun my/project-run ()
+       "Run the current project."
+       (interactive)
+       (let* ((project (project-current t))
+              (root (project-root project))
+              (type (my/project-type root))
+              (command (cond
+                        ((eq type 'gradle) "./gradlew run")
+                        ((eq type 'maven) "mvn exec:java")
+                        ((eq type 'npm) "npm start")
+                        ((eq type 'rust) "cargo run")
+                        (t (read-string "Run command: ")))))
+         (let ((default-directory root))
+           (compile command))))
+#+end_src
+
+ ** Workspaces (Perspective)
+ #+begin_src emacs-lisp
+   (use-package perspective
+     :bind ("C-x k" . persp-kill-buffer*)
+     :init
+     (persp-mode)
+     :custom
+     (persp-mode-prefix-key (kbd "C-c M-p"))
+     (persp-show-modestring nil)
+     :config
+     (with-eval-after-load 'consult
+       (consult-customize consult-source-buffer :hidden t :default nil)
+       (add-to-list 'consult-buffer-sources 'persp-consult-source)))
 
 #+end_src
 
+  ** Project Workspaces (Perspective Integration)
+  Integrate project.el with perspective.el for Doom-like workspace switching.
+  #+begin_src emacs-lisp
+    (defun my/project-workspace-switch (dir)
+      "Switch to a perspective for the project in DIR."
+      (let ((name (file-name-nondirectory (directory-file-name dir))))
+        (persp-switch name)))
+ 
+    ;; Automatically switch perspective when switching projects via SPC p p
+    (advice-add 'project-switch-project :before #'my/project-workspace-switch)
+  #+end_src
 ** Dirvish
 #+begin_src emacs-lisp
-    ;;; Dirvish (File Explorer - Vanilla Mode)
+      ;;; Dirvish (File Explorer - Vanilla Mode)
+  (use-package dirvish
+    :ensure t
+    :init
+    ;; 1. Enable Dirvish globally (FIX: code was missing)
+    (dirvish-override-dired-mode)
+    
+    :custom
+    ;; Visual attributes (icons, git status, size, etc)
+    (dirvish-attributes '(vc-state nerd-icons file-size collapse subtree-state git-msg))
+    
+    ;; Header layout
+    (dirvish-header-line-format '(:left (path) :right (free-space)))
+    (dirvish-mode-line-format '(:left (sort symlink) :right (omit yank index)))
+    
+    :config
+    ;; Enable file preview
+    (dirvish-peek-mode)
+    
+    ;; Default Dired adjustments
+    (setq dired-listing-switches "-agho --group-directories-first"
+          dired-recursive-deletes 'always
+          dired-recursive-copies 'always
+          delete-by-moving-to-trash t))
 
-      (use-package dirvish :ensure t :init
-        ;; Habilita o Dirvish globalmente (dirvish-override-dired-mode)
-        :custom ;; Atributos visuais (ícones, status git, tamanho, etc)
-        (dirvish-attributes '(vc-state nerd-icons file-size collapse subtree-state git-msg))
+   ;; Function to open at project root
+  (defun my/dirvish-project ()
+    "Open Dirvish at project root (if available) or current directory."
+    (interactive)
+    (let ((root (project-root (project-current))))
+      (if root
+          (dirvish root)
+        (dirvish))))
 
-        ;; Layout dos cabeçalhos
-        (dirvish-header-line-format '(:left (path) :right (free-space))) (dirvish-mode-line-format '(:left (sort symlink) :right (omit yank index)))
+  ;; Navigation within Dirvish buffer (Keep as is)
+  (general-define-key
+   :keymaps 'dirvish-mode-map
+   :states 'normal
+   "q" 'dirvish-quit
+   "h" 'dired-up-directory
+   "l" 'dired-find-file
+   "TAB" 'dirvish-subtree-toggle)
 
-        :config ;; Habilita preview de arquivos
-        (dirvish-peek-mode)
-
-        ;; Ajustes padrão do Dired
-        (setq dired-listing-switches "-agho --group-directories-first" dired-recursive-deletes 'always dired-recursive-copies 'always delete-by-moving-to-trash t))
-
-      ;; Função para abrir na raiz do projeto
-      (defun my/dirvish-project () "Abre o Dirvish na raiz do projeto (se disponível) ou no diretório atual." (interactive) (let ((root (projectile-project-root))) (if root (dirvish root) (dirvish))))
-
-;;; Keybindings
-
-      ;; Menu Leader (SPC e)
-      (my-leader-def "e" '(:ignore t :which-key "explorer")
-        "ee" '(my/dirvish-project :which-key "project root");; Abre na raiz do projeto
-        "ef" '(dirvish-fd :which-key "find files (fd)");; Busca rápida (fd)
-        "e ." '(dirvish :which-key "current dir")) ;; Abre no diretório atual
-
-      ;; Navegação dentro do buffer do Dirvish
-      (general-define-key :keymaps 'dirvish-mode-map :states 'normal "q" 'dirvish-quit "h" 'dired-up-directory "l" 'dired-find-file "TAB" 'dirvish-subtree-toggle)
-  #+end_src
+#+end_src
 
 ** Formatting (Apheleia)
   #+begin_src emacs-lisp
@@ -839,7 +1000,7 @@ Sets up the popup, cycling, and integration with icons.
           '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
     (push '(java-mode . google-java-format) apheleia-mode-alist)
     (push '(java-ts-mode . google-java-format) apheleia-mode-alist))
- #+end_src
+#+end_src
 
 ** Linting (Flymake)
  Configured for Eglot and Consult integration. Replaces Flycheck for consistency.
@@ -912,53 +1073,53 @@ Sets up the popup, cycling, and integration with icons.
                (message "No errors found in project.")))))))
 #+end_src
 
- * Tree-Sitter Configuration
- Configure Tree-sitter for better syntax highlighting and ensure grammars are installed.
+ ** Tree-Sitter Configuration
+  Automatic tree-sitter grammar management using treesit-auto.
 
- #+begin_src emacs-lisp
- (use-package treesit
-   :ensure nil
-   :config
-   (setq treesit-language-source-alist
-         '((java "https://github.com/tree-sitter/tree-sitter-java")
-           (javascript "https://github.com/tree-sitter/tree-sitter-javascript")
-           (typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
-           (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")))
+  #+begin_src emacs-lisp
+  (use-package treesit-auto
+    :ensure t
+    :config
+    (setq treesit-auto-install 'prompt)
+    (global-treesit-auto-mode))
+  #+end_src
 
-   (defun my/install-java-tree-sitter ()
-     "Install the Java tree-sitter grammar."
-     (interactive)
-     (treesit-install-language-grammar 'java)
-     (message "Java grammar installed! Restart Emacs or reload the mode.")))
- #+end_src
-
- * Java Development (Eglot + JDTLS)
+** Java Development (Eglot + JDTLS)
  Lightweight configuration using Eglot, replacing the heavy lsp-java.
 
- #+begin_src emacs-lisp
+ #+begin_src emacs-lisp 
 (use-package eglot-java
   :ensure t
   :hook (((java-mode java-ts-mode) . eglot-java-mode))
-   :config
-   ;; Increase eglot timeout to give JDTLS time to start up (common in Java)
-   (setq eglot-connect-timeout 120)
-   (setq eglot-request-timeout 60)
+  :config
+  (setq eglot-connect-timeout 120)
+  (setq eglot-request-timeout 60)
+
+  ;; Define executable with Preview flags at process ROOT
+  (setq eglot-java-eclipse-jdtls-executable 
+        '("~/.local/share/mise/installs/java/temurin-25.0.2+10.0.LTS/bin/java" 
+          "--enable-preview" 
+          "-Xmx2G"))
 
   (defun my/eglot-java-init-opts (server jdt)
-    (let ((debug-jar "/home/nathanmcunha/.config/emacs/java-debug/debug-plugin.jar"))
+    (let ((debug-jar "/home/nathanmcunha/.config/emacs/java-debug/debug-plugin.jar")
+          (java-home (expand-file-name "~/.local/share/mise/installs/java/temurin-25.0.2+10.0.LTS")))
       `(:bundles [,debug-jar]
         :extendedClientCapabilities (:classFileContentsSupport t
                                      :generateToStringPromptSupport t
                                      :supportsDebugger t)
-        :settings (:java (:import (:gradle (:enabled t))
-                          :configuration (:runtimes []))))))
+        :settings (:java (:import (:gradle (:enabled t)) ;; Feche o :import aqui!
+                          :jdt (:ls (:vmArgs ["--enable-preview" "-Xmx2G"]))
+                          :configuration (:runtimes [(:name "JavaSE-25" 
+                                                     :path ,java-home
+                                                     :default t)]))))))
 
   (setq eglot-java-user-init-opts-fn 'my/eglot-java-init-opts))
-  #+end_src
+
+#+end_src
 
 
-
- * Visual Wrapping (Adaptive Wrap)
+** Visual Wrapping (Adaptive Wrap)
  Improves reading of long lines in code buffers, maintaining visual indentation.
 
  #+begin_src emacs-lisp
@@ -975,7 +1136,6 @@ Sets up the popup, cycling, and integration with icons.
                (visual-line-mode 1)          ;; Enable line wrapping at window edge
                (adaptive-wrap-prefix-mode 1))) ;; Enable smart indentation correction
 #+end_src
-** Extras & Languages
 ** Gemini & Terminal
 #+begin_src emacs-lisp
      ;; 1. Dependencies (Eat and Popup)
@@ -1092,7 +1252,7 @@ Sets up the popup, cycling, and integration with icons.
 ** Debugging (DAPE)
 Modern debug configuration without dap-mode.
 
-#+begin_src emacs-lisp
+#+begin_src emacs-lisp 
   (require 'which-func)
   (which-function-mode 1)
 
@@ -1116,11 +1276,11 @@ Modern debug configuration without dap-mode.
   (defun my/java-debug-test-at-point ()
     "Initialize JVM in debug mode only for the method or class under cursor."
     (interactive)
-    (unless (projectile-project-p)
-      (user-error "Not in a Projectile project"))
+    (unless (project-current)
+      (user-error "Not in a project"))
 
-    (let* ((project-root (projectile-project-root))
-           (is-gradle (or (string= (projectile-project-type) 'gradle)
+    (let* ((project-root (project-root (project-current)))
+           (is-gradle (or (eq (my/project-type project-root) 'gradle)
                           (file-exists-p (expand-file-name "gradlew" project-root))))
            (test-target (my/get-java-full-test-target is-gradle))
            (buf-name " *java-test-debug-process*")
@@ -1181,43 +1341,50 @@ Modern debug configuration without dap-mode.
                    :port 5005)))
 #+end_src
 
-** Java Test Coverage (JaCoCo)
-Módulo para visualização sutil de cobertura.
+ ** Java Test Coverage (JaCoCo)
+ Module for subtle coverage visualization.
 
 #+begin_src emacs-lisp
-  (defvar my/java-coverage-overlays nil "Lista global de overlays ativos.")
-  (defvar-local my/java-coverage-visible nil "Estado da cobertura no buffer.")
+   (defvar my/java-coverage-overlays nil "Global list of active overlays.")
+   (defvar-local my/java-coverage-visible nil "Coverage state in buffer.")
 
   (defface my/jacoco-lens-face
     '((t :inherit shadow :slant italic :height 0.9 :foreground "green"))
-    "Face para a porcentagem de cobertura acima dos métodos.")
+     "Face for coverage percentage above methods.")
 
-  (defface my/jacoco-missed-line-face
-    '((t :underline (:style wave :color "orange")))
-    "Face sutil (onda laranja) para linhas não cobertas.")
+   (defface my/jacoco-missed-line-face
+     '((t :underline (:style wave :color "orange")))
+     "Subtle face (orange wave) for uncovered lines.")
 
-  (defun my/java-get-jacoco-path ()
-    "Localiza o relatório JaCoCo XML via Projectile."
+   (defun my/java-get-jacoco-path ()
+     "Locate JaCoCo XML report."
     (let ((gradle-path "build/reports/jacoco/test/jacocoTestReport.xml")
-          (maven-path "target/site/jacoco/jacocoTestReport.xml"))
-      (cond
-       ((and (projectile-project-p) (file-exists-p (expand-file-name gradle-path (projectile-project-root))))
-        (expand-file-name gradle-path (projectile-project-root)))
-       ((and (projectile-project-p) (file-exists-p (expand-file-name maven-path (projectile-project-root))))
-        (expand-file-name maven-path (projectile-project-root)))
-       (t nil))))
+          (maven-path "target/site/jacoco/jacocoTestReport.xml")
+          (project (project-current)))
+      (when project
+        (let ((root (project-root project)))
+          (cond
+           ((file-exists-p (expand-file-name gradle-path root))
+            (expand-file-name gradle-path root))
+           ((file-exists-p (expand-file-name maven-path root))
+            (expand-file-name maven-path root))
+           (t nil))))))
 
-  (defun my/java-coverage-browse-report ()
-    "Abre o relatório HTML do JaCoCo no navegador."
+   (defun my/java-coverage-browse-report ()
+     "Open JaCoCo HTML report in browser."
     (interactive)
     (let ((gradle-html "build/reports/jacoco/test/html/index.html")
-          (maven-html "target/site/jacoco/index.html"))
-      (cond
-       ((and (projectile-project-p) (file-exists-p (expand-file-name gradle-html (projectile-project-root))))
-        (browse-url (expand-file-name gradle-html (projectile-project-root))))
-       ((and (projectile-project-p) (file-exists-p (expand-file-name maven-html (projectile-project-root))))
-        (browse-url (expand-file-name maven-html (projectile-project-root))))
-       (t (message "Relatório HTML não encontrado.")))))
+          (maven-html "target/site/jacoco/index.html")
+          (project (project-current)))
+      (if project
+          (let ((root (project-root project)))
+            (cond
+             ((file-exists-p (expand-file-name gradle-html root))
+              (browse-url (expand-file-name gradle-html root)))
+             ((file-exists-p (expand-file-name maven-html root))
+              (browse-url (expand-file-name maven-html root)))
+             (t (message "HTML report not found."))))
+        (message "Not in a project."))))
 
   (defun my/java-coverage-clear ()
     "Remove todos os overlays e limpa a lista."
@@ -1226,8 +1393,8 @@ Módulo para visualização sutil de cobertura.
       (mapc #'delete-overlay my/java-coverage-overlays)
       (setq my/java-coverage-overlays nil)))
 
-  (defun my/java-coverage-toggle ()
-    "Alterna a visualização da cobertura."
+   (defun my/java-coverage-toggle ()
+     "Toggle coverage visualization."
     (interactive)
     (if my/java-coverage-visible
         (progn
@@ -1240,9 +1407,10 @@ Módulo para visualização sutil de cobertura.
 
   (defun my/java-apply-subtle-coverage ()
     "Aplica lenses na assinatura e highlights laranja com tooltips no corpo."
-    (let ((report-path (my/java-get-jacoco-path))
-          (relative-path (and (projectile-project-p) 
-                              (file-relative-name (buffer-file-name) (projectile-project-root)))))
+    (let* ((project (project-current))
+           (report-path (my/java-get-jacoco-path))
+           (relative-path (and project 
+                               (file-relative-name (buffer-file-name) (project-root project)))))
       (when (and report-path relative-path)
         (let* ((xml (xml-parse-file report-path))
                (report (car xml)))
@@ -1295,215 +1463,251 @@ Módulo para visualização sutil de cobertura.
       (when (= 0 (forward-line (1- line)))
         (let ((ov (make-overlay (line-beginning-position) (line-end-position))))
           (overlay-put ov 'face 'my/jacoco-missed-line-face)
-          (overlay-put ov 'help-echo tooltip-text) ;; Este é o Tooltip nativo
+          (overlay-put ov 'help-echo tooltip-text) ;; This is the native Tooltip
           (push ov my/java-coverage-overlays)))))
 
   ;; Auto-refresh integrado
-  (advice-add 'projectile-test-project :after 
+  (advice-add 'my/project-test :after 
               (lambda (&rest _) (when my/java-coverage-visible (my/java-apply-subtle-coverage))))
 #+end_src
 
+
+** Gptel
+#+begin_src emacs-lisp
+      ;; Ephemeral/Secrets Configuration
+    (use-package auth-source
+      :ensure nil
+      :custom
+      (auth-sources '("~/.authinfo.gpg")))
+
+  ;; Ensure Emacs asks for GPG password in minibuffer
+  (setq epa-pinentry-mode 'loopback)
+  (setq epa-file-cache-passphrase-for-symmetric-encryption t)
+
+  ;; 2. Gptel configuration with Z.ai as Default
+  (use-package gptel
+    :ensure t
+    :config
+    ;; Configure Z.ai Coding using key from ~/.authinfo.gpg
+    (gptel-make-openai "Z.ai-Coding"
+      :host "api.z.ai"
+      :endpoint "/api/coding/paas/v4/chat/completions"
+      :stream t
+      :key 'gptel-api-key ;; gptel will search auth-source for host 'api.z.ai'
+      :models '(glm-4.7-plus
+                glm-4.7
+                glm-4-plus))
+
+    ;; SET Z.AI AS DEFAULT
+    (setq gptel-model 'glm-4.7-plus
+          gptel-backend (gptel-get-backend "Z.ai-Coding"))) 
+#+end_src
 * Keybindings Configuration
 ** Centralized Leader Definer
 #+begin_src emacs-lisp
-(my-leader-def
-  ""    nil
-  "SPC" '(execute-extended-command :which-key "M-x")
+  (my-leader-def
+    ""    nil
+    "SPC" '(execute-extended-command :which-key "M-x")
 
-  ;; --- Help & Config (h) ---
-  "h"   '(:ignore t :which-key "help/config")
-  "h b" '(:ignore t :which-key "build")
-  "h b i" '(my/emacs-build-info :which-key "Emacs build info")
-  "h r" '(:ignore t :which-key "reload")
-  "h r r" '((lambda () (interactive) (load-file user-init-file)) :which-key "reload config")
+     ;; --- Help & Config (h) ---
+     "h"   '(:ignore t :which-key "help/config")
+     "h b" '(:ignore t :which-key "build")
+     "h b i" '(my/emacs-build-info :which-key "Emacs build info")
+     "h b p" '(my/benchmark-current-project :which-key "benchmark project")
+     "h r" '(:ignore t :which-key "reload")
+     "h r r" '((lambda () (interactive) (load-file user-init-file)) :which-key "reload config")
 
-  ;; --- Buffer (b) ---
-  "TAB" '(mode-line-other-buffer :which-key "last buffer")
-  "."   '(find-file :which-key "find file")
-  ","   '(switch-to-buffer :which-key "switch buffer")
-  "`"   '(evil-switch-to-windows-last-buffer :which-key "last buffer")
-  
-  "b"   '(:ignore t :which-key "buffer")
-  "b b" '(projectile-switch-to-buffer :which-key "switch buffer")
-  "b B" '(switch-to-buffer :which-key "switch buffer (all)")
-  "b i" '(ibuffer :which-key "ibuffer")
-  "b n" '(next-buffer :which-key "next buffer")
-  "b p" '(previous-buffer :which-key "previous buffer")
-  "b s" '(save-buffer :which-key "save buffer")
-  "b S" '(evil-write-all :which-key "save all buffers")
-  "b r" '(revert-buffer :which-key "revert buffer")
-  "b k" '(kill-current-buffer :which-key "kill buffer")
-  "b K" '(my/kill-all-buffers :which-key "kill all buffers")
-  "b O" '(my/kill-other-buffers :which-key "kill other buffers")
-  "b N" '(evil-buffer :which-key "new buffer")
-  "b y" '(my/copy-this-file :which-key "copy file contents")
-  "b R" '(rename-buffer :which-key "rename buffer")
-  "b Y" '(bury-buffer :which-key "bury buffer")
+    ;; --- Buffer (b) ---
+     "."   '(find-file :which-key "find file")
+     ","   '(switch-to-buffer :which-key "switch buffer")
+     "`"   '(evil-switch-to-windows-last-buffer :which-key "last buffer")
+    
+    "b"   '(:ignore t :which-key "buffer")
+    "b b" '(project-switch-to-buffer :which-key "switch buffer")
+    "b B" '(switch-to-buffer :which-key "switch buffer (all)")
+    "b i" '(ibuffer :which-key "ibuffer")
+    "b n" '(next-buffer :which-key "next buffer")
+    "b p" '(previous-buffer :which-key "previous buffer")
+    "b s" '(save-buffer :which-key "save buffer")
+    "b S" '(evil-write-all :which-key "save all buffers")
+    "b r" '(revert-buffer :which-key "revert buffer")
+    "b k" '(kill-current-buffer :which-key "kill buffer")
+    "b K" '(my/kill-all-buffers :which-key "kill all buffers")
+    "b O" '(my/kill-other-buffers :which-key "kill other buffers")
+    "b N" '(evil-buffer :which-key "new buffer")
+    "b y" '(my/copy-this-file :which-key "copy file contents")
+    "b R" '(rename-buffer :which-key "rename buffer")
+    "b Y" '(bury-buffer :which-key "bury buffer")
 
-  ;; --- Code & LSP (c) ---
-  "c"   '(:ignore t :which-key "code")
-  "c a" '(eglot-code-actions :which-key "code action")
-  "c r" '(eglot-rename :which-key "rename")
-  "c f" '(apheleia-format-buffer :which-key "format")
-  "c d" '(xref-find-definitions :which-key "definition")
-  "c D" '(xref-find-references :which-key "references")
-  
-  ;; Java Specific
-  "c j" '(:ignore t :which-key "java project")
-  "c j n" '(eglot-java-create-project :which-key "new project")
-  "c j i" '(eglot-java-organize-imports :which-key "organize imports")
-  "c j r" '(my/eglot-restart :which-key "restart eglot")
-  "c j t" '(my/switch-to-java-ts-mode :which-key "switch to java-ts-mode")
-  "c j I" '(my/install-java-tree-sitter :which-key "install java grammar")
+    ;; --- Code & LSP (c) ---
+    "c"   '(:ignore t :which-key "code")
+    "c a" '(eglot-code-actions :which-key "code action")
+    "c r" '(eglot-rename :which-key "rename")
+    "c f" '(apheleia-format-buffer :which-key "format")
+    "c d" '(xref-find-definitions :which-key "definition")
+    "c D" '(xref-find-references :which-key "references")
+    
+    ;; Java Specific
+    "c j" '(:ignore t :which-key "java project")
+    "c j n" '(eglot-java-create-project :which-key "new project")
+    "c j i" '(eglot-java-organize-imports :which-key "organize imports")
+    "c j r" '(my/eglot-restart :which-key "restart eglot")
+    "c j t" '(my/switch-to-java-ts-mode :which-key "switch to java-ts-mode")
+    "c j I" '(my/install-java-tree-sitter :which-key "install java grammar")
 
-  ;; Java Coverage
-  "c C"   '(:ignore t :which-key "coverage")
-  "c C t" '(my/java-coverage-toggle :which-key "toggle coverage lenses")
-  "c C h" '(my/java-coverage-browse-report :which-key "open html report")
+    ;; Java Coverage
+    "c C"   '(:ignore t :which-key "coverage")
+    "c C t" '(my/java-coverage-toggle :which-key "toggle coverage lenses")
+    "c C h" '(my/java-coverage-browse-report :which-key "open html report")
 
-  ;; --- Debug (d) ---
-  "d"   '(:ignore t :which-key "debug")
-  "dt"  '(my/java-debug-test-at-point  :which-key "Debug Test")
-  "db"  '(dape-breakpoint-toggle :which-key "Toggle Breakpoint")
-  "dc"  '(dape-continue :which-key "Continue")
-  "dn"  '(dape-next :which-key "Next (Step Over)")
-  "di"  '(dape-step-in :which-key "Step In")
-  "do"  '(dape-step-out :which-key "Step Out")
-  "dr"  '(dape-restart :which-key "Restart")
-  "dl"  '(dape-info-setup :which-key "Show Layout")
-  "dQ"  '(dape-kill :which-key "Quit Debugger")
+    ;; --- Debug (d) ---
+    "d"   '(:ignore t :which-key "debug")
+    "dt"  '(my/java-debug-test-at-point  :which-key "Debug Test")
+    "db"  '(dape-breakpoint-toggle :which-key "Toggle Breakpoint")
+    "dc"  '(dape-continue :which-key "Continue")
+    "dn"  '(dape-next :which-key "Next (Step Over)")
+    "di"  '(dape-step-in :which-key "Step In")
+    "do"  '(dape-step-out :which-key "Step Out")
+    "dr"  '(dape-restart :which-key "Restart")
+    "dl"  '(dape-info-setup :which-key "Show Layout")
+    "dQ"  '(dape-kill :which-key "Quit Debugger")
 
-  ;; --- Errors/Flymake (e) ---
-  "e"   '(:ignore t :which-key "errors")
-  "e p" '(flymake-show-project-diagnostics :which-key "panel (project)")
-  "e b" '(flymake-show-buffer-diagnostics :which-key "panel (buffer)")
-  "e l" '(consult-flymake :which-key "search buffer")
-  "e L" '(my/consult-flymake-project :which-key "search project")
-  "e n" '(flymake-goto-next-error :which-key "next")
-  "e N" '(flymake-goto-prev-error :which-key "prev")
+    ;; --- Errors/Flymake (e) ---
+    "e"   '(:ignore t :which-key "errors")
+    "e p" '(flymake-show-project-diagnostics :which-key "panel (project)")
+    "e b" '(flymake-show-buffer-diagnostics :which-key "panel (buffer)")
+    "e l" '(consult-flymake :which-key "search buffer")
+    "e L" '(my/consult-flymake-project :which-key "search project")
+    "e n" '(flymake-goto-next-error :which-key "next")
+    "e N" '(flymake-goto-prev-error :which-key "prev")
 
+    ;; --- Explorer (E) ---
   ;; --- Explorer (E) ---
+    "E"   '(:ignore t :which-key "Explorer")
+    "E e" '(my/dirvish-project :which-key "project root")
+    "E f" '(dirvish-fd :which-key "find files (fd)")
+    "E ." '(dirvish :which-key "current dir")
+    
+    ;; --- File (f) ---
+    "f"   '(:ignore t :which-key "file")
+    "f f" '(my/project-find-file :which-key "find file in project")
+    "f F" '(find-file :which-key "find file anywhere")
+    "f r" '(consult-recent-file :which-key "recent files")
+    "f s" '(save-buffer :which-key "save file")
+    "f S" '(write-file :which-key "save as...")
+    "f R" '(my/move-this-file :which-key "rename/move file")
+    "f D" '(my/delete-this-file :which-key "delete file")
+    "f y" '(my/copy-file-path :which-key "copy file path")
+    "f Y" '(my/copy-file-path-relative-to-project :which-key "copy relative path")
+    "f p" '((lambda () (interactive) (find-file (expand-file-name "config.org" user-emacs-directory))) :which-key "open config")
+    "f e" '((lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) :which-key "open early-init")
+    "f E" '((lambda () (interactive) (dired (expand-file-name user-emacs-directory))) :which-key "browse emacs.d")
 
-  ;; --- File (f) ---
-  "f"   '(:ignore t :which-key "file")
-  "f f" '(projectile-find-file :which-key "find file in project")
-  "f F" '(find-file :which-key "find file anywhere")
-  "f r" '(consult-recent-file :which-key "recent files")
-  "f s" '(save-buffer :which-key "save file")
-  "f S" '(write-file :which-key "save as...")
-  "f R" '(my/move-this-file :which-key "rename/move file")
-  "f D" '(my/delete-this-file :which-key "delete file")
-  "f y" '(my/copy-file-path :which-key "copy file path")
-  "f Y" '(my/copy-file-path-relative-to-project :which-key "copy relative path")
-  "f p" '((lambda () (interactive) (find-file (expand-file-name "config.org" user-emacs-directory))) :which-key "open config")
-  "f e" '((lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) :which-key "open early-init")
-  "f E" '((lambda () (interactive) (dired (expand-file-name user-emacs-directory))) :which-key "browse emacs.d")
+    ;; --- Git (g) ---
+    "g"   '(:ignore t :which-key "git")
+    "g s" '(magit-status :which-key "magit status")
+    "g S" '(magit-status-here :which-key "magit status here")
+    "g/"  '(magit-dispatch :which-key "Magit dispatch")
+    "g."  '(magit-file-dispatch :which-key "Magit file dispatch")
+    "gf"  '(magit-find-file :which-key "Find file")
+    "gb"  '(magit-blame-addition :which-key "Blame")
+    "gt"  '(git-timemachine-toggle :which-key "Time machine")
+    "gi"  '(magit-init :which-key "Initialize repo")
+    "g M" '(consult-global-mark :which-key "jump to global mark")
+    
+    "gl"  '(:ignore t :which-key "log")
+    "glc" '(magit-log-current :which-key "Log current branch")
+    "glf" '(magit-log-buffer-file :which-key "Log current file")
+    "glg" '(magit-log-all :which-key "Log all branches")
+    
+    "g m" '(magit-file-dispatch :which-key "Git selection menu")
+    "g r" '((lambda () 
+              (interactive) 
+              (call-interactively 'magit-discard))
+            :which-key "Git discard selection")
 
-  ;; --- Git (g) ---
-  "g"   '(:ignore t :which-key "git")
-  "g s" '(magit-status :which-key "magit status")
-  "g S" '(magit-status-here :which-key "magit status here")
-  "g/"  '(magit-dispatch :which-key "Magit dispatch")
-  "g."  '(magit-file-dispatch :which-key "Magit file dispatch")
-  "gf"  '(magit-find-file :which-key "Find file")
-  "gb"  '(magit-blame-addition :which-key "Blame")
-  "gt"  '(git-timemachine-toggle :which-key "Time machine")
-  "gi"  '(magit-init :which-key "Initialize repo")
-  "g M" '(consult-global-mark :which-key "jump to global mark")
-  
-  "gl"  '(:ignore t :which-key "log")
-  "glc" '(magit-log-current :which-key "Log current branch")
-  "glf" '(magit-log-buffer-file :which-key "Log current file")
-  "glg" '(magit-log-all :which-key "Log all branches")
-  
-  "g m" '(magit-file-dispatch :which-key "Git selection menu")
-  "g r" '((lambda () 
-            (interactive) 
-            (call-interactively 'magit-discard))
-          :which-key "Git discard selection")
-  "g s" '((lambda () 
-            (interactive) 
-            (call-interactively 'magit-stage))
-          :which-key "Git stage selection")
 
-  ;; --- Jump (j) ---
-  "j"   '(:ignore t :which-key "jump")
-  "j w" '(evilem-motion-forward-word-begin :which-key "word")
-  "j l" '(evilem-motion-next-line :which-key "line")
-  "j c" '(evilem-motion-find-char :which-key "char")
-  "j s" '(evilem-motion-find-char-timer :which-key "find (timer)")
-  "j j" '(evilem-motion-next-line :which-key "line")
+    ;; --- Jump (j) ---
+    "j"   '(:ignore t :which-key "jump")
+    "j w" '(evilem-motion-forward-word-begin :which-key "word")
+    "j l" '(evilem-motion-next-line :which-key "line")
+    "j c" '(evilem-motion-find-char :which-key "char")
+    "j s" '(evilem-motion-find-char-timer :which-key "find (timer)")
+    "j j" '(evilem-motion-next-line :which-key "line")
 
-  ;; --- Notes (n) ---
-  "n"   '(:ignore t :which-key "notes")
-  "n r" '(org-roam-buffer-toggle :which-key "roam toggle")
-  "n f" '(org-roam-node-find :which-key "find node")
-  "n i" '(org-roam-node-insert :which-key "insert node")
-  "n d"   '(:ignore t :which-key "dailies")
-  "n d t" '(org-roam-dailies-capture-today :which-key "capture today")
+    ;; --- Notes (n) ---
+    "n"   '(:ignore t :which-key "notes")
+    "n r" '(org-roam-buffer-toggle :which-key "roam toggle")
+    "n f" '(org-roam-node-find :which-key "find node")
+    "n i" '(org-roam-node-insert :which-key "insert node")
+    "n d"   '(:ignore t :which-key "dailies")
+    "n d t" '(org-roam-dailies-capture-today :which-key "capture today")
 
-  ;; --- Open (o) ---
-  "o p" '(popper-toggle :which-key "toggle popup")
-  "o t" '(:ignore t :which-key "open terminal")
-  "o t h" '(my/open-terminal-here :which-key "here")
-  "o t p" '(my/open-terminal-in-project :which-key "project")
+    ;; --- Open (o) ---
+    "o p" '(popper-toggle :which-key "toggle popup")
+    "o t" '(:ignore t :which-key "open terminal")
+    "o t h" '(my/open-terminal-here :which-key "here")
+    "o t p" '(my/open-terminal-in-project :which-key "project")
 
-  ;; --- Project (p) ---
-  "p"   '(:ignore t :which-key "project")
-  "p p" '(projectile-switch-project :which-key "switch project")
-  "p P" '(projectile-persp-switch-project :which-key "switch project (persp)")
-  "p b" '(projectile-switch-to-buffer :which-key "switch project buffer")
-  "p f" '(projectile-find-file :which-key "find file in project")
-  "p r" '(projectile-recentf :which-key "recent files")
-  "p d" '(projectile-remove-known-project :which-key "remove project")
-  "p a" '(projectile-add-known-project :which-key "add project")
-  "p s" '(projectile-save-project-buffers :which-key "save project")
-  "p k" '(projectile-kill-buffers :which-key "kill buffers")
-  "p c" '(projectile-compile-project :which-key "compile")
-  "p t" '(projectile-test-project :which-key "run tests")
-  "p i" '(projectile-invalidate-cache :which-key "invalidate cache")
-  "p !" '(projectile-run-shell-command-in-root :which-key "run cmd")
-  "p x" '(projectile-run-async-shell-command-in-root :which-key "async cmd")
-  "p /" '(consult-ripgrep :which-key "search in project")
+     ;; --- Project (p) ---
+     "p"   '(:ignore t :which-key "project")
+     "p p" '(project-switch-project :which-key "switch project")
+     "p b" '(project-switch-to-buffer :which-key "switch buffer")
+     "p f" '(project-find-file :which-key "find file")
+     "p r" '(my/project-recent-files :which-key "recent files")
+     "p c" '(my/project-compile :which-key "compile")
+     "p t" '(my/project-test :which-key "run tests")
+     "p x" '(my/project-run :which-key "run project")
+     "p k" '(project-kill-buffers :which-key "kill buffers")
+     "p d" '(project-dired :which-key "dired")
+     "p v" '(project-vc-dir :which-key "vc dir")
+     "p s" '(project-search :which-key "search (native)")
+     "p /" '(consult-ripgrep :which-key "search (ripgrep)")
+     "p !" '(project-shell-command :which-key "shell command")
+     "p &" '(project-async-shell-command :which-key "async shell command")
+     "p R" '(project-query-replace-regexp :which-key "query replace")
+     "p w" '(my/project-workspace-switch :which-key "switch workspace")
+     "p m" '(my/project-dispatch :which-key "project palette")
+     "p B" '(my/benchmark-current-project :which-key "benchmark project")
 
-  ;; --- Search (s) ---
-  "s"   '(:ignore t :which-key "search")
-  "s s" '(consult-line :which-key "search buffer")
-  "s S" '(consult-line-multi :which-key "search all buffers")
-  "s g" '(consult-goto-line :which-key "goto line")
-  "s i" '(consult-imenu :which-key "jump to symbol")
-  "s h" '(consult-outline :which-key "jump to heading")
-  "s f" '(consult-find :which-key "find file (live)")
-  "s k" '(consult-yank-pop :which-key "yank pop")
+    ;; --- Search (s) ---
+    "s"   '(:ignore t :which-key "search")
+    "s s" '(consult-line :which-key "search buffer")
+    "s S" '(consult-line-multi :which-key "search all buffers")
+    "s g" '(consult-goto-line :which-key "goto line")
+    "s i" '(consult-imenu :which-key "jump to symbol")
+    "s h" '(consult-outline :which-key "jump to heading")
+    "s f" '(consult-find :which-key "find file (live)")
+    "s k" '(consult-yank-pop :which-key "yank pop")
 
-  ;; --- Undo (u) ---
-  "u" '(vundo :which-key "undo tree (visual)")
+    ;; --- Undo (u) ---
+    "u" '(vundo :which-key "undo tree (visual)")
 
-  ;; --- Window (w) ---
-  "w"   '(:ignore t :which-key "window")
-  "wh"  '(evil-window-left :which-key "left")
-  "wj"  '(evil-window-down :which-key "down")
-  "wk"  '(evil-window-up :which-key "up")
-  "wl"  '(evil-window-right :which-key "right")
-  "ww"  '(evil-window-next :which-key "next window")
-  "wH"  '(evil-window-move-far-left :which-key "move left")
-  "wJ"  '(evil-window-move-very-bottom :which-key "move down")
-  "wK"  '(evil-window-move-very-top :which-key "move up")
-  "wL"  '(evil-window-move-far-right :which-key "move right")
-  "ws"  '(evil-window-split :which-key "split horizontal")
-  "wv"  '(evil-window-vsplit :which-key "split vertical")
-  "wc"  '(evil-window-delete :which-key "close window")
-  "wo"  '(delete-other-windows :which-key "close others")
-  "w="  '(balance-windows :which-key "balance")
+    ;; --- Window (w) ---
+    "w"   '(:ignore t :which-key "window")
+    "wh"  '(evil-window-left :which-key "left")
+    "wj"  '(evil-window-down :which-key "down")
+    "wk"  '(evil-window-up :which-key "up")
+    "wl"  '(evil-window-right :which-key "right")
+    "ww"  '(evil-window-next :which-key "next window")
+    "wH"  '(evil-window-move-far-left :which-key "move left")
+    "wJ"  '(evil-window-move-very-bottom :which-key "move down")
+    "wK"  '(evil-window-move-very-top :which-key "move up")
+    "wL"  '(evil-window-move-far-right :which-key "move right")
+    "ws"  '(evil-window-split :which-key "split horizontal")
+    "wv"  '(evil-window-vsplit :which-key "split vertical")
+    "wc"  '(evil-window-delete :which-key "close window")
+    "wo"  '(delete-other-windows :which-key "close others")
+    "w="  '(balance-windows :which-key "balance")
 
-  ;; --- Workspace (W) ---
-  "W"   '(:ignore t :which-key "workspaces")
-  "W s" '(persp-switch :which-key "switch workspace")
-  "W n" '(persp-switch :which-key "new/switch")
-  "W k" '(persp-kill :which-key "kill workspace")
-  "W r" '(persp-rename :which-key "rename workspace")
+    ;; --- Workspace (W) ---
+    "W"   '(:ignore t :which-key "workspaces")
+    "W s" '(persp-switch :which-key "switch workspace")
+    "W n" '(persp-switch :which-key "new/switch")
+    "W k" '(persp-kill :which-key "kill workspace")
+    "W r" '(persp-rename :which-key "rename workspace")
 
-  ;; --- Other ---
-  ";"   '(embark-act :which-key "act (embark)")
-  "a"   '(embark-act :which-key "actions"))
+    ;; --- Other ---
+    ";"   '(embark-act :which-key "act (embark)")
+    "a"   '(embark-act :which-key "actions"))
 #+end_src

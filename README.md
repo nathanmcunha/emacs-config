@@ -33,16 +33,17 @@ This configuration provides a curated "best-of-breed" experience:
 - **Cape:** Additional completion backends (file, dabbrev, keywords).
 
 ### Project Management
-- **Projectile:** Project navigation, file finding, and command execution.
+- **Native Project.el:** Lightweight project navigation, file finding, and command execution using Emacs' built-in system.
 - **Perspective:** Workspace management with isolated buffer lists.
 - **Treemacs:** Project file tree sidebar with git status integration.
-- **Persp-Projectile:** Automatic workspace creation when switching projects.
+- **Z.ai Integration:** Default coding assistant via `gptel` (GLM-4 models).
 
 ### Development Tools
 - **Eglot:** Native Emacs LSP client (replacing heavy lsp-mode).
 - **Eglot-Java:** Java LSP support with JDTLS integration.
 - **DAPE:** Modern debugger adapter (replacing dap-mode).
 - **Magit:** Comprehensive Git interface with Doom-style bindings.
+- **Java Coverage:** Integrated JaCoCo coverage visualization with in-buffer lenses.
 - **Flymake:** Native linting with project-wide error search.
 - **Apheleia:** Code formatting on save.
 
@@ -127,7 +128,7 @@ All keybindings use Doom-style leader keys:
 ### Buffer (`SPC b`)
 | Key | Action | Description |
 | :--- | :--- | :--- |
-| `b b` | `projectile-switch-to-buffer` | Switch buffer (Project) |
+| `b b` | `project-switch-to-buffer` | Switch buffer (Project) |
 | `b B` | `switch-to-buffer` | Switch buffer (Global) |
 | `b i` | `ibuffer` | IBuffer |
 | `b k` | `kill-current-buffer` | Kill buffer |
@@ -151,6 +152,7 @@ All keybindings use Doom-style leader keys:
 | `c j i` | `eglot-java-organize-imports` | Organize Imports |
 | `c j r` | `my/eglot-restart` | Restart JDTLS |
 | `c C t` | `my/java-coverage-toggle` | Toggle Coverage |
+| `c C h` | `my/java-coverage-browse-report` | Open HTML Report |
 
 ### Debug (`SPC d`)
 | Key | Action | Description |
@@ -176,7 +178,7 @@ All keybindings use Doom-style leader keys:
 ### Files (`SPC f`)
 | Key | Action | Description |
 | :--- | :--- | :--- |
-| `f f` | `projectile-find-file` | Find in Project |
+| `f f` | `project-find-file` | Find in Project |
 | `f F` | `find-file` | Find Anywhere |
 | `f r` | `consult-recent-file` | Recent Files |
 | `f s` | `save-buffer` | Save |
@@ -199,13 +201,15 @@ All keybindings use Doom-style leader keys:
 ### Project (`SPC p`)
 | Key | Action | Description |
 | :--- | :--- | :--- |
-| `p p` | `projectile-switch-project` | Switch Project |
-| `p f` | `projectile-find-file` | Find File |
+| `p p` | `project-switch-project` | Switch Project |
+| `p f` | `project-find-file` | Find File |
+| `p F` | `my/project-find-file-fast` | Find File (Fast) |
 | `p /` | `consult-ripgrep` | Search (Grep) |
-| `p b` | `projectile-switch-to-buffer` | Switch Buffer |
-| `p c` | `projectile-compile-project` | Compile |
-| `p t` | `projectile-test-project` | Test |
-| `p !` | `projectile-run-shell-command...` | Run Cmd |
+| `p b` | `project-switch-to-buffer` | Switch Buffer |
+| `p c` | `my/project-compile` | Compile |
+| `p t` | `my/project-test` | Test |
+| `p !` | `project-shell-command` | Run Cmd |
+| `p m` | `my/project-dispatch` | Dispatch Palette |
 
 ### Search (`SPC s`)
 | Key | Action | Description |
@@ -273,6 +277,7 @@ Available themes include all `doom-themes` colorschemes.
 - **Package not found**: Run `./bin/emacs-cli sync -r` to refresh package list
 - **Config errors**: Run `./bin/validate-config` to check syntax
 - **Java LSP issues**: Ensure JDTLS is installed via `eglot-java` and run `SPC c j r` to restart
+- **Home folder detected as project**: This can happen if you have a `package.json` or other markers in your home directory. The config now explicitly ignores the home folder in `my/project-try-local`.
 - **Debugging fails**: Make sure to launch test with `SPC d t` first, then attach with DAPE
 
 ## 📝 License

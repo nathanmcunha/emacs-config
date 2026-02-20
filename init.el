@@ -11,7 +11,7 @@
 
 ;; 3. Elpaca Bootstrap (Official Installer v0.11 Adapted)
 (defvar elpaca-installer-version 0.11)
-;; ADAPTAÇÃO: Usamos o seu diretório customizado aqui
+;; ADAPTATION: Using custom directory here
 (defvar elpaca-directory (expand-file-name "elpaca/" my-local-pkg-dir))
 (defvar elpaca-builds-directory (expand-file-name "builds/" elpaca-directory))
 (defvar elpaca-repos-directory (expand-file-name "repos/" elpaca-directory))
@@ -61,15 +61,15 @@
   ;; Assume :elpaca t unless otherwise specified.
   (setq use-package-always-ensure t))
 
-;; 5. (NOVO) Instalar Org-mode ANTES de carregar a configuração
-;; Isso previne o "Org version mismatch" ao garantir que o org-babel
-;; use a versão do Elpaca, e não a built-in do Emacs.
+;; 5.Install Org-mode BEFORE loading configuration
+;; This prevents "Org version mismatch" by ensuring org-babel
+;; uses Elpaca version, not built-in Emacs version.
 (elpaca org
   (require 'org))
 
 ;; --- CORE PACKAGES (init.el) ---
 
-;; 1. General & Diminish (Já discutido)
+;; 1. General & Diminish 
 (use-package diminish :ensure t :demand t)
 (use-package general :ensure t
   :demand t
@@ -80,10 +80,10 @@
     :keymaps 'override
     :global-prefix "M-SPC"))
 
-;; 2. Transient (Dependência do Magit)
+;; 2. Transient (Magit dependency)
 (use-package transient :ensure t :demand t)
 
-;; 3. Undo System (Obrigatório carregar antes ou junto com o Evil)
+;; 3. Undo System (Must load before or with Evil)
 (use-package undo-fu
   :ensure t
   :demand t
@@ -95,17 +95,16 @@
         undo-outer-limit 1006632960) ;; 960mb
   )
 
-;; 4. Evil Mode (Sua configuração migrada)
+;; 4. Evil Mode (Your migrated configuration)
 (use-package evil
   :ensure t
   :demand t
   :init
-  ;; Configurações de pré-carregamento essenciais
+  ;; Essential pre-loading settings
   (setq evil-want-integration t)
-  (setq evil-want-keybinding nil) ;; Necessário para o evil-collection
+  (setq evil-want-keybinding nil) ;; Required for evil-collection
   (setq evil-want-C-u-scroll t)
   (setq evil-undo-system 'undo-fu)
-  (setq evil-search-module 'evil-search)
   :config
   (evil-mode 1)
 
@@ -116,10 +115,7 @@
         evil-insert-state-cursor   '("#ebcb8b" bar)
         evil-replace-state-cursor  '("#ebcb8b" hbar)
         evil-operator-state-cursor '("#ebcb8b" hollow))
-
-  ;; Atalhos do TAB (Aponta para função do config.org - Funciona pois o config carrega logo após)
-  (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
-  (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first))
+  )
 
 ;; --- FIM CORE ---
 
@@ -129,6 +125,22 @@
 ;; 6. Load Literate Configuration
 (org-babel-load-file (expand-file-name "config.org" user-emacs-directory))
 
+(elpaca-wait)
+
 ;; 7. Post-startup GC
 (setq gc-cons-threshold (* 16 1024 1024))
 (add-hook 'focus-out-hook 'garbage-collect)
+(custom-set-variables
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(safe-local-variable-values
+   '((eval setq-local lsp-java-java-path
+           (string-trim (shell-command-to-string "mise which java"))))))
+(custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ )

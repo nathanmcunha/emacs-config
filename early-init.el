@@ -7,4 +7,4 @@
 ;; --- Native Compilation Optimizations ---
 (setq comp-deferred-compilation t)
 (setq comp-async-jobs-number 4)
-(setq native-comp-speed 3)
+(setq comp-speed 3)
