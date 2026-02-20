@@ -15,7 +15,7 @@ This configuration provides a curated "best-of-breed" experience:
 
 ### Core
 - **Vim Emulation:** Full Evil mode setup with `evil-collection`, `evil-surround`, `evil-snipe`, `evil-lion`, `evil-numbers`, and many more extensions.
-- **Key Management:** Doom-style leader keys (`SPC` / `M-SPC`) powered by `general.el` and `which-key`.
+- **Key Management:** Doom-style leader keys (`SPC` / `M-SPC`) powered by native Emacs 30+ keymaps and `which-key`.
 - **Undo System:** Enhanced undo with `undo-fu`, `undo-fu-session` (persistent history), and `vundo` (visual undo tree).
 
 ### Modern UI
@@ -35,7 +35,7 @@ This configuration provides a curated "best-of-breed" experience:
 ### Project Management
 - **Native Project.el:** Lightweight project navigation, file finding, and command execution using Emacs' built-in system.
 - **Perspective:** Workspace management with isolated buffer lists.
-- **Treemacs:** Project file tree sidebar with git status integration.
+- **Dirvish:** Modern, polished Dired experience replacing traditional sidebar explorers with project-aware navigation.
 - **Z.ai Integration:** Default coding assistant via `gptel` (GLM-4 models).
 
 ### Development Tools
@@ -46,6 +46,7 @@ This configuration provides a curated "best-of-breed" experience:
 - **Java Coverage:** Integrated JaCoCo coverage visualization with in-buffer lenses.
 - **Flymake:** Native linting with project-wide error search.
 - **Apheleia:** Code formatting on save.
+- **Agent Shell:** Integrated AI assistant shell for various LLM backends.
 
 ### Quality of Life
 - **Super Save:** Auto-save on focus change, window switch, or buffer kill.
@@ -59,8 +60,9 @@ This configuration provides a curated "best-of-breed" experience:
 
 This config includes a set of CLI tools for maintenance:
 
-- **`bin/emacs-cli sync`**: Fast installation of missing packages. Use `-r` to force a network refresh.
+- **`bin/emacs-cli sync`**: Synchronizes packages with `elpaca`. Automatically detects failures and prints detailed error logs for troubleshooting.
 - **`bin/emacs-cli update`**: Updates all packages and prunes obsolete ones.
+- **`bin/emacs-cli check`**: Validates Org block structure and Elisp syntax of core files.
 - **`bin/validate-config`**: Checks `config.org` for syntax errors or unclosed source blocks.
 
 ## 📂 Structure
@@ -119,11 +121,18 @@ All keybindings use Doom-style leader keys:
 | :--- | :--- | :--- |
 | `SPC .` | `find-file` | Find file anywhere |
 | `SPC ,` | `switch-to-buffer` | Switch buffer |
-| `SPC TAB` | `mode-line-other-buffer` | Last buffer |
 | `SPC \`` | `evil-switch-to-windows-last-buffer` | Last window buffer |
 | `SPC SPC` | `execute-extended-command` | M-x |
-| `SPC ;` | `embark-act` | Embark Actions |
-| `SPC u` | `vundo` | Undo Tree |
+| `SPC ;` | `embark-act` | Embark Act |
+| `SPC A` | `embark-act` | Embark Actions |
+| `SPC u` | `vundo` | Undo Tree (Visual) |
+
+### AI Assistant (`SPC a`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `a s` | `agent-shell` | Agent Shell Menu |
+| `a g` | `agent-shell-google-start-gemini` | Gemini CLI |
+| `a o` | `agent-shell-opencode-start-agent` | Opencode Agent |
 
 ### Buffer (`SPC b`)
 | Key | Action | Description |
@@ -175,10 +184,17 @@ All keybindings use Doom-style leader keys:
 | `e L` | `my/consult-flymake-project` | Search Project Errors |
 | `e n/N` | `flymake-goto-next/prev-error` | Next/Prev Error |
 
+### Explorer (`SPC E`)
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| `E .` | `dirvish` | Current Directory |
+| `E e` | `my/dirvish-project` | Project Root |
+| `E f` | `dirvish-fd` | Find Files (fd) |
+
 ### Files (`SPC f`)
 | Key | Action | Description |
 | :--- | :--- | :--- |
-| `f f` | `project-find-file` | Find in Project |
+| `f f` | `my/project-find-file` | Find in Project |
 | `f F` | `find-file` | Find Anywhere |
 | `f r` | `consult-recent-file` | Recent Files |
 | `f s` | `save-buffer` | Save |
@@ -191,7 +207,9 @@ All keybindings use Doom-style leader keys:
 | Key | Action | Description |
 | :--- | :--- | :--- |
 | `g s` | `magit-status` | Status |
+| `g S` | `magit-status-here` | Status Here |
 | `g /` | `magit-dispatch` | Dispatch Menu |
+| `g .` | `magit-file-dispatch` | File Dispatch |
 | `g f` | `magit-find-file` | Find File in Git |
 | `g b` | `magit-blame-addition` | Blame |
 | `g t` | `git-timemachine-toggle` | Time Machine |
@@ -203,11 +221,11 @@ All keybindings use Doom-style leader keys:
 | :--- | :--- | :--- |
 | `p p` | `project-switch-project` | Switch Project |
 | `p f` | `project-find-file` | Find File |
-| `p F` | `my/project-find-file-fast` | Find File (Fast) |
-| `p /` | `consult-ripgrep` | Search (Grep) |
+| `p /` | `consult-ripgrep` | Search (ripgrep) |
 | `p b` | `project-switch-to-buffer` | Switch Buffer |
 | `p c` | `my/project-compile` | Compile |
 | `p t` | `my/project-test` | Test |
+| `p x` | `my/project-run` | Run |
 | `p !` | `project-shell-command` | Run Cmd |
 | `p m` | `my/project-dispatch` | Dispatch Palette |
 
@@ -254,13 +272,13 @@ To modify the configuration:
 
 ### Customizing Keybindings
 
-Keybindings are defined using `general.el` and the `my-leader-def` macro:
+Keybindings are defined using the native `keymap-set` logic via the `my/bind-leader` helper:
 
 ```emacs-lisp
-(my-leader-def
-  "c"   '(:ignore t :which-key "code")
-  "c f" '(my-function :which-key "description"))
+(my/bind-leader "c f" 'my-function "description")
 ```
+
+Prefix labels for `which-key` are managed in the **Vanilla Keymap Setup** section of `config.org` using `which-key-add-keymap-based-replacements`.
 
 ## 🎨 Themes
 

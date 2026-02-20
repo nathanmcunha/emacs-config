@@ -69,16 +69,8 @@
 
 ;; --- CORE PACKAGES (init.el) ---
 
-;; 1. General & Diminish 
+;; 1. Diminish
 (use-package diminish :ensure t :demand t)
-(use-package general :ensure t
-  :demand t
-  :config
-  (general-create-definer my-leader-def
-    :prefix "SPC"
-    :states '(normal visual insert emacs)
-    :keymaps 'override
-    :global-prefix "M-SPC"))
 
 ;; 2. Transient (Magit dependency)
 (use-package transient :ensure t :demand t)

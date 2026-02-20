@@ -7,8 +7,7 @@ These rules are mandatory whenever touching the Emacs configuration. Follow this
 ### 1. Syntax Validation (Elisp & Org) 
 
 **For Emacs Lisp files (`init.el`, `early-init.el`, `bin/emacs-cli`):**
-- **Validate:** `python scripts/validate_elisp_syntax.py --files FILE.el`
-- **Simulate:** `python scripts/validate_elisp_syntax.py --simulate-edit --file FILE.el --old OLD --new NEW`
+- **Validate:** `python bin/validate-lisp-syntax.py FILE.el`
 - **Blocker:** If the tool reports issues, do NOT apply the change. Fix the syntax first.
 
 **For Org Configuration (`config.org`):**
@@ -41,7 +40,7 @@ Before making any changes in a new working session (first action after opening t
 - **Create Snapshot:**
   ```bash
   mkdir -p snapshots/$(date +%Y%m%d-%H%M%S)
-  cp -a init.el early-init.el config.org bin/ scripts/ README.md GEMINI.md snapshots/$(date +%Y%m%d-%H%M%S)/ 2>/dev/null || true
+  cp -a init.el early-init.el config.org bin/ README.md GEMINI.md snapshots/$(date +%Y%m%d-%H%M%S)/ 2>/dev/null || true
   ```
 - **Audit:** Always show the full Stdout/Stderr of the snapshot commands.
 - **Rollback:** If requested, restore from the matching `snapshots/<timestamp>/` directory via `cp -a`.
@@ -60,35 +59,3 @@ Before making any changes in a new working session (first action after opening t
 - **Defer Commits:** Request evaluation first.
 - **Snapshot First:** Use the snapshot mechanism for iterations.
 - **Commit:** Only commit when the user explicitly approves or after a successful "wrap up".
-
-## Project Performance Benchmark
-
-A benchmark script is available to compare Projectile vs project.el performance.
-
-### Running Benchmarks
-
-```bash
-# Run on a specific project
-./scripts/benchmark-project.sh ~/projects/my-project
-
-# Run on multiple projects
-./scripts/benchmark-project.sh ~/workspace ~/projects
-
-# Run on current directory
-./scripts/benchmark-project.sh .
-```
-
-### What It Measures
-
-- `projectile-find-file` (cached/uncached)
-- `project-find-file` (native/fd)
-- `projectile-switch-to-buffer`
-- `project-switch-to-buffer`
-
-### Using Results
-
-Use benchmark results to:
-- Decide which file finding approach to use
-- Identify performance bottlenecks
-- Validate optimization changes
-- Make informed keybinding decisions

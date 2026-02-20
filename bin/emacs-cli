@@ -23,6 +23,7 @@ function print_usage() {
     echo "  sync     Install missing packages and prune orphans (Batch mode)"
     echo "  update   Update all packages to their latest versions"
     echo "  purge    Remove builds and caches (to fix compilation errors)"
+    echo "  check    Validate syntax of config.org and core Elisp files"
     echo "  doctor   Check system health and config.org integrity"
     echo "  help     Show this help message"
 }
@@ -31,9 +32,47 @@ function log_info() {
     echo -e "\033[1;34m==>\033[0m $1"
 }
 
+function log_success() {
+    echo -e "\033[1;32m✅\033[0m $1"
+}
+
+function log_error() {
+    echo -e "\033[1;31m❌\033[0m $1"
+}
+
 function stop_server() {
     log_info "Stopping Emacs server..."
     $EMACSCLIENT -e '(kill-emacs)' -a '' >/dev/null 2>&1 || true
+}
+
+function cmd_check() {
+    local exit_code=0
+
+    log_info "Validating Org blocks in config.org..."
+    if [ -f "$PROJECT_ROOT/bin/validate-org-blocks" ]; then
+        if "$PROJECT_ROOT/bin/validate-org-blocks" "$PROJECT_ROOT/config.org"; then
+            log_success "config.org blocks are valid."
+        else
+            log_error "config.org blocks are invalid!"
+            exit_code=1
+        fi
+    else
+        echo "⚠️  validate-org-blocks not found, skipping Org validation."
+    fi
+
+    log_info "Validating Elisp syntax..."
+    if [ -f "$PROJECT_ROOT/bin/validate-lisp-syntax.py" ]; then
+        if python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "$PROJECT_ROOT/init.el" "$PROJECT_ROOT/early-init.el"; then
+            log_success "Core Elisp files are valid."
+        else
+            log_error "Elisp syntax errors detected!"
+            exit_code=1
+        fi
+    else
+        echo "⚠️  validate_elisp_syntax.py not found, skipping Elisp validation."
+    fi
+
+    return $exit_code
 }
 
 function cmd_sync() {
@@ -41,11 +80,32 @@ function cmd_sync() {
     log_info "Syncing packages with Elpaca..."
 
     # Run Emacs in batch mode to trigger Elpaca's installation logic
+    # Added logic to detect failures and print logs
     $EMACS --batch \
            --eval "(setq gc-cons-threshold 100000000)" \
            -l "$INIT_FILE" \
-           --eval "(elpaca-wait)" \
-           --eval "(message \"✨ Sync complete.\")"
+           --eval "(progn
+                     (elpaca-wait)
+                     (let ((failed nil))
+                       (with-current-buffer (get-buffer \"*elpaca-log*\")
+                         (goto-char (point-min))
+                         (when (re-search-forward \"failed\" nil t)
+                           (setq failed t)))
+                       (if failed
+                           (progn
+                             (message \"\n❌ Elpaca synchronization failed!\")
+                             (when (get-buffer \"*elpaca-log*\")
+                               (with-current-buffer \"*elpaca-log*\"
+                                 (message \"Summary Log:\n%s\" (buffer-string))))
+                             ;; Print all elpaca related buffers for debugging
+                             (dolist (buf (buffer-list))
+                               (let ((name (buffer-name buf)))
+                                 (when (or (string-match-p \"\\*elpaca-log\" name)
+                                           (string-match-p \"\\*elpaca-compile\" name))
+                                   (with-current-buffer buf
+                                     (message \"\n--- Buffer: %s ---\n%s\" name (buffer-string))))))
+                             (kill-emacs 1))
+                         (message \"✨ Sync complete.\"))))"
 }
 
 function cmd_update() {
@@ -94,6 +154,7 @@ case "$1" in
     sync|install) shift; cmd_sync "$@" ;;
     update|upgrade) cmd_update ;;
     purge) cmd_purge ;;
+    check|validate) cmd_check ;;
     doctor) cmd_doctor ;;
     help|--help|-h) print_usage ;;
     *) echo "Unknown command: $1"; print_usage; exit 1 ;;
