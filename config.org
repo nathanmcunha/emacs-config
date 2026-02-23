@@ -258,7 +258,192 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
            '(evil-window-next evil-window-prev balance-windows other-window)))
 #+end_src
 
- ** Server Mode
+** Enhanced project.el (Native)
+Extend built-in project.el with Projectile-like features.
+#+begin_src emacs-lisp
+  (use-package project
+    :ensure nil
+    :config
+    (setq project-list-file (expand-file-name "projects" user-emacs-directory))
+
+    ;; 0. Project Type Detection
+    (defun my/project-type (dir)
+      "Return the project type for DIR (gradle, maven, npm, rust)."
+      (cond
+       ((or (file-exists-p (expand-file-name "build.gradle" dir))
+            (file-exists-p (expand-file-name "build.gradle.kts" dir))) 'gradle)
+       ((file-exists-p (expand-file-name "pom.xml" dir)) 'maven)
+       ((file-exists-p (expand-file-name "package.json" dir)) 'npm)
+       ((file-exists-p (expand-file-name "Cargo.toml" dir)) 'rust)
+       (t nil)))
+
+    (defun my/project-type-current ()
+      "Return the project type for the current project."
+      (let ((project (project-current)))
+        (when project
+          (my/project-type (project-root project)))))
+
+    ;; 1. Add More Project Markers (as fallback)
+    (defun my/project-try-local (dir)
+      "Detect project by common markers (Gemfile, package.json, etc.)."
+      (catch 'found
+        (let ((home (expand-file-name "~")))
+          (dolist (file '("Gemfile" "package.json" "Cargo.toml" "go.mod"
+                          "pom.xml" "build.gradle" "build.gradle.kts" "settings.gradle"
+                          "pyproject.toml" "setup.py" "Makefile" "CMakeLists.txt"
+                          "meson.build" "project.clj" "deps.edn" "mix.exs"
+                          "shard.yml" "pubspec.yaml" "Platformio.ini" "platformio.ini"))
+            (let ((path (locate-dominating-file dir file)))
+              (when (and path (not (file-equal-p path home)))
+                (throw 'found (cons 'transient path))))))))
+
+    ;; Append to hook so VC backend (git) is tried first
+    (add-hook 'project-find-functions 'my/project-try-local 100)
+
+    ;; 2. Smart Find File (fallback to find-file if not in project)
+    (defun my/project-find-file ()
+      "Find file in project or current directory."
+      (interactive)
+      (if (project-current)
+          (project-find-file)
+        (call-interactively 'find-file)))
+
+    ;; 3. Project-aware Recent Files
+    (defun my/project-recent-files ()
+      "Show recent files in current project using consult."
+      (interactive)
+      (let* ((project (project-current))
+             (root (and project (project-root project)))
+             (recent-files (and root (seq-filter (lambda (f) (string-prefix-p root f)) recentf-list))))
+        (if recent-files
+            (find-file (completing-read "Recent (project): " recent-files))
+          (message "No recent files in this project."))))
+
+    ;; 4. Improve project switching (mimic Projectile)
+    (setq project-switch-commands
+          '((project-find-file "Find file" "f")
+            (project-dired "Dired" "d")
+            (project-vc-dir "VC Dir" "v")
+            (project-eshell "Eshell" "e")
+            (my/project-dispatch "Menu" "m")))
+
+    ;; 5. Project Command Palette
+    (defun my/project-dispatch ()
+      "Projectile-like command dispatcher for project.el."
+      (interactive)
+      (let ((choices '(("f" "Find file" project-find-file)
+                       ("b" "Switch buffer" project-switch-to-buffer)
+                       ("s" "Search in project" project-search)
+                       ("R" "Recent files" my/project-recent-files)
+                       ("d" "Dired" project-dired)
+                       ("v" "VC Dir" project-vc-dir)
+                       ("k" "Kill buffers" project-kill-buffers)
+                       ("r" "Find regexp" project-find-regexp)
+                       ("e" "Eshell" project-eshell))))
+        (let* ((choice (completing-read "Project action: " choices nil t))
+               (action (nth 2 (assoc choice choices))))
+          (call-interactively action)))))
+
+    ;; 5. Benchmark Current Project
+    (defun my/benchmark-current-project ()
+      "Run performance benchmarks on the current project."
+      (interactive)
+      (let ((project-root (or (and (project-current) (project-root (project-current)))
+                              default-directory)))
+        (let ((buffer (get-buffer-create "*Benchmark Results*"))
+              (script (expand-file-name "scripts/benchmark-project.el" user-emacs-directory)))
+          (if (file-exists-p script)
+              (progn
+                (message "Running benchmark on %s..." project-root)
+                (with-current-buffer buffer
+                  (read-only-mode -1)
+                  (erase-buffer)
+                  (call-process (concat invocation-directory invocation-name)
+                                nil buffer t
+                                "-Q" "--script" script "--" project-root)
+                  (goto-char (point-min))
+                  (read-only-mode 1))
+                (display-buffer buffer)
+                (message "Benchmark complete! See *Benchmark Results* buffer."))
+            (message "Benchmark script not found: %s" script)))))
+
+    ;; 6. Project Compilation and Testing (Like Projectile)
+    (defun my/project-compile ()
+      "Compile the current project."
+      (interactive)
+      (let* ((project (project-current t))
+             (root (project-root project))
+             (type (my/project-type root))
+             (command (cond
+                       ((eq type 'gradle) "./gradlew build")
+                       ((eq type 'maven) "mvn compile")
+                       ((eq type 'npm) "npm run build")
+                       ((eq type 'rust) "cargo build")
+                       (t (read-string "Compile command: " "make -k ")))))
+        (let ((default-directory root))
+          (compile command))))
+
+    (defun my/project-test ()
+      "Run tests for the current project."
+      (interactive)
+      (let* ((project (project-current t))
+             (root (project-root project))
+             (type (my/project-type root))
+             (command (cond
+                       ((eq type 'gradle) "./gradlew test")
+                       ((eq type 'maven) "mvn test")
+                       ((eq type 'npm) "npm test")
+                       ((eq type 'rust) "cargo test")
+                       (t (read-string "Test command: " "make test ")))))
+        (let ((default-directory root))
+          (compile command))))
+
+    (defun my/project-run ()
+      "Run the current project."
+      (interactive)
+      (let* ((project (project-current t))
+             (root (project-root project))
+             (type (my/project-type root))
+             (command (cond
+                       ((eq type 'gradle) "./gradlew run")
+                       ((eq type 'maven) "mvn exec:java")
+                       ((eq type 'npm) "npm start")
+                       ((eq type 'rust) "cargo run")
+                       (t (read-string "Run command: ")))))
+        (let ((default-directory root))
+          (compile command))))
+#+end_src
+
+** Workspaces (Perspective)
+#+begin_src emacs-lisp
+  (use-package perspective
+    :bind ("C-x k" . persp-kill-buffer*)
+    :init
+    (persp-mode)
+    :custom
+    (persp-mode-prefix-key (kbd "C-c M-p"))
+    (persp-show-modestring nil)
+    :config
+    (with-eval-after-load 'consult
+      (consult-customize consult-source-buffer :hidden t :default nil)
+      (add-to-list 'consult-buffer-sources 'persp-consult-source)))
+#+end_src
+
+** Project Workspaces (Perspective Integration)
+Integrate project.el with perspective.el for Doom-like workspace switching.
+#+begin_src emacs-lisp
+  (defun my/project-workspace-switch (dir)
+    "Switch to a perspective for the project in DIR."
+    (let ((name (file-name-nondirectory (directory-file-name dir))))
+      (persp-switch name)))
+
+  ;; Automatically switch perspective when switching projects via SPC p p
+  (setq project-switch-commands
+        (append project-switch-commands
+                '((my/project-workspace-switch "Workspace" "w"))))
+#+end_src
+
+** Server Mode
  Start the Emacs server automatically to enable ~emacsclient~ connections.
  #+begin_src emacs-lisp
    (use-package server
@@ -433,7 +618,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
                             )))          ; Man pages
               #+end_src
               
-              ** Evil Extensions
+** Evil Extensions
 #+begin_src emacs-lisp
   ;; 1. Evil Surround
   (use-package evil-surround
@@ -535,7 +720,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     (evilem-default-keybindings "gs"))
 #+end_src
 
- * Undo System
+** Undo System
  We use a combination of three packages for the supreme undo experience:
  1. ~undo-fu~: Simple linear wrapper for Emacs' undo system (required for Evil).
  2. ~undo-fu-session~: Saves undo history to disk (persistence across restarts).
@@ -611,7 +796,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     
     (column-number-mode -1)
 
-    ;; Integração de clique para Flymake
+    ;; Click integration for Flymake
     (defun my/doom-modeline-flymake-click ()
       (interactive)
       (if (bound-and-true-p flymake-mode)
@@ -791,7 +976,7 @@ Sets up the popup, cycling, and integration with icons.
      (add-to-list 'completion-at-point-functions #'yasnippet-capf))
 #+end_src
 
- ** Extended Backends (Cape)
+** Extended Backends (Cape)
  Configures additional completion backends and the specific TAB integration strategy.
  
 
@@ -812,7 +997,7 @@ Sets up the popup, cycling, and integration with icons.
     (setq cape-dabbrev-check-other-buffers t))
 #+end_src
  
- ** Git (Magit)
+** Git (Magit)
 #+begin_src emacs-lisp
    (use-package magit
    :ensure t
@@ -840,44 +1025,29 @@ Sets up the popup, cycling, and integration with icons.
    (setq magit-bury-buffer-function #'magit-mode-quit-window))
 #+end_src
 
-** Workspaces (Perspective)
-#+begin_src emacs-lisp
-  (use-package perspective
-    :bind ("C-x k" . persp-kill-buffer*)
-    :init
-    (persp-mode)
-    :custom
-    (persp-mode-prefix-key (kbd "C-c M-p"))
-    (persp-show-modestring nil)
-    :config
-    (with-eval-after-load 'consult
-      (consult-customize consult-source-buffer :hidden t :default nil)
-      (add-to-list 'consult-buffer-sources 'persp-consult-source)))
-#+end_src
-
 ** Dirvish (Modern Dired)
 A modern, polished Dired experience that can replace Treemacs.
 
 #+begin_src emacs-lisp
   (use-package dirvish :ensure t :init
-    ;; Habilita o Dirvish globalmente (substituindo o Dired padrão)
+    ;; Enable Dirvish globally (replacing default Dired)
     (dirvish-override-dired-mode)
-    :custom ;; Atributos visuais para buffers normais (Dired Full)
+    :custom ;; Visual attributes for normal buffers (Full Dired)
     (dirvish-attributes '(vc-state nerd-icons file-size collapse subtree-state git-msg))
-  ;; Configuração da Barra Lateral (Side)
+  ;; Sidebar (Side) Configuration
   (dirvish-side-width 30)
-  (dirvish-side-display-alist `((side . left) (slot . -1))) ;; Força sempre à esquerda extrema
+  (dirvish-side-display-alist `((side . left) (slot . -1))) ;; Always force to the extreme left
 
   :config
-  ;; Habilita preview de arquivos e "follow mode" (sincronizar com buffer aberto)
+  ;; Enable file preview and "follow mode" (sync with open buffer)
   (dirvish-peek-mode)
   (dirvish-side-follow-mode)
 
-  ;; --- VISUAL ESTILO TREEMACS ---
-  ;; Na barra lateral, mostramos APENAS ícones e nome (sem tamanho, data, etc)
+  ;; --- TREEMACS-STYLE VISUAL ---
+  ;; In the sidebar, show ONLY icons and name (no size, date, etc.)
   (setq dirvish-side-attributes '(nerd-icons collapse subtree-state))
 
-  ;; Ajustes finos do Dired base
+  ;; Fine-tuned Dired adjustments
   (setq dired-listing-switches "-agho --group-directories-first"
         dired-recursive-deletes 'always
         dired-recursive-copies 'always
@@ -906,14 +1076,17 @@ A modern, polished Dired experience that can replace Treemacs.
     :ensure t
     :init (apheleia-global-mode +1)
     :config
- (setq apheleia-log-only-errors nil)
-    (setf (alist-get 'google-java-format apheleia-formatters)
-          '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
-    (push '(java-mode . google-java-format) apheleia-mode-alist)
-    (push '(java-ts-mode . google-java-format) apheleia-mode-alist))
- #+end_src
+     (setq apheleia-log-only-errors nil)
+     (setf (alist-get 'google-java-format apheleia-formatters)
+           '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
+     (setf (alist-get 'black apheleia-formatters)
+           '("black" "-" "-"))
+     (push '(java-mode . google-java-format) apheleia-mode-alist)
+     (push '(java-ts-mode . google-java-format) apheleia-mode-alist)
+     (push '(python-mode . black) apheleia-mode-alist)
+     (push '(python-ts-mode . black) apheleia-mode-alist)) #+end_src
 
- ** Linting (Flymake)
+** Linting (Flymake)
  Configured for Eglot and Consult integration. Replaces Flycheck for consistency.
  #+begin_src emacs-lisp
   ;; Simple flymake configuration - avoid eval-after-load to prevent macro expansion errors
@@ -984,7 +1157,7 @@ A modern, polished Dired experience that can replace Treemacs.
                (message "No errors found in project.")))))))
 #+end_src
 
- * Tree-Sitter Configuration
+** Tree-Sitter Configuration
  Configure Tree-sitter for better syntax highlighting and ensure grammars are installed.
 
  #+begin_src emacs-lisp
@@ -1004,7 +1177,7 @@ A modern, polished Dired experience that can replace Treemacs.
      (message "Java grammar installed! Restart Emacs or reload the mode.")))
  #+end_src
 
- * Java Development (Eglot + JDTLS)
+** Java Development (Eglot + JDTLS)
  Lightweight configuration using Eglot, replacing the heavy lsp-java.
 
  #+begin_src emacs-lisp
@@ -1028,7 +1201,137 @@ A modern, polished Dired experience that can replace Treemacs.
   (setq eglot-java-user-init-opts-fn 'my/eglot-java-init-opts))
   #+end_src
 
- * Visual Wrapping (Adaptive Wrap)
+** Python Development (Eglot + Pyright)
+Complete Python LSP setup with Pyright and Ruff linter.
+
+#+begin_src emacs-lisp
+  (use-package eglot
+    :ensure nil
+    :hook
+    (((python-mode python-ts-mode) . eglot-ensure))
+    :config
+    ;; Configure Eglot for Python with Pyright
+    (add-to-list 'eglot-server-programs
+                 '((python-mode python-ts-mode)
+                   "pyright-langserver"
+                   "--stdio"
+                   :initializationOptions
+                   (:python (:analysis (:typeCheckingMode "strict"
+                                                   :autoSearchPaths t
+                                                   :useLibraryCodeForTypes t
+                                                   :diagnosticMode "workspace")))))
+
+    ;; Keybindings for Eglot Python
+    (define-key python-mode-map (kbd "C-c C-r") 'eglot-rename)
+    (define-key python-mode-map (kbd "C-c C-f") 'eglot-format)
+    (define-key python-mode-map (kbd "C-c C-a") 'eglot-code-action-quickfix)
+    (define-key python-mode-map (kbd "C-c C-d") 'eglot-show-doc))
+
+  (use-package flymake
+    :ensure nil
+    :hook
+    ((python-mode python-ts-mode) . flymake-mode)
+    :config
+    (setq flymake-fringe-indicator-position 'left-fringe))
+
+  ;; Ruff linter configuration
+  (defun my/python-ruff-diagnostics (source callback)
+    "Run Ruff as a Flymake backend for Python."
+    (let ((buffer (current-buffer)))
+      (unless (executable-find "ruff")
+        (funcall callback '())
+        (cl-return-from my/python-ruff-diagnostics))
+      
+      (when-let ((file (buffer-file-name buffer)))
+        (make-process
+         :name "ruff-flymake"
+         :buffer (generate-new-buffer " *ruff-flymake*")
+         :command (list "ruff" "check" "--output-format=json" file)
+         :sentinel
+         (lambda (process _event)
+           (when (eq (process-status process) 'exit)
+             (unwind-protect
+                 (with-current-buffer (process-buffer process)
+                   (let ((json-array-type 'list))
+                     (let ((diagnostics
+                            (mapcar
+                             (lambda (item)
+                               (let* ((start-line (1- (alist-get 'start_line item)))
+                                      (start-col (alist-get 'start_column item))
+                                      (end-line (1- (alist-get 'end_line item)))
+                                      (end-col (alist-get 'end_column item))
+                                      (message (alist-get 'message item))
+                                      (code (alist-get 'code item))
+                                      (severity (alist-get 'severity item))
+                                      (type (cond
+                                             ((string= severity "error") :error)
+                                             ((string= severity "warning") :warning)
+                                             (t :note))))
+                                 (flymake-make-diagnostic
+                                  (current-buffer)
+                                  (flymake-diag-region buffer start-line start-col end-line end-col)
+                                  type
+                                  message
+                                  :code code
+                                  :source "Ruff"))))
+                             (condition-case nil
+                                 (json-read-from-string
+                                  (buffer-string))
+                               (error '())))))
+                       (funcall callback diagnostics)))
+               (kill-buffer (process-buffer process)))))))))
+
+  ;; Register Ruff as a Flymake backend
+  (add-hook 'python-mode-hook
+            (lambda ()
+              (add-hook 'flymake-diagnostic-functions 'my/python-ruff-diagnostics nil t)))
+  (add-hook 'python-ts-mode-hook
+            (lambda ()
+              (add-hook 'flymake-diagnostic-functions 'my/python-ruff-diagnostics nil t)))
+
+  ;; pytest integration
+  (defun my/python-run-pytest-file ()
+    "Run pytest on the current file."
+    (interactive)
+    (let ((file (buffer-file-name)))
+      (compile (format "pytest %s" file))))
+
+  (defun my/python-run-pytest-function ()
+    "Run pytest on the function at point."
+    (interactive)
+    (save-excursion
+      (beginning-of-defun)
+      (let* ((func-name (python-info-current-defun))
+             (file (buffer-file-name)))
+        (compile (format "pytest %s::%s" file func-name)))))
+
+  ;; Python keybindings
+  (with-eval-after-load 'python
+    (define-key python-mode-map (kbd "C-c C-t") 'my/python-run-pytest-file)
+    (define-key python-mode-map (kbd "C-c C-f") 'my/python-run-pytest-function)
+    (define-key python-mode-map (kbd "C-c C-l") 'consult-flymake-project))
+
+  ;; Python-specific project commands
+  (defun my/python-project-test ()
+    "Run pytest on the current project."
+    (interactive)
+    (let ((project (project-current)))
+      (if project
+          (let ((default-directory (project-root project)))
+            (compile "pytest"))
+        (message "Not in a project"))))
+
+  (defun my/python-project-format ()
+    "Format Python files in the project using Black."
+    (interactive)
+    (let ((project (project-current)))
+      (if project
+          (let ((default-directory (project-root project)))
+            (compile "black ."))
+        (message "Not in a project"))))
+#+end_src
+
+** Visual Wrapping (Adaptive Wrap)
  Improves reading of long lines in code buffers, maintaining visual indentation.
 
  #+begin_src emacs-lisp
@@ -1087,6 +1390,70 @@ A modern, polished Dired experience that can replace Treemacs.
         (setq electric-pair-inhibit-predicate
               `(lambda (c)
                  (if (char-equal c ?<) t (electric-pair-default-inhibit c)))))
+#+end_src
+
+** AI Code Assistant (agent-shell)
+#+begin_src emacs-lisp
+  (use-package shell-maker
+    :ensure t
+    :demand t)
+
+  (use-package acp
+    :ensure t
+    :demand t)
+
+  (use-package agent-shell
+    :ensure t
+    :after (shell-maker acp)
+    :config
+    ;; Use eat as terminal backend (matches your setup)
+    (setq agent-shell-path-resolver-function #'agent-shell--resolve-devcontainer-path)
+    
+    ;; === Gemini Configuration ===
+    (setq agent-shell-google-authentication
+          (agent-shell-google-make-authentication :none t))
+    
+    (setq agent-shell-google-gemini-environment
+          (agent-shell-make-environment-variables
+           :inherit-env t))
+    
+    ;; === Opencode Configuration ===
+    (setq agent-shell-opencode-authentication
+          (agent-shell-opencode-make-authentication :none t))
+    
+    (setq agent-shell-opencode-environment
+           (agent-shell-make-environment-variables
+            :inherit-env t))
+    
+    ;; === Keybindings ===
+    ;; Main menu: M-x agent-shell (start/reuse agent)
+    ;; Specific agents: M-x agent-shell-google-start-gemini
+    ;;             M-x agent-shell-opencode-start-agent
+    
+    ;; === Evil Mode Integration ===
+    (with-eval-after-load 'evil
+      ;; Evil state-specific RET behavior: insert mode = newline, normal mode = send
+      (evil-define-key 'insert agent-shell-mode-map (kbd "RET") #'newline)
+      (evil-define-key 'normal agent-shell-mode-map (kbd "RET") #'comint-send-input)
+      
+      ;; Configure *agent-shell-diff* buffers to start in Emacs state
+      (add-hook 'diff-mode-hook
+                (lambda ()
+                  (when (string-match-p "\\\\*agent-shell-diff\\\\\*" (buffer-name))
+                    (evil-emacs-state)))))
+    
+    ;; === Display Configuration ===
+    ;; Show welcome message
+    (setq agent-shell-show-welcome-message t)
+    
+    ;; Show context usage indicator
+    (setq agent-shell-show-context-usage-indicator t)
+    
+    ;; Show usage at turn end
+    (setq agent-shell-show-usage-at-turn-end t)
+    
+    ;; Enable file completion
+    (setq agent-shell-file-completion-enabled t))
 #+end_src
 
 ** Org Mode
@@ -1252,22 +1619,22 @@ Modern debug configuration without dap-mode.
 #+end_src
 
 ** Java Test Coverage (JaCoCo)
-Módulo para visualização sutil de cobertura.
+Module for subtle coverage visualization.
 
 #+begin_src emacs-lisp
-  (defvar my/java-coverage-overlays nil "Lista global de overlays ativos.")
-  (defvar-local my/java-coverage-visible nil "Estado da cobertura no buffer.")
+  (defvar my/java-coverage-overlays nil "Global list of active overlays.")
+  (defvar-local my/java-coverage-visible nil "Coverage state in the buffer.")
 
   (defface my/jacoco-lens-face
     '((t :inherit shadow :slant italic :height 0.9 :foreground "green"))
-    "Face para a porcentagem de cobertura acima dos métodos.")
+    "Face for the coverage percentage above methods.")
 
   (defface my/jacoco-missed-line-face
     '((t :underline (:style wave :color "orange")))
-    "Face sutil (onda laranja) para linhas não cobertas.")
+    "Subtle face (orange wave) for uncovered lines.")
 
   (defun my/java-get-jacoco-path ()
-    "Localiza o relatório JaCoCo XML via Projectile."
+    "Locate the JaCoCo XML report via project.el."
     (let ((gradle-path "build/reports/jacoco/test/jacocoTestReport.xml")
           (maven-path "target/site/jacoco/jacocoTestReport.xml")
           (root (project-root (project-current))))
@@ -1279,7 +1646,7 @@ Módulo para visualização sutil de cobertura.
        (t nil))))
 
   (defun my/java-coverage-browse-report ()
-    "Abre o relatório HTML do JaCoCo no navegador."
+    "Open the JaCoCo HTML report in the browser."
     (interactive)
     (let ((gradle-html "build/reports/jacoco/test/html/index.html")
           (maven-html "target/site/jacoco/index.html")
@@ -1289,29 +1656,29 @@ Módulo para visualização sutil de cobertura.
         (browse-url (expand-file-name gradle-html root)))
        ((and root (file-exists-p (expand-file-name maven-html root)))
         (browse-url (expand-file-name maven-html root)))
-       (t (message "Relatório HTML não encontrado.")))))
+       (t (message "HTML report not found.")))))
 
   (defun my/java-coverage-clear ()
-    "Remove todos os overlays e limpa a lista."
+    "Remove all overlays and clear the list."
     (interactive)
     (when (boundp 'my/java-coverage-overlays)
       (mapc #'delete-overlay my/java-coverage-overlays)
       (setq my/java-coverage-overlays nil)))
 
   (defun my/java-coverage-toggle ()
-    "Alterna a visualização da cobertura."
+    "Toggle the coverage visualization."
     (interactive)
     (if my/java-coverage-visible
         (progn
           (my/java-coverage-clear)
           (setq-local my/java-coverage-visible nil)
-          (message "Cobertura desativada."))
+          (message "Coverage disabled."))
       (setq-local my/java-coverage-visible t)
       (my/java-apply-subtle-coverage)
-      (message "Cobertura ativada.")))
+      (message "Coverage enabled.")))
 
   (defun my/java-apply-subtle-coverage ()
-    "Aplica lenses na assinatura e highlights laranja com tooltips no corpo."
+    "Apply lenses to the signature and orange highlights with tooltips in the body."
     (let ((report-path (my/java-get-jacoco-path))
           (root (project-root (project-current))))
       (when (and report-path root)
@@ -1321,7 +1688,7 @@ Módulo para visualização sutil de cobertura.
           (my/java-coverage-clear)
 
           (dolist (pkg (xml-get-children report 'package))
-            ;; 1. Lenses na Assinatura
+            ;; 1. Signature Lenses
             (dolist (cls (xml-get-children pkg 'class))
               (when (string-suffix-p (concat (xml-get-attribute cls 'name) ".java") relative-path)
                 (dolist (method (xml-get-children cls 'method))
@@ -1335,7 +1702,7 @@ Módulo para visualização sutil de cobertura.
                          (text (format "%s Coverage: %d%%" icon pct)))
                     (my/java--create-lens-at-signature line-num text)))))
 
-            ;; 2. Highlights Laranja em linhas perdidas com Tooltip
+            ;; 2. Orange Highlights on missed lines with Tooltip
             (dolist (src (xml-get-children pkg 'sourcefile))
               (when (string-suffix-p (xml-get-attribute src 'name) relative-path)
                 (dolist (line (xml-get-children src 'line))
@@ -1361,14 +1728,49 @@ Módulo para visualização sutil de cobertura.
         (push ov my/java-coverage-overlays))))
 
   (defun my/java--highlight-missed-line (line tooltip-text)
-    "Aplica sublinhado laranja e adiciona um help-echo (tooltip)."
+    "Apply orange underline and add a help-echo (tooltip)."
     (save-excursion
       (goto-char (point-min))
       (when (= 0 (forward-line (1- line)))
         (let ((ov (make-overlay (line-beginning-position) (line-end-position))))
           (overlay-put ov 'face 'my/jacoco-missed-line-face)
-          (overlay-put ov 'help-echo tooltip-text) ;; Este é o Tooltip nativo
+          (overlay-put ov 'help-echo tooltip-text) ;; This is the native Tooltip
           (push ov my/java-coverage-overlays)))))
+
+  ;; Auto-refresh integration
+  (advice-add 'my/project-test :after 
+              (lambda (&rest _) (when my/java-coverage-visible (my/java-apply-subtle-coverage))))
+#+end_src
+
+** Gptel
+#+begin_src emacs-lisp
+      ;; Ephemeral/Secrets Configuration
+    (use-package auth-source
+      :ensure nil
+      :custom
+      (auth-sources '("~/.authinfo.gpg")))
+
+  ;; Ensure Emacs asks for GPG password in minibuffer
+  (setq epa-pinentry-mode 'loopback)
+  (setq epa-file-cache-passphrase-for-symmetric-encryption t)
+
+  ;; 2. Gptel configuration with Z.ai as Default
+  (use-package gptel
+    :ensure t
+    :config
+    ;; Configure Z.ai Coding using key from ~/.authinfo.gpg
+    (gptel-make-openai "Z.ai-Coding"
+      :host "api.z.ai"
+      :endpoint "/api/coding/paas/v4/chat/completions"
+      :stream t
+      :key 'gptel-api-key ;; gptel will search auth-source for host 'api.z.ai'
+      :models '(glm-4.7-plus
+                glm-4.7
+                glm-4-plus))
+
+    ;; SET Z.AI AS DEFAULT
+    (setq gptel-model 'glm-4.7-plus
+          gptel-backend (gptel-get-backend "Z.ai-Coding"))) 
 #+end_src
 
 * Keybindings Configuration
@@ -1552,6 +1954,7 @@ Módulo para visualização sutil de cobertura.
   (my/bind-leader "a g" 'agent-shell-google-start-gemini "Gemini CLI")
   (my/bind-leader "a o" 'agent-shell-opencode-start-agent "Opencode")
   (my/bind-leader "a s" 'agent-shell "Agent Shell Menu")
+  (my/bind-leader "a q" 'gptel-send "Gptel Send")
 
   ;; --- Other ---
   (my/bind-leader ";"   'embark-act "act (embark)")
