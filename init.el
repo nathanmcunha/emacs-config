@@ -1,4 +1,4 @@
-;;; init.el --- Bootstrap for Literate Config -*- lexical-binding: t -*-
+;;; init.el --- Bootstrap for Literate Config -*- lexical-binding: t; byte-compile-warnings: (not free-vars unresolved); -*-
 
 ;; 1. Performance tuning for startup
 (setq gc-cons-threshold (* 50 1000 1000))
@@ -121,7 +121,10 @@
 
 ;; 7. Post-startup GC
 (setq gc-cons-threshold (* 16 1024 1024))
-(add-hook 'focus-out-hook 'garbage-collect)
+(add-function :after after-focus-change-function
+              (lambda ()
+                (unless (frame-focus-state)
+                  (garbage-collect))))
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.

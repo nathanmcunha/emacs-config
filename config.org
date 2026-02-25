@@ -268,13 +268,16 @@ Extend built-in project.el with Projectile-like features.
 
     ;; 0. Project Type Detection
     (defun my/project-type (dir)
-      "Return the project type for DIR (gradle, maven, npm, rust)."
+      "Return the project type for DIR (gradle, maven, npm, rust, python)."
       (cond
        ((or (file-exists-p (expand-file-name "build.gradle" dir))
             (file-exists-p (expand-file-name "build.gradle.kts" dir))) 'gradle)
        ((file-exists-p (expand-file-name "pom.xml" dir)) 'maven)
        ((file-exists-p (expand-file-name "package.json" dir)) 'npm)
        ((file-exists-p (expand-file-name "Cargo.toml" dir)) 'rust)
+       ((or (file-exists-p (expand-file-name "pyproject.toml" dir))
+            (file-exists-p (expand-file-name "setup.py" dir))
+            (file-exists-p (expand-file-name "requirements.txt" dir))) 'python)
        (t nil)))
 
     (defun my/project-type-current ()
@@ -374,12 +377,13 @@ Extend built-in project.el with Projectile-like features.
       (let* ((project (project-current t))
              (root (project-root project))
              (type (my/project-type root))
-             (command (cond
-                       ((eq type 'gradle) "./gradlew build")
-                       ((eq type 'maven) "mvn compile")
-                       ((eq type 'npm) "npm run build")
-                       ((eq type 'rust) "cargo build")
-                       (t (read-string "Compile command: " "make -k ")))))
+              (command (cond
+                        ((eq type 'gradle) "./gradlew build")
+                        ((eq type 'maven) "mvn compile")
+                        ((eq type 'npm) "npm run build")
+                        ((eq type 'rust) "cargo build")
+                        ((eq type 'python) "black .")
+                        (t (read-string "Compile command: " "make -k ")))))
         (let ((default-directory root))
           (compile command))))
 
@@ -389,12 +393,13 @@ Extend built-in project.el with Projectile-like features.
       (let* ((project (project-current t))
              (root (project-root project))
              (type (my/project-type root))
-             (command (cond
-                       ((eq type 'gradle) "./gradlew test")
-                       ((eq type 'maven) "mvn test")
-                       ((eq type 'npm) "npm test")
-                       ((eq type 'rust) "cargo test")
-                       (t (read-string "Test command: " "make test ")))))
+              (command (cond
+                        ((eq type 'gradle) "./gradlew test")
+                        ((eq type 'maven) "mvn test")
+                        ((eq type 'npm) "npm test")
+                        ((eq type 'rust) "cargo test")
+                        ((eq type 'python) "pytest")
+                        (t (read-string "Test command: " "make test ")))))
         (let ((default-directory root))
           (compile command))))
 
@@ -1221,11 +1226,9 @@ Complete Python LSP setup with Pyright and Ruff linter.
                                                    :useLibraryCodeForTypes t
                                                    :diagnosticMode "workspace")))))
 
-    ;; Keybindings for Eglot Python
-    (define-key python-mode-map (kbd "C-c C-r") 'eglot-rename)
-    (define-key python-mode-map (kbd "C-c C-f") 'eglot-format)
-    (define-key python-mode-map (kbd "C-c C-a") 'eglot-code-action-quickfix)
-    (define-key python-mode-map (kbd "C-c C-d") 'eglot-show-doc))
+    ;; Note: Eglot keybindings are available via leader keys (SPC c prefix)
+    ;; to avoid python-mode-map void errors when eglot loads for other modes.
+  )
 
   (use-package flymake
     :ensure nil
@@ -1311,24 +1314,8 @@ Complete Python LSP setup with Pyright and Ruff linter.
     (define-key python-mode-map (kbd "C-c C-f") 'my/python-run-pytest-function)
     (define-key python-mode-map (kbd "C-c C-l") 'consult-flymake-project))
 
-  ;; Python-specific project commands
-  (defun my/python-project-test ()
-    "Run pytest on the current project."
-    (interactive)
-    (let ((project (project-current)))
-      (if project
-          (let ((default-directory (project-root project)))
-            (compile "pytest"))
-        (message "Not in a project"))))
-
-  (defun my/python-project-format ()
-    "Format Python files in the project using Black."
-    (interactive)
-    (let ((project (project-current)))
-      (if project
-          (let ((default-directory (project-root project)))
-            (compile "black ."))
-        (message "Not in a project"))))
+  ;; Note: Python project test/format now handled by global my/project-test
+  ;; and my/project-compile functions, which detect Python projects automatically.
 #+end_src
 
 ** Visual Wrapping (Adaptive Wrap)
@@ -1411,7 +1398,8 @@ Complete Python LSP setup with Pyright and Ruff linter.
     
     ;; === Gemini Configuration ===
     (setq agent-shell-google-authentication
-          (agent-shell-google-make-authentication :none t))
+          (agent-shell-google-make-authentication
+           :api-key (lambda () (getenv "GEMINI_API_KEY"))))
     
     (setq agent-shell-google-gemini-environment
           (agent-shell-make-environment-variables

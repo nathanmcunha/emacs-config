@@ -42,7 +42,11 @@ function log_error() {
 
 function stop_server() {
     log_info "Stopping Emacs server..."
-    $EMACSCLIENT -e '(kill-emacs)' -a '' >/dev/null 2>&1 || true
+    if $EMACSCLIENT -e '(kill-emacs)' -a '' >/dev/null 2>&1; then
+        log_info "Emacs server stopped."
+    else
+        log_info "No running Emacs server found."
+    fi
 }
 
 function cmd_check() {
@@ -69,7 +73,7 @@ function cmd_check() {
             exit_code=1
         fi
     else
-        echo "⚠️  validate_elisp_syntax.py not found, skipping Elisp validation."
+        echo "⚠️  validate-lisp-syntax.py not found, skipping Elisp validation."
     fi
 
     return $exit_code
@@ -80,32 +84,28 @@ function cmd_sync() {
     log_info "Syncing packages with Elpaca..."
 
     # Run Emacs in batch mode to trigger Elpaca's installation logic
-    # Added logic to detect failures and print logs
     $EMACS --batch \
            --eval "(setq gc-cons-threshold 100000000)" \
            -l "$INIT_FILE" \
            --eval "(progn
                      (elpaca-wait)
-                     (let ((failed nil))
-                       (with-current-buffer (get-buffer \"*elpaca-log*\")
-                         (goto-char (point-min))
-                         (when (re-search-forward \"failed\" nil t)
-                           (setq failed t)))
+                     (let ((failed nil) (error-buffer (get-buffer \"*elpaca-log*\")))
+                       (when error-buffer
+                         (with-current-buffer error-buffer
+                           (goto-char (point-min))
+                           (when (re-search-forward \"\\\\(failed\\\\|error\\\\|Error\\\\)\" nil t)
+                             (setq failed t))))
                        (if failed
                            (progn
-                             (message \"\n❌ Elpaca synchronization failed!\")
+                             (message \"\\n❌ Elpaca synchronization failed!\")
                              (when (get-buffer \"*elpaca-log*\")
                                (with-current-buffer \"*elpaca-log*\"
-                                 (message \"Summary Log:\n%s\" (buffer-string))))
-                             ;; Print all elpaca related buffers for debugging
-                             (dolist (buf (buffer-list))
-                               (let ((name (buffer-name buf)))
-                                 (when (or (string-match-p \"\\*elpaca-log\" name)
-                                           (string-match-p \"\\*elpaca-compile\" name))
-                                   (with-current-buffer buf
-                                     (message \"\n--- Buffer: %s ---\n%s\" name (buffer-string))))))
+                                 (message \"Summary Log:\\n%s\" (buffer-string))))
                              (kill-emacs 1))
                          (message \"✨ Sync complete.\"))))"
+    
+    return $?
+
 }
 
 function cmd_update() {
@@ -117,24 +117,40 @@ function cmd_update() {
            --eval "(progn
                      (message \"Updating all packages via Elpaca...\")
                      (elpaca-update-all)
-                     (elpaca-wait))"
+                     (elpaca-wait)
+                     (message \"✨ Update complete.\"))"
+    
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        log_error "Package update failed with exit code $exit_code"
+        return $exit_code
+    fi
+    
+    return 0
 }
 
 function cmd_purge() {
     log_info "Purging Elpaca build directories..."
     # Targets the custom local package directory
-    rm -rf "$PROJECT_ROOT/.local/packages/elpaca/builds/"
-    log_info "Purge complete. Run 'sync' to rebuild."
+    if [ -d "$PROJECT_ROOT/.local/packages/elpaca/builds/" ]; then
+        rm -rf "$PROJECT_ROOT/.local/packages/elpaca/builds/"
+        log_info "Purge complete. Run 'sync' to rebuild."
+    else
+        log_info "No build directory found to purge."
+    fi
 }
 
 function cmd_doctor() {
+    local exit_code=0
     log_info "Running Doctor..."
     echo "Emacs version: $($EMACS --version | head -n 1)"
     echo "Git path: $(which git)"
 
     if [ -f "$PROJECT_ROOT/bin/validate-org-blocks" ]; then
         echo "Validating config.org blocks..."
-        "$PROJECT_ROOT/bin/validate-org-blocks" "$PROJECT_ROOT/config.org"
+        if ! "$PROJECT_ROOT/bin/validate-org-blocks" "$PROJECT_ROOT/config.org"; then
+            exit_code=1
+        fi
     fi
 
     if [ -d "$PROJECT_ROOT/.local/packages/elpaca" ]; then
@@ -142,6 +158,8 @@ function cmd_doctor() {
     else
         echo "⚠️ Elpaca directory not found. Run 'sync' to initialize."
     fi
+
+    return $exit_code
 }
 
 # --- Command Dispatch ---
@@ -159,3 +177,5 @@ case "$1" in
     help|--help|-h) print_usage ;;
     *) echo "Unknown command: $1"; print_usage; exit 1 ;;
 esac
+
+exit $?
