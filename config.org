@@ -8,6 +8,17 @@
 #+end_src
 
 * Core Configuration
+** Version Specific Logic
+#+begin_src emacs-lisp
+(if (>= emacs-major-version 31)
+    (progn
+      (message "Running on Emacs 31 - Enabling experimental features...")
+      ;; Add Emacs 31 specific tweaks here
+      ;; Example: (setq some-new-emacs-31-variable t)
+      )
+  (message "Running on Emacs %d" emacs-major-version))
+#+end_src
+
 ** Custom Functions
 #+begin_src emacs-lisp
  ;; 1. Define the function in a utilities section or at the top of the file
@@ -572,18 +583,8 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
 #+begin_src emacs-lisp
             (use-package evil
               :ensure nil
-              :demand t
-              :init
-              ;; Pre-load configuration is required for evil-collection
-              (setq evil-want-integration t)
-              (setq evil-want-keybinding nil)
-              (setq evil-want-C-u-scroll t)
-              (setq evil-undo-system 'undo-fu)
-              (setq evil-search-module 'evil-search)
+              :after (evil)
               :config
-              (evil-mode 1)
-              
-
               ;; Bind TAB in insert state to trigger completion
               (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
               (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first)
@@ -760,6 +761,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
 * Visuals & Themes
 #+begin_src emacs-lisp
   (use-package doom-themes
+    :demand t
     :config
     (setq doom-themes-enable-bold t
           doom-themes-enable-italic t)
@@ -829,6 +831,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
 ** Vertico, Savehist, Orderless, Marginalia
 #+begin_src emacs-lisp
   (use-package vertico
+    :demand t
     :init (vertico-mode)
     :custom (vertico-cycle t)
     :bind (:map vertico-map
@@ -919,6 +922,7 @@ Sets up the popup, cycling, and integration with icons.
 
 #+begin_src emacs-lisp
   (use-package corfu
+    :demand t
     :custom
     (corfu-auto t)                 ;; Enable auto completion
     (corfu-auto-delay 0.1)         ;; Small delay to prevent stuttering
@@ -932,6 +936,8 @@ Sets up the popup, cycling, and integration with icons.
 
     :init
     (global-corfu-mode)
+
+    :config
     (corfu-popupinfo-mode)
 
     :bind
@@ -1034,16 +1040,17 @@ Sets up the popup, cycling, and integration with icons.
 A modern, polished Dired experience that can replace Treemacs.
 
 #+begin_src emacs-lisp
-  (use-package dirvish :ensure t :init
-    ;; Enable Dirvish globally (replacing default Dired)
-    (dirvish-override-dired-mode)
+  (use-package dirvish
+    :demand t
     :custom ;; Visual attributes for normal buffers (Full Dired)
     (dirvish-attributes '(vc-state nerd-icons file-size collapse subtree-state git-msg))
-  ;; Sidebar (Side) Configuration
-  (dirvish-side-width 30)
-  (dirvish-side-display-alist `((side . left) (slot . -1))) ;; Always force to the extreme left
+    ;; Sidebar (Side) Configuration
+    (dirvish-side-width 30)
+    (dirvish-side-display-alist `((side . left) (slot . -1))) ;; Always force to the extreme left
 
   :config
+  ;; Enable Dirvish globally (replacing default Dired)
+  (dirvish-override-dired-mode)
   ;; Enable file preview and "follow mode" (sync with open buffer)
   (dirvish-peek-mode)
   (dirvish-side-follow-mode)
@@ -1089,7 +1096,8 @@ A modern, polished Dired experience that can replace Treemacs.
      (push '(java-mode . google-java-format) apheleia-mode-alist)
      (push '(java-ts-mode . google-java-format) apheleia-mode-alist)
      (push '(python-mode . black) apheleia-mode-alist)
-     (push '(python-ts-mode . black) apheleia-mode-alist)) #+end_src
+      (push '(python-ts-mode . black) apheleia-mode-alist))
+#+end_src
 
 ** Linting (Flymake)
  Configured for Eglot and Consult integration. Replaces Flycheck for consistency.
@@ -1160,8 +1168,8 @@ A modern, polished Dired experience that can replace Treemacs.
                                 :sort nil
                                 :lookup #'consult--lookup-candidate)
                (message "No errors found in project.")))))))
-#+end_src
 
+ #+end_src
 ** Tree-Sitter Configuration
  Configure Tree-sitter for better syntax highlighting and ensure grammars are installed.
 
@@ -1169,11 +1177,12 @@ A modern, polished Dired experience that can replace Treemacs.
  (use-package treesit
    :ensure nil
    :config
-   (setq treesit-language-source-alist
-         '((java "https://github.com/tree-sitter/tree-sitter-java")
-           (javascript "https://github.com/tree-sitter/tree-sitter-javascript")
-           (typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
-           (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")))
+    (setq treesit-language-source-alist
+          '((java "https://github.com/tree-sitter/tree-sitter-java")
+            (javascript "https://github.com/tree-sitter/tree-sitter-javascript")
+            (typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
+            (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")
+            (python "https://github.com/tree-sitter/tree-sitter-python")))
 
    (defun my/install-java-tree-sitter ()
      "Install the Java tree-sitter grammar."
@@ -1393,19 +1402,105 @@ Complete Python LSP setup with Pyright and Ruff linter.
     :ensure t
     :after (shell-maker acp)
     :config
-    ;; Use eat as terminal backend (matches your setup)
-    (setq agent-shell-path-resolver-function #'agent-shell--resolve-devcontainer-path)
-    
     ;; === Gemini Configuration ===
     (setq agent-shell-google-authentication
           (agent-shell-google-make-authentication
            :api-key (lambda () (getenv "GEMINI_API_KEY"))))
     
-    (setq agent-shell-google-gemini-environment
-          (agent-shell-make-environment-variables
-           :inherit-env t))
-    
-    ;; === Opencode Configuration ===
+     (setq agent-shell-google-gemini-environment
+           (agent-shell-make-environment-variables
+            :inherit-env t))
+
+     ;; === Model Selection Configuration ===
+     (defvar my-agent-shell-google-gemini-models
+       '("auto"
+         "gemini-3-pro-preview"
+         "gemini-3-flash-preview"
+         "gemini-2.5-pro"
+         "gemini-2.5-flash"
+         "gemini-2.5-flash-lite")
+       "Available Gemini models for selection.")
+
+     (defvar my-agent-shell-use-yolo t
+       "Whether to use --yolo flag in ACP mode.")
+
+     (defvar my-agent-shell-google-gemini-model "auto"
+       "Currently selected Gemini model.")
+
+     (defun my-agent-shell-google-update-gemini-command ()
+       "Update `agent-shell-google-gemini-acp-command' with the current model."
+       (let ((cmd (list "gemini" "--experimental-acp" "-m" my-agent-shell-google-gemini-model)))
+         (when my-agent-shell-use-yolo
+           (setq cmd (append cmd (list "--yolo"))))
+         (setq agent-shell-google-gemini-acp-command cmd)
+         (setq agent-shell-google-gemini-command nil)
+         (message "Updated command: %S" agent-shell-google-gemini-acp-command)))
+
+     (defun my-agent-shell-toggle-yolo ()
+       "Toggle YOLO mode for agent-shell."
+       (interactive)
+       (setq my-agent-shell-use-yolo (not my-agent-shell-use-yolo))
+       (my-agent-shell-google-update-gemini-command)
+       (message "YOLO mode: %s" (if my-agent-shell-use-yolo "enabled" "disabled")))
+
+     (defun my-agent-shell-google-select-gemini-model (model)
+       "Select a Gemini model and update the command."
+       (interactive (list (completing-read "Select Gemini model: " my-agent-shell-google-gemini-models nil t)))
+       (setq my-agent-shell-google-gemini-model model)
+       (my-agent-shell-google-update-gemini-command)
+       (message "Gemini model set to: %s (Restart agent-shell for changes to take effect)" model))
+
+     (defun my-agent-shell (arg)
+       "Launch agent-shell. With prefix ARG, select Gemini model first."
+       (interactive "P")
+       (when arg
+         (call-interactively 'my-agent-shell-google-select-gemini-model))
+       (agent-shell))
+
+    (defun my-agent-shell-restart ()
+      "Restart agent-shell with current model."
+      (interactive)
+      (let ((buffers (buffer-list)))
+        (dolist (buf buffers)
+          (when (string-match-p "\\*agent-shell" (buffer-name buf))
+            (when (buffer-live-p buf)
+              (let ((proc (get-buffer-process buf)))
+                (when proc
+                  (delete-process proc)))
+              (kill-buffer buf))))
+      (agent-shell))
+
+     (defun my-agent-shell-status ()
+       "Show current agent-shell configuration."
+       (interactive)
+       (message "Current Gemini model: %s | YOLO: %s | Command: %S"
+                my-agent-shell-google-gemini-model
+                my-agent-shell-use-yolo
+                agent-shell-google-gemini-acp-command))
+
+     ;; === Model Persistence ===
+     (defconst my-agent-shell-model-file
+       (expand-file-name "agent-shell-model" user-emacs-directory)
+       "File to persist the selected Gemini model.")
+
+     (defun my-agent-shell-save-model ()
+       "Save the current model to disk."
+       (with-temp-file my-agent-shell-model-file
+         (insert my-agent-shell-google-gemini-model)))
+
+     (defun my-agent-shell-load-model ()
+       "Load the saved model from disk, if it exists."
+       (when (file-exists-p my-agent-shell-model-file)
+         (with-temp-buffer
+           (insert-file-contents my-agent-shell-model-file)
+           (let ((saved-model (string-trim (buffer-string))))
+             (when (member saved-model my-agent-shell-google-gemini-models)
+               (setq my-agent-shell-google-gemini-model saved-model)
+               (my-agent-shell-google-update-gemini-command))))))
+
+     (add-hook 'kill-emacs-hook 'my-agent-shell-save-model)
+
+     ;; === Opencode Configuration ===
     (setq agent-shell-opencode-authentication
           (agent-shell-opencode-make-authentication :none t))
     
@@ -1440,9 +1535,14 @@ Complete Python LSP setup with Pyright and Ruff linter.
     ;; Show usage at turn end
     (setq agent-shell-show-usage-at-turn-end t)
     
-    ;; Enable file completion
-    (setq agent-shell-file-completion-enabled t))
-#+end_src
+     ;; Enable file completion
+     (setq agent-shell-file-completion-enabled t)
+
+     ;; === Initialize Model ===
+     (my-agent-shell-load-model)
+     (my-agent-shell-google-update-gemini-command)
+     (setq agent-shell-preferred-agent-config (agent-shell-google-make-gemini-config))))
+ #+end_src
 
 ** Org Mode
 #+begin_src emacs-lisp
