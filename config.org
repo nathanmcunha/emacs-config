@@ -1215,116 +1215,178 @@ A modern, polished Dired experience that can replace Treemacs.
   (setq eglot-java-user-init-opts-fn 'my/eglot-java-init-opts))
   #+end_src
 
-** Python Development (Eglot + Pyright)
-Complete Python LSP setup with Pyright and Ruff linter.
-
-#+begin_src emacs-lisp
-  (use-package eglot
-    :ensure nil
-    :hook
-    (((python-mode python-ts-mode) . eglot-ensure))
-    :config
-    ;; Configure Eglot for Python with Pyright
-    (add-to-list 'eglot-server-programs
-                 '((python-mode python-ts-mode)
-                   "pyright-langserver"
-                   "--stdio"
-                   :initializationOptions
-                   (:python (:analysis (:typeCheckingMode "strict"
-                                                   :autoSearchPaths t
-                                                   :useLibraryCodeForTypes t
-                                                   :diagnosticMode "workspace")))))
-
-    ;; Note: Eglot keybindings are available via leader keys (SPC c prefix)
-    ;; to avoid python-mode-map void errors when eglot loads for other modes.
-  )
-
-  (use-package flymake
-    :ensure nil
-    :hook
-    ((python-mode python-ts-mode) . flymake-mode)
-    :config
-    (setq flymake-fringe-indicator-position 'left-fringe))
-
-  ;; Ruff linter configuration
-  (defun my/python-ruff-diagnostics (source callback)
-    "Run Ruff as a Flymake backend for Python."
-    (let ((buffer (current-buffer)))
-      (unless (executable-find "ruff")
-        (funcall callback '())
-        (cl-return-from my/python-ruff-diagnostics))
+** Python Development
+  #+begin_src emacs-lisp
+    (use-package pyvenv
+      :ensure t
+      :config
+      (setq pyvenv-mode-line-indicator
+            '(pyvenv-virtual-env-name (" [venv:" pyvenv-virtual-env-name "] ")))
+      (pyvenv-mode 1)
       
-      (when-let ((file (buffer-file-name buffer)))
-        (make-process
-         :name "ruff-flymake"
-         :buffer (generate-new-buffer " *ruff-flymake*")
-         :command (list "ruff" "check" "--output-format=json" file)
-         :sentinel
-         (lambda (process _event)
-           (when (eq (process-status process) 'exit)
-             (unwind-protect
-                 (with-current-buffer (process-buffer process)
-                   (let ((json-array-type 'list))
-                     (let ((diagnostics
-                            (mapcar
-                             (lambda (item)
-                               (let* ((start-line (1- (alist-get 'start_line item)))
-                                      (start-col (alist-get 'start_column item))
-                                      (end-line (1- (alist-get 'end_line item)))
-                                      (end-col (alist-get 'end_column item))
-                                      (message (alist-get 'message item))
-                                      (code (alist-get 'code item))
-                                      (severity (alist-get 'severity item))
-                                      (type (cond
-                                             ((string= severity "error") :error)
-                                             ((string= severity "warning") :warning)
-                                             (t :note))))
-                                 (flymake-make-diagnostic
-                                  (current-buffer)
-                                  (flymake-diag-region buffer start-line start-col end-line end-col)
-                                  type
-                                  message
-                                  :code code
-                                  :source "Ruff"))))
-                             (condition-case nil
-                                 (json-read-from-string
-                                  (buffer-string))
-                               (error '())))))
-                       (funcall callback diagnostics)))
-               (kill-buffer (process-buffer process)))))))))
+      (defun my/pyvenv-auto-activate ()
+        "Auto-activate venv if specified in .dir-locals.el or found in project."
+        (when (derived-mode-p 'python-mode 'python-ts-mode)
+          (let ((project-root (or (locate-dominating-file default-directory ".dir-locals.el")
+                                   (locate-dominating-file default-directory ".git")
+                                   (locate-dominating-file default-directory "pyproject.toml")
+                                   (locate-dominating-file default-directory "pyrightconfig.json")
+                                   default-directory)))
+            (when project-root
+              (let ((venv-spec (and (boundp 'pyvenv-workon) pyvenv-workon))
+                    venv-path)
+                (setq venv-path
+                      (cond
+                       (venv-spec
+                        (expand-file-name venv-spec project-root))
+                       ((file-exists-p (expand-file-name ".venv" project-root))
+                        (expand-file-name ".venv" project-root))
+                       ((file-exists-p (expand-file-name "venv" project-root))
+                        (expand-file-name "venv" project-root))
+                       ((file-exists-p (expand-file-name "env" project-root))
+                        (expand-file-name "env" project-root))))
+                (when (and venv-path (not (string= venv-path pyvenv-virtual-env)))
+                  (pyvenv-activate venv-path)
+                  (message "Activated venv: %s" venv-path))))))
+      
+      (add-hook 'python-mode-hook 'my/pyvenv-auto-activate)
+      (add-hook 'python-ts-mode-hook 'my/pyvenv-auto-activate))
+  #+end_src
 
-  ;; Register Ruff as a Flymake backend
-  (add-hook 'python-mode-hook
-            (lambda ()
-              (add-hook 'flymake-diagnostic-functions 'my/python-ruff-diagnostics nil t)))
-  (add-hook 'python-ts-mode-hook
-            (lambda ()
-              (add-hook 'flymake-diagnostic-functions 'my/python-ruff-diagnostics nil t)))
+** Eglot + Pyright
+ Complete Python LSP setup with Pyright and Ruff linter.
+ 
+ To use requirements.txt with Pyright, activate your venv:
+ 
+   1. Auto-activate: Pyright uses the venv specified in .dir-locals.el
+      Create .dir-locals.el: ((python-mode . ((pyvenv-workon . ".venv"))))
+   
+   2. Manual: M-x pyvenv-activate RET .venv RET
+   
+    3. External: source .venv/bin/activate && emacs
 
-  ;; pytest integration
-  (defun my/python-run-pytest-file ()
-    "Run pytest on the current file."
-    (interactive)
-    (let ((file (buffer-file-name)))
-      (compile (format "pytest %s" file))))
+  #+begin_src emacs-lisp
+     (use-package eglot
+       :ensure nil
+       :config
+       ;; Configure Eglot for Python with Pyright
+       ;; Pyright automatically reads from your virtual environment if activated
+       ;; Run: source .venv/bin/activate && emacs
+       (add-to-list 'eglot-server-programs
+                    '((python-mode python-ts-mode)
+                      . ("pyright-langserver" "--stdio")))
+       
+      (defun my/python-eglot-ensure ()
+        "Activate venv then start Eglot for Python."
+        (my/pyvenv-auto-activate)
+        (let ((project-root (or (locate-dominating-file default-directory ".dir-locals.el")
+                                 (locate-dominating-file default-directory ".git")
+                                 (locate-dominating-file default-directory "pyproject.toml")
+                                 (locate-dominating-file default-directory "pyrightconfig.json")
+                                 default-directory)))
+         (setq-local eglot-workspace-configuration
+                     `(:python (:venvPath ,project-root
+                                :venv ".venv"
+                                :analysis (:typeCheckingMode "strict"
+                                           :autoSearchPaths t
+                                           :useLibraryCodeForTypes t
+                                           :diagnosticMode "workspace"))))
+         (cd project-root)
+         (eglot-ensure)))
+       
+       (add-hook 'python-mode-hook 'my/python-eglot-ensure)
+       (add-hook 'python-ts-mode-hook 'my/python-eglot-ensure))
 
-  (defun my/python-run-pytest-function ()
-    "Run pytest on the function at point."
-    (interactive)
-    (save-excursion
-      (beginning-of-defun)
-      (let* ((func-name (python-info-current-defun))
-             (file (buffer-file-name)))
-        (compile (format "pytest %s::%s" file func-name)))))
+      ;; Note: Eglot keybindings are available via leader keys (SPC c prefix)
+      ;; to avoid python-mode-map void errors when eglot loads for other modes.
+    )
 
-  ;; Python keybindings
-  (with-eval-after-load 'python
-    (define-key python-mode-map (kbd "C-c C-t") 'my/python-run-pytest-file)
-    (define-key python-mode-map (kbd "C-c C-f") 'my/python-run-pytest-function)
-    (define-key python-mode-map (kbd "C-c C-l") 'consult-flymake-project))
+    (use-package flymake
+      :ensure nil
+      :hook
+      ((python-mode python-ts-mode) . flymake-mode)
+      :config
+      (setq flymake-fringe-indicator-position 'left-fringe))
 
-  ;; Note: Python project test/format now handled by global my/project-test
-  ;; and my/project-compile functions, which detect Python projects automatically.
+    ;; Ruff linter configuration
+    (defun my/python-ruff-diagnostics (source callback)
+      "Run Ruff as a Flymake backend for Python."
+      (let ((buffer (current-buffer)))
+        (unless (executable-find "ruff")
+          (funcall callback '())
+          (cl-return-from my/python-ruff-diagnostics))
+        
+        (when-let ((file (buffer-file-name buffer)))
+          (make-process
+           :name "ruff-flymake"
+           :buffer (generate-new-buffer " *ruff-flymake*")
+           :command (list "ruff" "check" "--output-format=json" file)
+           :sentinel
+           (lambda (process _event)
+             (when (eq (process-status process) 'exit)
+               (unwind-protect
+                   (with-current-buffer (process-buffer process)
+                     (let ((json-array-type 'list))
+                       (let ((diagnostics
+                              (mapcar
+                               (lambda (item)
+                                 (let* ((start-line (1- (alist-get 'start_line item)))
+                                        (start-col (alist-get 'start_column item))
+                                        (end-line (1- (alist-get 'end_line item)))
+                                        (end-col (alist-get 'end_column item))
+                                        (message (alist-get 'message item))
+                                        (code (alist-get 'code item))
+                                        (severity (alist-get 'severity item))
+                                        (type (cond
+                                               ((string= severity "error") :error)
+                                               ((string= severity "warning") :warning)
+                                               (t :note))))
+                                   (flymake-make-diagnostic
+                                    (current-buffer)
+                                    (flymake-diag-region buffer start-line start-col end-line end-col)
+                                    type
+                                    message
+                                    :code code
+                                    :source "Ruff"))))
+                               (condition-case nil
+                                   (json-read-from-string
+                                    (buffer-string))
+                                 (error '())))))
+                         (funcall callback diagnostics)))
+                 (kill-buffer (process-buffer process)))))))))
+
+    ;; Register Ruff as a Flymake backend
+    (add-hook 'python-mode-hook
+              (lambda ()
+                (add-hook 'flymake-diagnostic-functions 'my/python-ruff-diagnostics nil t)))
+    (add-hook 'python-ts-mode-hook
+              (lambda ()
+                (add-hook 'flymake-diagnostic-functions 'my/python-ruff-diagnostics nil t)))
+
+    ;; pytest integration
+    (defun my/python-run-pytest-file ()
+      "Run pytest on the current file."
+      (interactive)
+      (let ((file (buffer-file-name)))
+        (compile (format "pytest %s" file))))
+
+    (defun my/python-run-pytest-function ()
+      "Run pytest on the function at point."
+      (interactive)
+      (save-excursion
+        (beginning-of-defun)
+        (let* ((func-name (python-info-current-defun))
+               (file (buffer-file-name)))
+          (compile (format "pytest %s::%s" file func-name)))))
+
+    ;; Python keybindings
+    (with-eval-after-load 'python
+      (define-key python-mode-map (kbd "C-c C-t") 'my/python-run-pytest-file)
+      (define-key python-mode-map (kbd "C-c C-f") 'my/python-run-pytest-function)
+      (define-key python-mode-map (kbd "C-c C-l") 'consult-flymake-project))
+
+    ;; Note: Python project test/format now handled by global my/project-test
+    ;; and my/project-compile functions, which detect Python projects automatically.
 #+end_src
 
 ** Visual Wrapping (Adaptive Wrap)
