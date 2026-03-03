@@ -1465,9 +1465,14 @@ A modern, polished Dired experience that can replace Treemacs.
   (use-package agent-shell
     :ensure t
     :after (shell-maker acp)
-    :config
-    ;; Ensure ~/.local/bin (where copilot CLI lives) is in exec-path
+    :init
+    ;; Ensure ~/.local/bin (where copilot CLI lives) is in exec-path early
     (add-to-list 'exec-path (expand-file-name "~/.local/bin"))
+    :config
+    ;; === GitHub Copilot Configuration ===
+    (setq agent-shell-github-acp-command (list (expand-file-name "~/.local/bin/copilot") "--acp"))
+    (setq agent-shell-github-environment (agent-shell-make-environment-variables :inherit-env t))
+
     ;; === Gemini Configuration ===
     (setq agent-shell-google-authentication
           (agent-shell-google-make-authentication
