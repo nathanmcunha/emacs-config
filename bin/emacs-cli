@@ -116,8 +116,11 @@ function cmd_check() {
 
     log_info "Validating Elisp syntax..."
     if [ -f "$PROJECT_ROOT/bin/validate-lisp-syntax.py" ]; then
-        if python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "$PROJECT_ROOT/init.el" "$PROJECT_ROOT/early-init.el"; then
-            log_success "Core Elisp files are valid."
+        local elisp_files=("$PROJECT_ROOT/init.el" "$PROJECT_ROOT/early-init.el")
+        [ -f "$PROJECT_ROOT/config.el" ] && elisp_files+=("$PROJECT_ROOT/config.el")
+        
+        if python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "${elisp_files[@]}"; then
+            log_success "Core Elisp files and config.el are valid."
         else
             log_error "Elisp syntax errors detected!"
             exit_code=1
@@ -131,7 +134,6 @@ function cmd_check() {
 
 function cmd_sync() {
     local cmd_args=()
-    local elisp_code=""
 
     # Handle background mode
     if [ "$BACKGROUND" = true ]; then
@@ -148,19 +150,19 @@ function cmd_sync() {
     # Set up verbose mode
     if [ "$VERBOSE" = true ]; then
         log_info "Verbose mode enabled"
-        cmd_args+=("--eval" "(setq elpaca-log-events t)")
+        cmd_args+=("--eval" "(setq elpaca-log-events t)" "--eval" "(setq elpaca-verbose t)")
     fi
 
     # Set up safe mode
     if [ "$SAFE_MODE" = true ]; then
         log_info "Safe mode enabled - will skip problematic packages"
-        elisp_code="(setq elpaca-queue-limit 1)"
+        cmd_args+=("--eval" "(setq elpaca-queue-limit 1)")
     fi
 
     # Set up dry run
     if [ "$DRY_RUN" = true ]; then
         log_info "Dry run mode - no changes will be made"
-        elisp_code="$elisp_code (setq elpaca-menu-disabled '(elpaca-menu-melpa elpaca-menu-elpa))"
+        cmd_args+=("--eval" "(setq elpaca-menu-disabled '(elpaca-menu-melpa elpaca-menu-elpa))")
     fi
 
     log_info "Syncing packages with Elpaca..."
@@ -168,27 +170,7 @@ function cmd_sync() {
 
     # Run Emacs in batch mode with proper config directory and timeout
     local sync_start=$(date +%s)
-    local elapsed=0
     local log_file="/tmp/emacs-sync-output-$$.log"
-
-    # Convert bash booleans to Elisp booleans
-    local elisp_verbose=$( [ "$VERBOSE" = true ] && echo "t" || echo "nil" )
-    local elisp_skip_wait=$( [ "$SKIP_WAIT" = true ] && echo "t" || echo "nil" )
-
-    # Build the Elisp code for Elpaca sync
-    elisp_code="(progn
-      (setq user-emacs-directory \"$PROJECT_ROOT/\")
-      (when $elisp_verbose
-        (message \"Starting package sync...\")
-        (message \"Elpaca directory: %s\" elpaca-directory))
-      (run-at-time 5 nil
-        (lambda ()
-          (when $elisp_verbose
-            (message \"Packages in queue: %d\"
-                     (length elpaca--queue)))))
-      (unless $elisp_skip_wait
-        (elpaca-wait))
-      (message \"✨ Sync complete.\"))"
 
     # Use timeout command to enforce the timeout
     # Capture output to log file and also display it
@@ -196,21 +178,16 @@ function cmd_sync() {
            --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
            "${cmd_args[@]}" \
            -l "$INIT_FILE" \
-           --eval "$elisp_code" 2>&1 | tee "$log_file"
+           -l "$PROJECT_ROOT/bin/elpaca-sync.el" 2>&1 | tee "$log_file"
     local exit_code=$?
 
     local sync_end=$(date +%s)
-    elapsed=$((sync_end - sync_start))
+    local elapsed=$((sync_end - sync_start))
 
     if [ $exit_code -eq 124 ]; then
         log_error "Sync timed out after ${elapsed} seconds"
         log_info "Last 20 lines of output:"
         tail -20 "$log_file"
-        log_info ""
-        log_info "A package may be stuck. Try:"
-        log_info "  1. Run 'emacs-cli sync --safe' to skip problematic packages"
-        log_info "  2. Run 'emacs-cli purge' to clear build caches"
-        log_info "  3. Run 'emacs-cli doctor' for diagnostic info"
         rm -f "$log_file"
         return $exit_code
     elif [ $exit_code -ne 0 ]; then
@@ -221,17 +198,12 @@ function cmd_sync() {
         return $exit_code
     fi
 
-    if [ $VERBOSE = true ]; then
-        log_info "Sync completed in ${elapsed} seconds"
-    fi
-
     rm -f "$log_file"
     return 0
 }
 
 function cmd_update() {
     local cmd_args=()
-    local elisp_code=""
 
     # Handle background mode
     if [ "$BACKGROUND" = true ]; then
@@ -248,29 +220,11 @@ function cmd_update() {
     # Set up verbose mode
     if [ "$VERBOSE" = true ]; then
         log_info "Verbose mode enabled"
-        cmd_args+=("--eval" "(setq elpaca-log-events t)")
+        cmd_args+=("--eval" "(setq elpaca-log-events t)" "--eval" "(setq elpaca-verbose t)")
     fi
 
     log_info "Updating packages with Elpaca..."
     log_info "Timeout set to ${TIMEOUT} seconds"
-
-    # Convert bash boolean to Elisp boolean
-    local elisp_verbose=$( [ "$VERBOSE" = true ] && echo "t" || echo "nil" )
-
-    # Build the Elisp code for Elpaca update
-    elisp_code="(progn
-      (setq user-emacs-directory \"$PROJECT_ROOT/\")
-      (when $elisp_verbose
-        (message \"Starting package update...\"))
-      (message \"Updating all packages via Elpaca...\")
-      (elpaca-update-all)
-      (run-at-time 5 nil
-        (lambda ()
-          (when $elisp_verbose
-            (message \"Packages in queue: %d\"
-                     (length elpaca--queue)))))
-      (elpaca-wait)
-      (message \"✨ Update complete.\"))"
 
     # Run Emacs in batch mode with proper config directory and timeout
     local update_start=$(date +%s)
@@ -282,7 +236,7 @@ function cmd_update() {
            --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
            "${cmd_args[@]}" \
            -l "$INIT_FILE" \
-           --eval "$elisp_code" 2>&1 | tee "$log_file"
+           -l "$PROJECT_ROOT/bin/elpaca-update.el" 2>&1 | tee "$log_file"
     local exit_code=$?
 
     local update_end=$(date +%s)
@@ -292,10 +246,6 @@ function cmd_update() {
         log_error "Update timed out after ${elapsed} seconds"
         log_info "Last 20 lines of output:"
         tail -20 "$log_file"
-        log_info ""
-        log_info "A package may be stuck. Try:"
-        log_info "  1. Run 'emacs-cli sync --safe' to skip problematic packages"
-        log_info "  2. Run 'emacs-cli purge' to clear build caches"
         rm -f "$log_file"
         return $exit_code
     elif [ $exit_code -ne 0 ]; then
@@ -304,10 +254,6 @@ function cmd_update() {
         tail -20 "$log_file"
         rm -f "$log_file"
         return $exit_code
-    fi
-
-    if [ $VERBOSE = true ]; then
-        log_info "Update completed in ${elapsed} seconds"
     fi
 
     rm -f "$log_file"

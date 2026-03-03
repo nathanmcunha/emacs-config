@@ -242,6 +242,8 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (interactive)
     (dired (expand-file-name "~/.config/emacs/")))
 
+  ;; Diminish: Clean up mode line by hiding minor modes
+  (use-package diminish :ensure nil)
 
    ;; Recent files tracking
   (use-package recentf
@@ -1464,6 +1466,8 @@ A modern, polished Dired experience that can replace Treemacs.
     :ensure t
     :after (shell-maker acp)
     :config
+    ;; Ensure ~/.local/bin (where copilot CLI lives) is in exec-path
+    (add-to-list 'exec-path (expand-file-name "~/.local/bin"))
     ;; === Gemini Configuration ===
     (setq agent-shell-google-authentication
           (agent-shell-google-make-authentication

@@ -76,16 +76,7 @@
 (use-package transient :ensure t :demand t)
 
 ;; 3. Undo System (Must load before or with Evil)
-(use-package undo-fu
-  :ensure t
-  :demand t
-  :config
-  ;; Increase memory limits to prevent Emacs from aggressively deleting old history
-  ;; (Values copied from Doom Emacs)
-  (setq undo-limit 6710886400 ;; 64mb
-        undo-strong-limit 100663296 ;; 96mb
-        undo-outer-limit 1006632960) ;; 960mb
-  )
+(use-package undo-fu :ensure t :demand t)
 
 ;; 4. Evil Mode (Your migrated configuration)
 (use-package evil
@@ -98,16 +89,7 @@
   (setq evil-want-C-u-scroll t)
   (setq evil-undo-system 'undo-fu)
   :config
-  (evil-mode 1)
-
-  ;; Cores do Cursor
-  (setq evil-emacs-state-cursor    '("#649bce" box)
-        evil-normal-state-cursor   '("#ebcb8b" box)
-        evil-visual-state-cursor   '("#676f7d" box)
-        evil-insert-state-cursor   '("#ebcb8b" bar)
-        evil-replace-state-cursor  '("#ebcb8b" hbar)
-        evil-operator-state-cursor '("#ebcb8b" hollow))
-  )
+  (evil-mode 1))
 
 ;; --- FIM CORE ---
 
