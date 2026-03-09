@@ -8,54 +8,41 @@
 #+end_src
 
 * Core Configuration
-** Version Specific Logic
-#+begin_src emacs-lisp
-(if (>= emacs-major-version 31)
-    (progn
-      (message "Running on Emacs 31 - Enabling experimental features...")
-      ;; Add Emacs 31 specific tweaks here
-      ;; Example: (setq some-new-emacs-31-variable t)
-      )
-  (message "Running on Emacs %d" emacs-major-version))
-#+end_src
-
 ** Custom Functions
 #+begin_src emacs-lisp
  ;; 1. Define the function in a utilities section or at the top of the file
  ;; --- Smart TAB Dispatcher (Doom Style) ---
-(defun my/yas-try-expand-first ()
-  "Try to expand a yasnippet, then handle completion or indentation.
-Following Doom Emacs priority: Minibuffer > Yasnippet > Corfu > Indent."
+(defun my/smart-tab-dwim ()
+  "Smart TAB dispatcher: Minibuffer > Tempel > Corfu > Magit > Indent."
   (interactive)
   (cond
     ;; 1. Minibuffer: Keep Vertico completion behavior
     ((active-minibuffer-window)
-    (if (and (bound-and-true-p vertico-mode) vertico--candidates)
-        (vertico-insert)
-      (minibuffer-complete)))
+     (if (and (bound-and-true-p vertico-mode) vertico--candidates)
+         (vertico-insert)
+       (minibuffer-complete)))
 
-    ;; 2. DOOM PRIORITY: Try to expand snippet BEFORE menu navigation
-    ((and (bound-and-true-p yas-minor-mode) (yas-expand))
-    t)
+    ;; 2. Try to expand a tempel snippet at point
+    ((condition-case nil (progn (tempel-expand) t) (user-error nil)))
 
     ;; 3. Corfu: If menu is open, TAB navigates between candidates
     ((and (bound-and-true-p corfu-mode) corfu--candidates)
-    (corfu-next))
+     (corfu-next))
 
     ;; 4. Support for Magit (Toggle sections)
     ((derived-mode-p 'magit-mode)
-    (magit-section-toggle (magit-current-section)))
+     (magit-section-toggle (magit-current-section)))
 
     ;; 5. Final fallback: Standard indentation
     (t
-    (indent-for-tab-command))))
+     (indent-for-tab-command))))
 
  ;; --- Global and Evil Mapping ---
-(global-set-key (kbd "TAB") 'my/yas-try-expand-first)
+(global-set-key (kbd "TAB") 'my/smart-tab-dwim)
 
  ;; Ensure Evil Mode in Insert State uses this logic
   (with-eval-after-load 'evil
-    (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first))
+    (define-key evil-insert-state-map (kbd "TAB") 'my/smart-tab-dwim))
 
 ;; --- Doom-like "K" Documentation Lookup ---
 (defun my/smart-lookup ()
@@ -271,17 +258,17 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
            '(evil-window-next evil-window-prev balance-windows other-window)))
 #+end_src
 
-** Enhanced project.el (Native)
-Extend built-in project.el with Projectile-like features.
+** Project.el
 #+begin_src emacs-lisp
   (use-package project
     :ensure nil
     :config
     (setq project-list-file (expand-file-name "projects" user-emacs-directory))
+    (setq project-vc-extra-root-markers '(".project" ".git"))
 
-    ;; 0. Project Type Detection
+    ;; Project type detection (gradle/maven/npm/rust/python)
     (defun my/project-type (dir)
-      "Return the project type for DIR (gradle, maven, npm, rust, python)."
+      "Return the project type symbol for DIR."
       (cond
        ((or (file-exists-p (expand-file-name "build.gradle" dir))
             (file-exists-p (expand-file-name "build.gradle.kts" dir))) 'gradle)
@@ -293,172 +280,90 @@ Extend built-in project.el with Projectile-like features.
             (file-exists-p (expand-file-name "requirements.txt" dir))) 'python)
        (t nil)))
 
-    (defun my/project-type-current ()
-      "Return the project type for the current project."
-      (let ((project (project-current)))
-        (when project
-          (my/project-type (project-root project)))))
-
-    ;; 1. Add More Project Markers (as fallback)
+    ;; Fallback marker detection (appended so git backend runs first)
     (defun my/project-try-local (dir)
-      "Detect project by common markers (Gemfile, package.json, etc.)."
+      "Detect project root by common build/config file markers."
       (catch 'found
         (let ((home (expand-file-name "~")))
           (dolist (file '("Gemfile" "package.json" "Cargo.toml" "go.mod"
                           "pom.xml" "build.gradle" "build.gradle.kts" "settings.gradle"
                           "pyproject.toml" "setup.py" "Makefile" "CMakeLists.txt"
-                          "meson.build" "project.clj" "deps.edn" "mix.exs"
-                          "shard.yml" "pubspec.yaml" "Platformio.ini" "platformio.ini"))
+                          "meson.build" "project.clj" "deps.edn" "mix.exs"))
             (let ((path (locate-dominating-file dir file)))
               (when (and path (not (file-equal-p path home)))
                 (throw 'found (cons 'transient path))))))))
-
-    ;; Append to hook so VC backend (git) is tried first
     (add-hook 'project-find-functions 'my/project-try-local 100)
 
-    ;; 2. Smart Find File (fallback to find-file if not in project)
+    ;; Smart find-file: falls back to plain find-file outside a project
     (defun my/project-find-file ()
-      "Find file in project or current directory."
+      "Find file in project, or fall back to regular find-file."
       (interactive)
       (if (project-current)
           (project-find-file)
         (call-interactively 'find-file)))
 
-    ;; 3. Project-aware Recent Files
+    ;; Project-scoped recent files via recentf
     (defun my/project-recent-files ()
-      "Show recent files in current project using consult."
+      "Show recentf entries scoped to the current project root."
       (interactive)
       (let* ((project (project-current))
              (root (and project (project-root project)))
-             (recent-files (and root (seq-filter (lambda (f) (string-prefix-p root f)) recentf-list))))
-        (if recent-files
-            (find-file (completing-read "Recent (project): " recent-files))
+             (files (and root (seq-filter (lambda (f) (string-prefix-p root f)) recentf-list))))
+        (if files
+            (find-file (completing-read "Recent (project): " files))
           (message "No recent files in this project."))))
 
-    ;; 4. Improve project switching (mimic Projectile)
-    (setq project-switch-commands
-          '((project-find-file "Find file" "f")
-            (project-dired "Dired" "d")
-            (project-vc-dir "VC Dir" "v")
-            (project-eshell "Eshell" "e")
-            (my/project-dispatch "Menu" "m")))
-
-    ;; 5. Project Command Palette
-    (defun my/project-dispatch ()
-      "Projectile-like command dispatcher for project.el."
-      (interactive)
-      (let ((choices '(("f" "Find file" project-find-file)
-                       ("b" "Switch buffer" project-switch-to-buffer)
-                       ("s" "Search in project" project-search)
-                       ("R" "Recent files" my/project-recent-files)
-                       ("d" "Dired" project-dired)
-                       ("v" "VC Dir" project-vc-dir)
-                       ("k" "Kill buffers" project-kill-buffers)
-                       ("r" "Find regexp" project-find-regexp)
-                       ("e" "Eshell" project-eshell))))
-        (let* ((choice (completing-read "Project action: " choices nil t))
-               (action (nth 2 (assoc choice choices))))
-          (call-interactively action)))))
-
-    ;; 5. Benchmark Current Project
-    (defun my/benchmark-current-project ()
-      "Run performance benchmarks on the current project."
-      (interactive)
-      (let ((project-root (or (and (project-current) (project-root (project-current)))
-                              default-directory)))
-        (let ((buffer (get-buffer-create "*Benchmark Results*"))
-              (script (expand-file-name "scripts/benchmark-project.el" user-emacs-directory)))
-          (if (file-exists-p script)
-              (progn
-                (message "Running benchmark on %s..." project-root)
-                (with-current-buffer buffer
-                  (read-only-mode -1)
-                  (erase-buffer)
-                  (call-process (concat invocation-directory invocation-name)
-                                nil buffer t
-                                "-Q" "--script" script "--" project-root)
-                  (goto-char (point-min))
-                  (read-only-mode 1))
-                (display-buffer buffer)
-                (message "Benchmark complete! See *Benchmark Results* buffer."))
-            (message "Benchmark script not found: %s" script)))))
-
-    ;; 6. Project Compilation and Testing (Like Projectile)
+    ;; Type-aware compile / test / run
     (defun my/project-compile ()
-      "Compile the current project."
+      "Compile the current project using its detected build tool."
       (interactive)
-      (let* ((project (project-current t))
-             (root (project-root project))
-             (type (my/project-type root))
-              (command (cond
-                        ((eq type 'gradle) "./gradlew build")
-                        ((eq type 'maven) "mvn compile")
-                        ((eq type 'npm) "npm run build")
-                        ((eq type 'rust) "cargo build")
-                        ((eq type 'python) "black .")
-                        (t (read-string "Compile command: " "make -k ")))))
-        (let ((default-directory root))
-          (compile command))))
+      (let* ((root (project-root (project-current t)))
+             (cmd (pcase (my/project-type root)
+                    ('gradle "./gradlew build")
+                    ('maven  "mvn compile")
+                    ('npm    "npm run build")
+                    ('rust   "cargo build")
+                    ('python "black .")
+                    (_       (read-string "Compile command: " "make -k ")))))
+        (let ((default-directory root)) (compile cmd))))
 
     (defun my/project-test ()
       "Run tests for the current project."
       (interactive)
-      (let* ((project (project-current t))
-             (root (project-root project))
-             (type (my/project-type root))
-              (command (cond
-                        ((eq type 'gradle) "./gradlew test")
-                        ((eq type 'maven) "mvn test")
-                        ((eq type 'npm) "npm test")
-                        ((eq type 'rust) "cargo test")
-                        ((eq type 'python) "pytest")
-                        (t (read-string "Test command: " "make test ")))))
-        (let ((default-directory root))
-          (compile command))))
+      (let* ((root (project-root (project-current t)))
+             (cmd (pcase (my/project-type root)
+                    ('gradle "./gradlew test")
+                    ('maven  "mvn test")
+                    ('npm    "npm test")
+                    ('rust   "cargo test")
+                    ('python "pytest")
+                    (_       (read-string "Test command: " "make test ")))))
+        (let ((default-directory root)) (compile cmd))))
 
     (defun my/project-run ()
       "Run the current project."
       (interactive)
-      (let* ((project (project-current t))
-             (root (project-root project))
-             (type (my/project-type root))
-             (command (cond
-                       ((eq type 'gradle) "./gradlew run")
-                       ((eq type 'maven) "mvn exec:java")
-                       ((eq type 'npm) "npm start")
-                       ((eq type 'rust) "cargo run")
-                       (t (read-string "Run command: ")))))
-        (let ((default-directory root))
-          (compile command))))
+      (let* ((root (project-root (project-current t)))
+             (cmd (pcase (my/project-type root)
+                    ('gradle "./gradlew run")
+                    ('maven  "mvn exec:java")
+                    ('npm    "npm start")
+                    ('rust   "cargo run")
+                    (_       (read-string "Run command: ")))))
+        (let ((default-directory root)) (compile cmd)))))
 #+end_src
 
-** Workspaces (Perspective)
+** Workspaces (Tab-bar)
 #+begin_src emacs-lisp
-  (use-package perspective
-    :bind ("C-x k" . persp-kill-buffer*)
+  (use-package tab-bar
+    :ensure nil
     :init
-    (persp-mode)
+    (tab-bar-mode 1)
     :custom
-    (persp-mode-prefix-key (kbd "C-c M-p"))
-    (persp-show-modestring nil)
-    :config
-    (with-eval-after-load 'consult
-      (consult-customize consult-source-buffer :hidden t :default nil)
-      (add-to-list 'consult-buffer-sources 'persp-consult-source)))
-#+end_src
-
-** Project Workspaces (Perspective Integration)
-Integrate project.el with perspective.el for Doom-like workspace switching.
-#+begin_src emacs-lisp
-  (defun my/project-workspace-switch (dir)
-    "Switch to a perspective for the project in DIR."
-    (let ((name (file-name-nondirectory (directory-file-name dir))))
-      (persp-switch name)))
-
-  ;; Automatically switch perspective when switching projects via SPC p p
-  (setq project-switch-commands
-        (append project-switch-commands
-                '((my/project-workspace-switch "Workspace" "w"))))
+    (tab-bar-show 1)
+    (tab-bar-close-button-show nil)
+    (tab-bar-new-tab-choice "*scratch*")
+    (tab-bar-tab-hints t))
 #+end_src
 
 ** Server Mode
@@ -533,27 +438,42 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
 #+end_src
 
 * Window Management (Popups & Rules)
-** Popper (Popup Behavior)
+** Popup Windows (built-in toggle)
 #+begin_src emacs-lisp
-   (use-package popper
-     :ensure t
-     :bind (("C-`"   . popper-toggle)
-            ("M-`"   . popper-cycle)
-            ("C-M-`" . popper-toggle-type))
-     :init
-     (setq popper-reference-buffers
-           '("\\*Messages\\*"
-             "Output\\*$"
-             "\\*Async Shell Command\\*"
-             "\\*Help\\*"
-             "\\*compilation\\*"
-             "\\*Flymake diagnostics\\*"
-             "\\*Warnings\\*"
-             help-mode
-             compilation-mode))
-     :config
-     (popper-mode +1)
-     (popper-echo-mode +1)) ; Show status in echo area
+  (defvar my/popup-buffer-regexps
+    '("\\*Messages\\*" "Output\\*$" "\\*Async Shell Command\\*"
+      "\\*Help\\*" "\\*compilation\\*" "\\*Flymake diagnostics\\*" "\\*Warnings\\*")
+    "Regexps matching buffers treated as popups.")
+
+  (defun my/popup-buffer-p (buf)
+    "Return t if BUF matches a popup regexp or is derived from a popup mode."
+    (let ((name (buffer-name buf)))
+      (or (seq-some (lambda (re) (string-match-p re name)) my/popup-buffer-regexps)
+          (with-current-buffer buf
+            (derived-mode-p 'help-mode 'compilation-mode)))))
+
+  (defun my/popup-toggle ()
+    "Hide any visible popup, or show the most recent one."
+    (interactive)
+    (let ((popup-win (seq-find (lambda (w) (my/popup-buffer-p (window-buffer w)))
+                               (window-list))))
+      (if popup-win
+          (delete-window popup-win)
+        (when-let ((buf (seq-find #'my/popup-buffer-p (buffer-list))))
+          (display-buffer buf)))))
+
+  (defun my/popup-cycle ()
+    "Cycle through popup buffers."
+    (interactive)
+    (let* ((popups (seq-filter #'my/popup-buffer-p (buffer-list)))
+           (current (and (my/popup-buffer-p (current-buffer)) (current-buffer)))
+           (next (if current
+                     (or (cadr (member current popups)) (car popups))
+                   (car popups))))
+      (when next (display-buffer next))))
+
+  (global-set-key (kbd "C-`")   #'my/popup-toggle)
+  (global-set-key (kbd "M-`")   #'my/popup-cycle)
 #+end_src
 
 ** Window Placement Rules (display-buffer-alist)
@@ -581,151 +501,65 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
 #+end_src
 
 * Evil Mode (Vim Emulation)
-This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-collection`).
 #+begin_src emacs-lisp
-            (use-package evil
-              :ensure nil
-              :after (evil)
-              :config
-              ;; Bind TAB in insert state to trigger completion
-              (define-key evil-insert-state-map (kbd "TAB") 'my/yas-try-expand-first)
-              (define-key evil-insert-state-map (kbd "<tab>") 'my/yas-try-expand-first)
-              ;; Set cursor colors
-              (setq evil-emacs-state-cursor    '("#649bce" box)
-                    evil-normal-state-cursor   '("#ebcb8b" box)
-                    evil-visual-state-cursor   '("#676f7d" box)
-                    evil-insert-state-cursor   '("#ebcb8b" bar)
-                    evil-replace-state-cursor  '("#ebcb8b" hbar)
-                    evil-operator-state-cursor '("#ebcb8b" hollow)))
-        (use-package evil-collection
-          :after evil
-          :ensure t
-          :custom
-          ;; (Optional) If you want evil-collection to configure the minibuffer (vim behavior in M-x)
-          ; (setq evil-collection-setup-minibuffer t)
-          (evil-collection-magit-use-z-for-folds nil)       ;; Use default Magit fold key (TAB) instead of 'z'
-          (evil-collection-magit-want-horizontal-movement t) ;; Enable h/l for movement
-          :config
-          ;; The essential list for a complete Doom/Spacemacs experience
-          (evil-collection-init
-            '(magit           ; Git Interface
-              dired           ; File Manager
-              ibuffer         ; Buffer Manager
-              help            ; Help screens (C-h v, C-h f)
-              info            ; Info manuals
-              dashboard       ; Welcome screen
-              eshell          ; Emacs Terminal
-              vterm           ; Visual Terminal (if using)
-              corfu           ; Autocomplete (if using)
-              vertico         ; Minibuffer completion (if using)
-              consult         ; Enhanced search commands
-              flycheck        ; Syntax highlighting
-              profiler        ; Emacs Profiler
-              man
-                            org
-                            )))          ; Man pages
-              #+end_src
+  ;; jk escape from insert mode (no package needed)
+  (defun my/evil-escape-jk ()
+    "Escape from insert mode with 'jk'."
+    (interactive)
+    (let ((modified (buffer-modified-p)))
+      (insert "j")
+      (let ((next-char (read-event nil nil 0.15)))
+        (if (equal next-char ?k)
+            (progn
+              (delete-char -1)
+              (set-buffer-modified-p modified)
+              (evil-normal-state))
+          (setq unread-command-events (list next-char))))))
+
+  (use-package evil
+    :ensure nil
+    :after (evil)
+    :config
+    (define-key evil-insert-state-map (kbd "j") 'my/evil-escape-jk)
+    (setq evil-emacs-state-cursor    '("#649bce" box)
+          evil-normal-state-cursor   '("#ebcb8b" box)
+          evil-visual-state-cursor   '("#676f7d" box)
+          evil-insert-state-cursor   '("#ebcb8b" bar)
+          evil-replace-state-cursor  '("#ebcb8b" hbar)
+          evil-operator-state-cursor '("#ebcb8b" hollow)))
+
+  (use-package evil-collection
+    :after evil
+    :ensure t
+    :custom
+    (evil-collection-magit-use-z-for-folds nil)
+    (evil-collection-magit-want-horizontal-movement t)
+    :config
+    (evil-collection-init))
+#+end_src
               
-** Evil Extensions
+** Evil Extensions & Avy
 #+begin_src emacs-lisp
-  ;; 1. Evil Surround
   (use-package evil-surround
     :ensure t
     :after evil
     :config (global-evil-surround-mode 1))
 
-  ;; 2. Evil Embrace
-  (use-package evil-embrace
-    :ensure t
-    :after evil-surround
-    :config (evil-embrace-enable-evil-surround-integration))
-
-  ;; 3. Evil Nerd Commentary
   (use-package evil-nerd-commenter
     :ensure t
-    :config
-    (with-eval-after-load 'evil
-      (evil-define-key '(normal visual) 'global "gc" 'evilnc-comment-operator)))
-
-  ;; 4. Evil Snipe
-  (use-package evil-snipe
-    :ensure t
     :after evil
     :config
-    (evil-snipe-mode 1)
-    (evil-snipe-override-mode 1)
-    (setq evil-snipe-smart-case t
-          evil-snipe-scope 'buffer
-          evil-snipe-repeat-scope 'buffer
-          evil-snipe-char-fold t
-          evil-snipe-show-prompt nil)
-    
-    ;; Fix visual mode mappings
-    (evil-define-key 'visual evil-snipe-mode-map "s" 'evil-snipe-s)
-    (evil-define-key 'visual evil-snipe-mode-map "S" nil))
+    (define-key evil-normal-state-map "gc" 'evilnc-comment-operator)
+    (define-key evil-visual-state-map "gc" 'evilnc-comment-operator)
+    (keymap-global-set "M-;" 'evilnc-comment-or-uncomment-lines))
 
-  ;; 5. Evil Escape
-  (use-package evil-escape
-    :ensure t
-    :after evil
-    :config
-    (evil-escape-mode 1)
-    (setq evil-escape-key-sequence "jf"
-          evil-escape-delay 0.2
-          evil-escape-unordered-key-sequence t))
-
-  ;; 6. Evil Exchange
-  (use-package evil-exchange
+  (use-package avy
     :ensure t
     :config
-    (evil-exchange-install)
-    (with-eval-after-load 'evil
-      (evil-define-key 'normal 'global "gx" 'evil-exchange)
-      (evil-define-key 'normal 'global "gX" 'evil-exchange-cancel)))
-
-  ;; 7. Evil Lion (Alignment)
-  (use-package evil-lion
-    :ensure t
-    :config (evil-lion-mode))
-
-  ;; 8. Evil Numbers
-  (use-package evil-numbers
-    :ensure t
-    :config
-    (with-eval-after-load 'evil
-      (evil-define-key '(normal visual) 'global "g+" 'evil-numbers/inc-at-pt)
-      (evil-define-key '(normal visual) 'global "g-" 'evil-numbers/dec-at-pt)))
-
-  ;; 9. Evil Visualstar
-  (use-package evil-visualstar
-    :ensure t
-    :after evil
-    :config (global-evil-visualstar-mode))
-
-  ;; 10. Evil Vimish Fold
-  (use-package evil-vimish-fold
-    :ensure t
-    :after evil
-    :init (global-evil-vimish-fold-mode)
-    :config
-    (with-eval-after-load 'evil
-      (evil-define-key '(normal visual) 'global "zf" 'evil-vimish-fold/create)
-      (evil-define-key '(normal visual) 'global "zd" 'evil-vimish-fold/delete)
-      (evil-define-key '(normal visual) 'global "zE" 'evil-vimish-fold/delete-all)))
-
-  ;; 11. Evil Indent Plus
-  (use-package evil-indent-plus
-    :ensure t
-    :after evil
-    :config (evil-indent-plus-default-bindings))
-
-  ;; 12. Evil Easymotion
-  (use-package evil-easymotion
-    :ensure t
-    :after evil
-    :demand t
-    :config
-    (evilem-default-keybindings "gs"))
+    (setq avy-timeout-seconds 0.3)
+    (define-key evil-normal-state-map (kbd "f") 'avy-goto-char-in-line)
+    (define-key evil-visual-state-map (kbd "f") 'avy-goto-char-in-line)
+    (define-key evil-motion-state-map "gs" 'avy-goto-char-2))
 #+end_src
 
 ** Undo System
@@ -735,22 +569,10 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
  3. ~vundo~: Graphical visualizer of the undo tree (for when you get lost in undos/redos).
 
  #+begin_src emacs-lisp
-   (use-package undo-fu
-     :ensure nil
-     :config
-     ;; Increase memory limits to prevent Emacs from aggressively deleting old history
-     ;; (Values copied from Doom Emacs)
-     (setq undo-limit 6710886400 ;; 64mb
-           undo-strong-limit 100663296 ;; 96mb
-           undo-outer-limit 1006632960) ;; 960mb
-     )
-
-  (use-package undo-fu-session
-    :ensure t
-    :init
-    (undo-fu-session-global-mode)
-    :config
-    (setq undo-fu-session-incompatible-files '("/COMMIT_EDITMSG\\'" "/git-rebase-todo\\'")))
+  ;; Use Emacs 28+ native undo-redo; raise limits to match Doom Emacs defaults
+  (setq undo-limit 67108864        ;; 64mb
+        undo-strong-limit 100663296 ;; 96mb
+        undo-outer-limit 1006632960) ;; 960mb
 
    (use-package vundo
      :ensure t
@@ -834,7 +656,9 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
 #+begin_src emacs-lisp
   (use-package vertico
     :demand t
-    :init (vertico-mode)
+    :init
+    (vertico-mode)
+    (vertico-multiform-mode)
     :custom (vertico-cycle t)
     :bind (:map vertico-map
                 ("C-j" . vertico-next)
@@ -850,8 +674,7 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
     :ensure t
     :custom
     (completion-styles '(orderless basic))
-    (completion-category-defaults nil)
-    (completion-category-overrides '((file (styles partial-completion))))
+    (completion-category-overrides '((file (styles basic partial-completion))))
     :config
     (defun my/orderless-dispatch (pattern _index _total)
       (cond
@@ -913,7 +736,12 @@ This sets up Vim bindings (`evil`) and ensures they work everywhere (`evil-colle
                    nil
                    (window-parameters (mode-line-format . none)))))
 
-  (use-package embark-consult)
+  ;; Connect Embark and Consult
+  (use-package embark-consult
+    :ensure t
+    :hook
+    (embark-collect-mode . consult-preview-at-point-mode))
+
 #+end_src
 
 * In-Buffer Completion (Corfu + Cape)
@@ -923,70 +751,65 @@ This module configures the "Intellisense" experience using Corfu, with specific 
 Sets up the popup, cycling, and integration with icons.
 
 #+begin_src emacs-lisp
-  (use-package corfu
-    :demand t
-    :custom
-    (corfu-auto t)                 ;; Enable auto completion
-    (corfu-auto-delay 0.1)         ;; Small delay to prevent stuttering
-    (corfu-auto-prefix 2)          ;; Minimum length to trigger
-    (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
-    (corfu-preselect 'prompt)      ;; Always preselect the prompt (first candidate is not auto-selected)
-    (corfu-quit-no-match 'separator) ;; Auto-quit if no match, helps with separator insertion
-    (corfu-popupinfo-delay 0.5)    ;; Delay before showing docs
-    (corfu-max-width 80)
-    (corfu-preview-current nil)    ;; Disable previewing current candidate (can be distracting)
+    (use-package corfu
+      :demand t
+      :custom
+      (corfu-auto t)                 ;; Enable auto completion
+      (corfu-auto-delay 0.2)         ;; Small delay to prevent stuttering
+      (corfu-auto-prefix 2)          ;; Minimum length to trigger
+      (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
+      (corfu-preselect 'prompt)      ;; Always preselect the prompt (first candidate is not auto-selected)
+      
+      (corfu-popupinfo-delay 0.5)    ;; Delay before showing docs
+      (corfu-max-width 80)
+      (corfu-preview-current nil)    ;; Disable previewing current candidate (can be distracting)
 
-    :init
-    (global-corfu-mode)
-
+      :init
+      (global-corfu-mode)
+      :config
+      (corfu-popupinfo-mode)
+      :bind
+      (:map corfu-map
+            ("TAB" . corfu-next)
+            ([tab] . corfu-next)
+            ("S-TAB" . corfu-previous)
+            ([backtab] . corfu-previous)
+            ("C-j" . corfu-next)
+            ("C-k" . corfu-previous)
+            ("RET" . corfu-insert)
+            ("C-e" . corfu-send-shell)    ;; Send candidate to shell/minibuffer
+            ("SPC" . corfu-insert-separator))
     :config
-    (corfu-popupinfo-mode)
+    ;; Manually trigger completion with C-Space when popup is closed
+    (keymap-global-set "C-SPC" #'completion-at-point)
 
-    :bind
-    (:map corfu-map
-          ("TAB" . corfu-next)
-          ([tab] . corfu-next)
-          ("S-TAB" . corfu-previous)
-          ([backtab] . corfu-previous)
-          ("C-j" . corfu-next)
-          ("C-k" . corfu-previous)
-          ("RET" . corfu-insert)
-          ("C-e" . corfu-send-shell)    ;; Send candidate to shell/minibuffer
-          ("SPC" . corfu-insert-separator))) ;; Helps filtering with Orderless
+      ) ;; Helps filtering with Orderless
 
-  ;; Pretty icons for Corfu
-  (use-package nerd-icons-corfu
-    :after corfu
-    :config
-    (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
+    ;; Pretty icons for Corfu
+    (use-package nerd-icons-corfu
+      :after corfu
+      :config
+      (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
  #+end_src
 
 * Development Tools
-** Snippets (Yasnippet)
+** Snippets (Tempel)
  #+begin_src emacs-lisp
-     (use-package yasnippet
-       :ensure t
-       :hook ((prog-mode . yas-minor-mode)
-              (conf-mode . yas-minor-mode)
-                (org-mode . yas-minor-mode)
-              )
-       :config
-       (setq yas-snippet-dirs (list (expand-file-name "snippets" user-emacs-directory)))
-       (setq yas-triggers-in-field t))
+  (use-package tempel
+    :ensure t
+    :bind (("M-+" . tempel-complete)
+           ("M-*" . tempel-insert)
+           :map tempel-map
+           ("TAB"   . tempel-next)
+           ("S-TAB" . tempel-previous))
+    :init
+    (defun tempel-setup-capf ()
+      (setq-local completion-at-point-functions
+                  (cons #'tempel-expand completion-at-point-functions)))
+    (add-hook 'prog-mode-hook 'tempel-setup-capf)
+    (add-hook 'text-mode-hook 'tempel-setup-capf))
 
-     (use-package yasnippet-snippets
-       :ensure t
-       :after yasnippet
-       :config
-       (require 'yasnippet-snippets)
-       (add-to-list 'yas-snippet-dirs yasnippet-snippets-dir t)
-       (yas-reload-all))
-
-   (use-package yasnippet-capf
-     :ensure t
-     :after yasnippet
-     :config
-     (add-to-list 'completion-at-point-functions #'yasnippet-capf))
+  (use-package tempel-collection :ensure t)
 #+end_src
 
 ** Extended Backends (Cape)
@@ -1003,7 +826,6 @@ Sets up the popup, cycling, and integration with icons.
     (add-to-list 'completion-at-point-functions #'cape-dabbrev t)
     (add-to-list 'completion-at-point-functions #'cape-keyword t)
     (add-to-list 'completion-at-point-functions #'cape-elisp-block)
-    (add-to-list 'completion-at-point-functions #'yasnippet-capf)
 
     :config
     (setq pcomplete-ignore-case t)
@@ -1036,6 +858,8 @@ Sets up the popup, cycling, and integration with icons.
 
    ;; Doom tip: Close Magit window and restore previous when pressing 'q'
    (setq magit-bury-buffer-function #'magit-mode-quit-window))
+
+  (use-package git-timemachine :ensure t)
 #+end_src
 
 ** Dirvish (Modern Dired)
@@ -1043,45 +867,18 @@ A modern, polished Dired experience that can replace Treemacs.
 
 #+begin_src emacs-lisp
   (use-package dirvish
-    :demand t
-    :custom ;; Visual attributes for normal buffers (Full Dired)
-    (dirvish-attributes '(vc-state nerd-icons file-size collapse subtree-state git-msg))
-    ;; Sidebar (Side) Configuration
-    (dirvish-side-width 30)
-    (dirvish-side-display-alist `((side . left) (slot . -1))) ;; Always force to the extreme left
-
-  :config
-  ;; Enable Dirvish globally (replacing default Dired)
-  (dirvish-override-dired-mode)
-  ;; Enable file preview and "follow mode" (sync with open buffer)
-  (dirvish-peek-mode)
-  (dirvish-side-follow-mode)
-
-  ;; --- TREEMACS-STYLE VISUAL ---
-  ;; In the sidebar, show ONLY icons and name (no size, date, etc.)
-  (setq dirvish-side-attributes '(nerd-icons collapse subtree-state))
-
-  ;; Fine-tuned Dired adjustments
-  (setq dired-listing-switches "-agho --group-directories-first"
-        dired-recursive-deletes 'always
-        dired-recursive-copies 'always
-        delete-by-moving-to-trash t)
-
-  (defun my/dirvish-project ()
-    "Open Dirvish at project root (if available) or current directory."
-    (interactive)
-    (let ((root (project-root (project-current))))
-      (if root
-          (dirvish root)
-        (dirvish))))
-
-  ;; Navigation within Dirvish buffer (Keep as is)
-  (with-eval-after-load 'dirvish
-    (evil-define-key 'normal dirvish-mode-map
-      "q" 'dirvish-quit
-      "h" 'dired-up-directory
-      "l" 'dired-find-file
-      "TAB" 'dirvish-subtree-toggle)))
+    :ensure t
+    :init
+    (dirvish-override-dired-mode)
+    :config
+    (dirvish-peek-mode)
+    :bind (:map dirvish-mode-map
+                ("h" . dirvish-up-directory-single)
+                ("l" . dired-find-file)
+                ("j" . dired-next-line)
+                ("k" . dired-previous-line)
+                ("TAB" . dirvish-subtree-toggle)))
+  
 #+end_src
 
 ** Formatting (Apheleia)
@@ -1219,40 +1016,14 @@ A modern, polished Dired experience that can replace Treemacs.
 
 ** Python Development
   #+begin_src emacs-lisp
-    (use-package pyvenv
+    (use-package pet
       :ensure t
       :config
-      (setq pyvenv-mode-line-indicator
-            '(pyvenv-virtual-env-name (" [venv:" pyvenv-virtual-env-name "] ")))
-      (pyvenv-mode 1)
-      
-      (defun my/pyvenv-auto-activate ()
-        "Auto-activate venv if specified in .dir-locals.el or found in project."
-        (when (derived-mode-p 'python-mode 'python-ts-mode)
-          (let ((project-root (or (locate-dominating-file default-directory ".dir-locals.el")
-                                   (locate-dominating-file default-directory ".git")
-                                   (locate-dominating-file default-directory "pyproject.toml")
-                                   (locate-dominating-file default-directory "pyrightconfig.json")
-                                   default-directory)))
-            (when project-root
-              (let ((venv-spec (and (boundp 'pyvenv-workon) pyvenv-workon))
-                    venv-path)
-                (setq venv-path
-                      (cond
-                       (venv-spec
-                        (expand-file-name venv-spec project-root))
-                       ((file-exists-p (expand-file-name ".venv" project-root))
-                        (expand-file-name ".venv" project-root))
-                       ((file-exists-p (expand-file-name "venv" project-root))
-                        (expand-file-name "venv" project-root))
-                       ((file-exists-p (expand-file-name "env" project-root))
-                        (expand-file-name "env" project-root))))
-                (when (and venv-path (not (string= venv-path pyvenv-virtual-env)))
-                  (pyvenv-activate venv-path)
-                  (message "Activated venv: %s" venv-path))))))
-      
-      (add-hook 'python-mode-hook 'my/pyvenv-auto-activate)
-      (add-hook 'python-ts-mode-hook 'my/pyvenv-auto-activate))
+      (add-hook 'python-base-mode-hook
+                (lambda ()
+                  (setq-local python-shell-interpreter (or (pet-executable-find "python") "python3")
+                              python-shell-virtualenv-root (pet-virtualenv-root))
+                  (pet-eglot-setup))))
   #+end_src
 
 ** Eglot + Pyright
@@ -1279,8 +1050,7 @@ A modern, polished Dired experience that can replace Treemacs.
                       . ("pyright-langserver" "--stdio")))
        
       (defun my/python-eglot-ensure ()
-        "Activate venv then start Eglot for Python."
-        (my/pyvenv-auto-activate)
+        "Configure Eglot workspace settings and start Eglot for Python."
         (let ((project-root (or (locate-dominating-file default-directory ".dir-locals.el")
                                  (locate-dominating-file default-directory ".git")
                                  (locate-dominating-file default-directory "pyproject.toml")
@@ -1385,73 +1155,33 @@ A modern, polished Dired experience that can replace Treemacs.
     (with-eval-after-load 'python
       (define-key python-mode-map (kbd "C-c C-t") 'my/python-run-pytest-file)
       (define-key python-mode-map (kbd "C-c C-f") 'my/python-run-pytest-function)
-      (define-key python-mode-map (kbd "C-c C-l") 'consult-flymake-project))
+      (define-key python-mode-map (kbd "C-c C-l") 'my/consult-flymake-project))
 
     ;; Note: Python project test/format now handled by global my/project-test
     ;; and my/project-compile functions, which detect Python projects automatically.
 #+end_src
 
-** Visual Wrapping (Adaptive Wrap)
+** Visual Wrapping (built-in Emacs 30)
  Improves reading of long lines in code buffers, maintaining visual indentation.
 
  #+begin_src emacs-lisp
-   (use-package adaptive-wrap
-     :ensure t
-     :config
-     ;; Define how much EXTRA indentation to add on wrapped lines (default is 0).
-     ;; Setting to 2 helps visually distinguish the wrap from a new indented line.
-     (setq-default adaptive-wrap-extra-indent 2))
-
-   ;; Hook to automatically activate in programming
+   ;; visual-wrap-prefix-mode is built-in since Emacs 30 (replaces adaptive-wrap)
    (add-hook 'prog-mode-hook
              (lambda ()
-               (visual-line-mode 1)          ;; Enable line wrapping at window edge
-               (adaptive-wrap-prefix-mode 1))) ;; Enable smart indentation correction
+               (visual-line-mode 1)
+               (visual-wrap-prefix-mode 1)))
 #+end_src
-** Gemini & Terminal
-#+begin_src emacs-lisp
-     ;; 1. Dependencies (Eat and Popup)
-       (use-package eat
-         :ensure t
-         :defer t
-         :hook (eat-mode . (lambda () 
-                             (evil-local-mode 1)
-                             (evil-define-key* 'insert eat-mode-map (kbd "C-c C-k") #'eat-reset)))
-         :config
-         (setq eat-kill-buffer-on-exit t)
-         (add-hook 'eat-mode-hook (lambda () 
-                                    (add-hook 'evil-insert-state-entry-hook #'eat-emulate-es-mode nil t)
-                                    (add-hook 'evil-normal-state-entry-hook #'eat-emulate-scroll-mode nil t))))
-
-       ;; Force loading popup to ensure it exists before gemini-cli
-       (use-package popup
-         :ensure t
-         :demand t)
-
-       ;; 2. Gemini CLI Wrapper
-       (use-package gemini-cli
-         :ensure (:host github :repo "linchen2chris/gemini-cli.el")
-         ;; HERE IS THE FIX: We added 'popup' to the :after list
-         :after (eat popup)
-         :config
-         ;; Try to find the executable automatically (same code I gave you before)
-         (let ((gemini-path (string-trim (shell-command-to-string "mise which gemini"))))
-           (if (and (not (string-empty-p gemini-path))
-                    (file-executable-p gemini-path))
-               (setq gemini-cli-command gemini-path)
-             (setq gemini-cli-command (or (executable-find "gemini")
-                                          "~/.local/share/mise/installs/node/20.19.6/bin/gemini")))))
-
-  ;; Eletric Pair (for brackets)
-      (use-package elec-pair
+**  Eletric Pair (for brackets)
+#+begin_src emacs-lisp :tangle yes
+(use-package elec-pair
         :ensure nil
         :hook (prog-mode . electric-pair-mode)
         :config
         (setq electric-pair-inhibit-predicate
               `(lambda (c)
                  (if (char-equal c ?<) t (electric-pair-default-inhibit c)))))
-#+end_src
-
+#+end_src 
+   
 ** AI Code Assistant (agent-shell)
 #+begin_src emacs-lisp
   (use-package shell-maker
@@ -1617,12 +1347,14 @@ A modern, polished Dired experience that can replace Treemacs.
 
 ** Org Mode
 #+begin_src emacs-lisp
-      (use-package org
+        (use-package org
         :ensure nil
         :hook ((org-mode . visual-line-mode)
                (org-mode . org-indent-mode))
+        :bind (:map org-mode-map
+                    ("TAB" . my/org-tab-dwim))
         :config
-    (require 'org-tempo)
+        (require 'org-tempo)
         (setq org-ellipsis " ▾"
               org-hide-emphasis-markers t
               org-src-fontify-natively t
@@ -1632,15 +1364,12 @@ A modern, polished Dired experience that can replace Treemacs.
               org-hide-block-startup nil
               org-src-preserve-indentation nil
               org-startup-folded 'content)
-(defun my/org-tab-dwim ()
-    (interactive)
-    (or (and (bound-and-true-p yas-minor-mode)
-             (yas-expand))
-        (and (fboundp 'completion-at-point)
-             (completion-at-point))
-        (org-cycle)))
-
-        )
+        (defun my/org-tab-dwim ()
+          (interactive)
+          (or (condition-case nil (progn (tempel-expand) t) (user-error nil))
+              (and (fboundp 'completion-at-point)
+                   (completion-at-point))
+              (org-cycle))))
 
   (use-package org-modern
         :ensure t
@@ -1652,9 +1381,11 @@ A modern, polished Dired experience that can replace Treemacs.
               org-modern-list '((43 . "➤") (45 . "–") (42 . "•"))
               org-modern-todo nil org-modern-tag nil org-modern-priority nil))
 
-      (use-package mixed-pitch
-        :hook (org-mode . mixed-pitch-mode)
-        :config (setq mixed-pitch-set-height t))
+      ;; variable-pitch-mode is built-in; fix code/table faces to stay monospace
+      (add-hook 'org-mode-hook 'variable-pitch-mode)
+      (dolist (face '(org-block org-code org-table org-verbatim
+                      org-meta-line org-block-begin-line org-block-end-line))
+        (set-face-attribute face nil :inherit 'fixed-pitch))
 
       (use-package ob-mermaid :ensure t :after org
         :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (emacs-lisp . t))))
@@ -1901,37 +1632,6 @@ Module for subtle coverage visualization.
               (lambda (&rest _) (when my/java-coverage-visible (my/java-apply-subtle-coverage))))
 #+end_src
 
-** Gptel
-#+begin_src emacs-lisp
-      ;; Ephemeral/Secrets Configuration
-    (use-package auth-source
-      :ensure nil
-      :custom
-      (auth-sources '("~/.authinfo.gpg")))
-
-  ;; Ensure Emacs asks for GPG password in minibuffer
-  (setq epa-pinentry-mode 'loopback)
-  (setq epa-file-cache-passphrase-for-symmetric-encryption t)
-
-  ;; 2. Gptel configuration with Z.ai as Default
-  (use-package gptel
-    :ensure t
-    :config
-    ;; Configure Z.ai Coding using key from ~/.authinfo.gpg
-    (gptel-make-openai "Z.ai-Coding"
-      :host "api.z.ai"
-      :endpoint "/api/coding/paas/v4/chat/completions"
-      :stream t
-      :key 'gptel-api-key ;; gptel will search auth-source for host 'api.z.ai'
-      :models '(glm-4.7-plus
-                glm-4.7
-                glm-4-plus))
-
-    ;; SET Z.AI AS DEFAULT
-    (setq gptel-model 'glm-4.7-plus
-          gptel-backend (gptel-get-backend "Z.ai-Coding"))) 
-#+end_src
-
 * Keybindings Configuration
 ** Centralized Leader Bindings
 #+begin_src emacs-lisp
@@ -1939,7 +1639,6 @@ Module for subtle coverage visualization.
 
   ;; --- Help & Config (h) ---
   (my/bind-leader "h b i" 'my/emacs-build-info "Emacs build info")
-  (my/bind-leader "h b p" 'my/benchmark-current-project "benchmark project")
   (my/bind-leader "h r r" (lambda () (interactive) (load-file user-init-file)) "reload config")
 
   ;; --- Buffer (b) ---
@@ -1947,7 +1646,7 @@ Module for subtle coverage visualization.
   (my/bind-leader ","   'switch-to-buffer "switch buffer")
   (my/bind-leader "`"   'evil-switch-to-windows-last-buffer "last buffer")
 
-  (my/bind-leader "b b" 'project-switch-to-buffer "switch buffer")
+  (my/bind-leader "b b" 'consult-buffer "switch buffer")
   (my/bind-leader "b B" 'switch-to-buffer "switch buffer (all)")
   (my/bind-leader "b i" 'ibuffer "ibuffer")
   (my/bind-leader "b n" 'next-buffer "next buffer")
@@ -1973,8 +1672,8 @@ Module for subtle coverage visualization.
   ;; Java Specific
   (my/bind-leader "c j n" 'eglot-java-create-project "new project")
   (my/bind-leader "c j i" 'eglot-java-organize-imports "organize imports")
-  (my/bind-leader "c j r" 'my/eglot-restart "restart eglot")
-  (my/bind-leader "c j t" 'my/switch-to-java-ts-mode "switch to java-ts-mode")
+  (my/bind-leader "c j r" (lambda () (interactive) (call-interactively #'eglot-shutdown) (eglot-ensure)) "restart eglot")
+  (my/bind-leader "c j t" #'java-ts-mode "switch to java-ts-mode")
   (my/bind-leader "c j I" 'my/install-java-tree-sitter "install java grammar")
 
   ;; Java Coverage
@@ -2001,10 +1700,10 @@ Module for subtle coverage visualization.
   (my/bind-leader "e N" 'flymake-goto-prev-error "prev")
 
   ;; --- Explorer (E) ---
-  (my/bind-leader "E e" 'my/dirvish-project "project root")
+  (my/bind-leader "E e" (lambda () (interactive) (dirvish (project-root (project-current t)))) "project root")
   (my/bind-leader "E f" 'dirvish-fd "find files (fd)")
   (my/bind-leader "E ." 'dirvish "current dir")
-  
+
   ;; --- File (f) ---
   (my/bind-leader "f f" 'my/project-find-file "find file in project")
   (my/bind-leader "f F" 'find-file "find file anywhere")
@@ -2038,11 +1737,13 @@ Module for subtle coverage visualization.
   (my/bind-leader "g r" (lambda () (interactive) (call-interactively 'magit-discard)) "Git discard selection")
 
   ;; --- Jump (j) ---
-  (my/bind-leader "j w" 'evilem-motion-forward-word-begin "word")
-  (my/bind-leader "j l" 'evilem-motion-next-line "line")
-  (my/bind-leader "j c" 'evilem-motion-find-char "char")
-  (my/bind-leader "j s" 'evilem-motion-find-char-timer "find (timer)")
-  (my/bind-leader "j j" 'evilem-motion-next-line "line")
+  (my/bind-leader "i s" 'tempel-insert "insert snippet")
+  (my/bind-leader "i S" 'tempel-complete "complete snippet")
+
+  (my/bind-leader "j j" 'avy-goto-char-2 "jump 2 chars")
+  (my/bind-leader "j l" 'avy-goto-line "jump line")
+  (my/bind-leader "j w" 'avy-goto-word-1 "jump word")
+  (my/bind-leader "j c" 'avy-goto-char "jump char")
 
   ;; --- Notes (n) ---
   (my/bind-leader "n r" 'org-roam-buffer-toggle "roam toggle")
@@ -2071,9 +1772,6 @@ Module for subtle coverage visualization.
   (my/bind-leader "p !" 'project-shell-command "shell command")
   (my/bind-leader "p &" 'project-async-shell-command "async shell command")
   (my/bind-leader "p R" 'project-query-replace-regexp "query replace")
-  (my/bind-leader "p w" 'my/project-workspace-switch "switch workspace")
-  (my/bind-leader "p m" 'my/project-dispatch "project palette")
-  (my/bind-leader "p B" 'my/benchmark-current-project "benchmark project")
 
   ;; --- Search (s) ---
   (my/bind-leader "s s" 'consult-line "search buffer")
@@ -2103,11 +1801,11 @@ Module for subtle coverage visualization.
   (my/bind-leader "w o"  'delete-other-windows "close others")
   (my/bind-leader "w ="  'balance-windows "balance")
 
-  ;; --- Workspace (W) ---
-  (my/bind-leader "W s" 'persp-switch "switch workspace")
-  (my/bind-leader "W n" 'persp-switch "new/switch")
-  (my/bind-leader "W k" 'persp-kill "kill workspace")
-  (my/bind-leader "W r" 'persp-rename "rename workspace")
+  ;; --- Workspace (l) ---
+  (my/bind-leader "l l" 'tab-bar-switch-to-tab "switch tab")
+  (my/bind-leader "l n" 'tab-new "new tab")
+  (my/bind-leader "l c" 'tab-close "close tab")
+  (my/bind-leader "l r" 'tab-rename "rename tab")
 
   ;; --- AI Assistant (a) ---
   (my/bind-leader "a g" 'agent-shell-google-start-gemini "Gemini CLI")
