@@ -1301,7 +1301,7 @@ A modern, polished Dired experience that can replace Treemacs.
 
       ;; Note: Eglot keybindings are available via leader keys (SPC c prefix)
       ;; to avoid python-mode-map void errors when eglot loads for other modes.
-    )
+    
 
     (use-package flymake
       :ensure nil
