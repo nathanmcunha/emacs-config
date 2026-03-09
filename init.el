@@ -75,9 +75,6 @@
 ;; 2. Transient (Magit dependency)
 (use-package transient :ensure t :demand t)
 
-;; 3. Undo System (Must load before or with Evil)
-(use-package undo-fu :ensure t :demand t)
-
 ;; 4. Evil Mode (Your migrated configuration)
 (use-package evil
   :ensure t
@@ -87,7 +84,7 @@
   (setq evil-want-integration t)
   (setq evil-want-keybinding nil) ;; Required for evil-collection
   (setq evil-want-C-u-scroll t)
-  (setq evil-undo-system 'undo-fu)
+  (setq evil-undo-system 'undo-redo)
   :config
   (evil-mode 1))
 

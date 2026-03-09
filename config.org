@@ -229,8 +229,6 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (interactive)
     (dired (expand-file-name "~/.config/emacs/")))
 
-  ;; Diminish: Clean up mode line by hiding minor modes
-  (use-package diminish :ensure nil)
 
    ;; Recent files tracking
   (use-package recentf
@@ -246,16 +244,11 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     :ensure nil
     :init (save-place-mode 1))
 
-   ;; Super Save (Auto-save on focus change)
-  (use-package super-save
-     :ensure t
-     :defer t
-     :config
-     (super-save-mode +1)
-    (setopt super-save-auto-save-when-idle nil)
-    (setopt super-save-idle-duration 60.0)
-    (setopt super-save-triggers
-           '(evil-window-next evil-window-prev balance-windows other-window)))
+   ;; Auto-save on idle and on Evil window switches (replaces super-save)
+  (setq auto-save-visited-interval 60)
+  (auto-save-visited-mode +1)
+  (dolist (cmd '(evil-window-next evil-window-prev balance-windows other-window))
+    (advice-add cmd :before (lambda (&rest _) (save-some-buffers t))))
 #+end_src
 
 ** Project.el
