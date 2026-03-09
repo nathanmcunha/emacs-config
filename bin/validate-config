@@ -1,21 +1,38 @@
 #!/bin/bash
+set -euo pipefail
 # Validates config.org by attempting to tangle it.
 # This catches unclosed source blocks and invalid Org structure.
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONFIG_FILE="$PROJECT_ROOT/config.org"
+CONFIG_FILE="${1:-$PROJECT_ROOT/config.org}"
+ORG_BLOCK_VALIDATOR="$PROJECT_ROOT/bin/validate-org-blocks"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "❌ Error: File '$CONFIG_FILE' not found."
+    exit 1
+fi
+EMACS_CMD=(
+  emacs -Q --batch
+  --eval "(setq user-emacs-directory \"$PROJECT_ROOT/\")"
+  --eval "(require 'org)"
+  --eval "(org-babel-tangle-file \"$CONFIG_FILE\")"
+)
 
 echo "🔍 Validating $CONFIG_FILE..."
 
+if [ -x "$ORG_BLOCK_VALIDATOR" ]; then
+    "$ORG_BLOCK_VALIDATOR" "$CONFIG_FILE"
+fi
+
 # Attempt to tangle the file. 
 # We ignore the output unless it fails.
-if emacs --batch --eval "(require 'org)" --eval "(org-babel-tangle-file \"$CONFIG_FILE\")" >/dev/null 2>&1; then
+if "${EMACS_CMD[@]}" >/dev/null 2>&1; then
     echo "✅ Configuration is valid (tangle successful)."
     exit 0
 else
     echo "❌ Validation failed! Structure or syntax error in config.org:"
     echo "---------------------------------------------------"
     # Run again to show the actual error message
-    emacs --batch --eval "(require 'org)" --eval "(org-babel-tangle-file \"$CONFIG_FILE\")"
+    "${EMACS_CMD[@]}"
     exit 1
 fi

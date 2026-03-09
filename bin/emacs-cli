@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -o pipefail
 
 # --- Environment Setup ---
 # Explicitly add standard paths to ensure Git is found
@@ -46,7 +47,7 @@ function print_usage() {
 
 function parse_options() {
     while [[ $# -gt 0 ]]; do
-        case $1 in
+        case "$1" in
             -v|--verbose)
                 VERBOSE=true
                 shift
@@ -64,6 +65,14 @@ function parse_options() {
                 shift
                 ;;
             -t|--timeout)
+                if [ -z "${2:-}" ]; then
+                    log_error "--timeout requires a value in seconds"
+                    return 2
+                fi
+                if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
+                    log_error "--timeout must be a positive integer (seconds)"
+                    return 2
+                fi
                 TIMEOUT="$2"
                 shift 2
                 ;;
@@ -71,8 +80,17 @@ function parse_options() {
                 SKIP_WAIT=true
                 shift
                 ;;
-            *)
+            --)
                 shift
+                break
+                ;;
+            -*)
+                log_error "Unknown option: $1"
+                return 2
+                ;;
+            *)
+                log_error "Unexpected argument: $1"
+                return 2
                 ;;
         esac
     done
@@ -92,7 +110,7 @@ function log_error() {
 
 function stop_server() {
     log_info "Stopping Emacs server..."
-    if $EMACSCLIENT -e '(kill-emacs)' -a '' >/dev/null 2>&1; then
+    if "$EMACSCLIENT" -e '(kill-emacs)' -a '' >/dev/null 2>&1; then
         log_info "Emacs server stopped."
     else
         log_info "No running Emacs server found."
@@ -138,9 +156,14 @@ function cmd_sync() {
     # Handle background mode
     if [ "$BACKGROUND" = true ]; then
         local log_file="$PROJECT_ROOT/.local/emacs-sync-$(date +%Y%m%d-%H%M%S).log"
+        local bg_args=()
+        [ "$VERBOSE" = true ] && bg_args+=("-v")
+        [ "$SAFE_MODE" = true ] && bg_args+=("-s")
+        [ "$DRY_RUN" = true ] && bg_args+=("-d")
+        [ "$SKIP_WAIT" = true ] && bg_args+=("--skip-wait")
         log_info "Running sync in background. Log: $log_file"
         mkdir -p "$(dirname "$log_file")"
-        nohup "$0" sync ${VERBOSE:+-v} ${SAFE_MODE:+-s} --timeout "$TIMEOUT" > "$log_file" 2>&1 &
+        nohup "$0" sync "${bg_args[@]}" --timeout "$TIMEOUT" > "$log_file" 2>&1 &
         local pid=$!
         echo "Background process PID: $pid"
         echo "Monitor with: tail -f $log_file"
@@ -174,12 +197,12 @@ function cmd_sync() {
 
     # Use timeout command to enforce the timeout
     # Capture output to log file and also display it
-    timeout "$TIMEOUT" $EMACS -Q --batch \
+    timeout "$TIMEOUT" "$EMACS" -Q --batch \
            --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
            "${cmd_args[@]}" \
            -l "$INIT_FILE" \
            -l "$PROJECT_ROOT/bin/elpaca-sync.el" 2>&1 | tee "$log_file"
-    local exit_code=$?
+    local exit_code=${PIPESTATUS[0]}
 
     local sync_end=$(date +%s)
     local elapsed=$((sync_end - sync_start))
@@ -208,9 +231,12 @@ function cmd_update() {
     # Handle background mode
     if [ "$BACKGROUND" = true ]; then
         local log_file="$PROJECT_ROOT/.local/emacs-update-$(date +%Y%m%d-%H%M%S).log"
+        local bg_args=()
+        [ "$VERBOSE" = true ] && bg_args+=("-v")
+        [ "$SKIP_WAIT" = true ] && bg_args+=("--skip-wait")
         log_info "Running update in background. Log: $log_file"
         mkdir -p "$(dirname "$log_file")"
-        nohup "$0" update ${VERBOSE:+-v} --timeout "$TIMEOUT" > "$log_file" 2>&1 &
+        nohup "$0" update "${bg_args[@]}" --timeout "$TIMEOUT" > "$log_file" 2>&1 &
         local pid=$!
         echo "Background process PID: $pid"
         echo "Monitor with: tail -f $log_file"
@@ -232,12 +258,12 @@ function cmd_update() {
 
     # Use timeout command to enforce the timeout
     # Capture output to log file and also display it
-    timeout "$TIMEOUT" $EMACS -Q --batch \
+    timeout "$TIMEOUT" "$EMACS" -Q --batch \
            --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
            "${cmd_args[@]}" \
            -l "$INIT_FILE" \
            -l "$PROJECT_ROOT/bin/elpaca-update.el" 2>&1 | tee "$log_file"
-    local exit_code=$?
+    local exit_code=${PIPESTATUS[0]}
 
     local update_end=$(date +%s)
     local elapsed=$((update_end - update_start))
@@ -276,8 +302,8 @@ function cmd_doctor() {
     log_info "Running Doctor..."
     echo ""
     echo "=== System Info ==="
-    echo "Emacs version: $($EMACS --version | head -n 1)"
-    echo "Git path: $(which git)"
+    echo "Emacs version: $("$EMACS" --version | head -n 1)"
+    echo "Git path: $(command -v git)"
     echo "Working directory: $PROJECT_ROOT"
     echo ""
     echo "=== Configuration ==="
@@ -344,7 +370,7 @@ shift
 
 # Parse options (only for sync and update commands)
 if [[ "$COMMAND" == "sync" || "$COMMAND" == "install" || "$COMMAND" == "update" || "$COMMAND" == "upgrade" ]]; then
-    parse_options "$@"
+    parse_options "$@" || exit $?
 fi
 
 # Execute command

@@ -1,0 +1,87 @@
+#!/bin/bash
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+FIXTURES_DIR="$PROJECT_ROOT/tests/fixtures"
+
+pass() {
+    echo "✅ $1"
+}
+
+fail() {
+    echo "❌ $1"
+    exit 1
+}
+
+show_output() {
+    local output_file="$1"
+    if [ -s "$output_file" ]; then
+        echo "--- command output ---"
+        cat "$output_file"
+        echo "----------------------"
+    fi
+}
+
+expect_success() {
+    local label="$1"
+    shift
+    local output_file
+    output_file="$(mktemp)"
+    if "$@" >"$output_file" 2>&1; then
+        rm -f "$output_file"
+        pass "$label"
+    else
+        show_output "$output_file"
+        rm -f "$output_file"
+        fail "$label (expected success)"
+    fi
+}
+
+expect_failure() {
+    local label="$1"
+    shift
+    local output_file
+    output_file="$(mktemp)"
+    if "$@" >"$output_file" 2>&1; then
+        show_output "$output_file"
+        rm -f "$output_file"
+        fail "$label (expected failure)"
+    else
+        rm -f "$output_file"
+        pass "$label"
+    fi
+}
+
+echo "== Fixture tests =="
+expect_success "Elisp good fixture" \
+    python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "$FIXTURES_DIR/elisp/good.el"
+expect_failure "Elisp missing close fixture" \
+    python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "$FIXTURES_DIR/elisp/missing-close.el"
+expect_failure "Elisp extra close fixture" \
+    python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "$FIXTURES_DIR/elisp/extra-close.el"
+
+expect_success "Org blocks good fixture" \
+    "$PROJECT_ROOT/bin/validate-org-blocks" "$FIXTURES_DIR/org/good.org"
+expect_failure "Org blocks missing end fixture" \
+    "$PROJECT_ROOT/bin/validate-org-blocks" "$FIXTURES_DIR/org/missing-end.org"
+expect_failure "Org blocks extra end fixture" \
+    "$PROJECT_ROOT/bin/validate-org-blocks" "$FIXTURES_DIR/org/extra-end.org"
+
+expect_success "Config tangle good fixture" \
+    "$PROJECT_ROOT/bin/validate-config" "$FIXTURES_DIR/org/tangle-good.org"
+expect_failure "Config tangle bad fixture" \
+    "$PROJECT_ROOT/bin/validate-config" "$FIXTURES_DIR/org/tangle-bad.org"
+
+echo "== Project checks =="
+expect_success "Validate config.org blocks" \
+    "$PROJECT_ROOT/bin/validate-org-blocks" "$PROJECT_ROOT/config.org"
+expect_success "Validate core Elisp parens" \
+    python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "$PROJECT_ROOT/init.el" "$PROJECT_ROOT/early-init.el"
+expect_success "Validate config.org tangling" \
+    "$PROJECT_ROOT/bin/validate-config"
+expect_success "Startup smoke test" \
+    emacs -Q --batch --eval '(setq user-emacs-directory default-directory)' -l "$PROJECT_ROOT/init.el" --eval '(message "Startup OK")'
+expect_success "Byte-compile strict mode" \
+    emacs -Q --batch -L "$PROJECT_ROOT" --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile "$PROJECT_ROOT/init.el" "$PROJECT_ROOT/early-init.el"
+
+echo "🎉 All validator tests passed."

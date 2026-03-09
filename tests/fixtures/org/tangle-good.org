@@ -1,0 +1,5 @@
+* Tangle good
+
+#+begin_src emacs-lisp :tangle no
+(setq fixtures-value 42)
+#+end_src

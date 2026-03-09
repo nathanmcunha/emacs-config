@@ -1,0 +1,4 @@
+* Tangle bad
+
+#+begin_src emacs-lisp :tangle no
+(setq fixtures-bad t)

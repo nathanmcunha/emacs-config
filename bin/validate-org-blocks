@@ -14,19 +14,23 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 awk '
-  tolower($0) ~ /#\+begin_src/ { 
+  BEGIN { has_error = 0; count = 0; }
+  tolower($0) ~ /^[[:space:]]*#\+begin_src([[:space:]]|$)/ {
     count++; 
     stack[count] = NR; 
   }
-  tolower($0) ~ /#\+end_src/   { 
+  tolower($0) ~ /^[[:space:]]*#\+end_src([[:space:]]|$)/ {
     if (count > 0) {
         count--; 
     } else { 
         print "❌ ERROR: Extra #+end_src at line " NR; 
-        exit 1 
+        has_error = 1
     } 
   }
   END { 
+    if (has_error) {
+        exit 1
+    }
     if (count > 0) { 
         print "❌ ERROR: Missing #+end_src!";
         for (i=1; i<=count; i++) {
