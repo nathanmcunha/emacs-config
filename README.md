@@ -7,63 +7,71 @@ A highly customized Emacs configuration designed to replicate the "Doom Emacs" e
 - **Author:** Nathan Martins Cunha
 - **Philosophy:** Vanilla Emacs foundation with the ergonomic benefits of Doom Emacs (Evil mode, SPC leader keys, modern UI).
 - **Configuration Style:** Literate programming (`config.org`).
-- **Language Support:** Java, JavaScript/TypeScript, Markdown, Org Mode, and more via Eglot (LSP).
+- **Language Support:** Java, Python, JavaScript/TypeScript, Markdown, Org Mode, and more via Eglot (LSP).
 
 ## ✨ Key Features
 
 This configuration provides a curated "best-of-breed" experience:
 
 ### Core
-- **Vim Emulation:** Full Evil mode setup with `evil-collection`, `evil-surround`, `evil-snipe`, `evil-lion`, `evil-numbers`, and many more extensions.
+- **Vim Emulation:** Full Evil mode setup with `evil-collection`, `evil-surround`, `evil-nerd-commenter`, and many more extensions.
 - **Key Management:** Doom-style leader keys (`SPC` / `M-SPC`) powered by native Emacs 30+ keymaps and `which-key`.
-- **Undo System:** Enhanced undo with `undo-fu`, `undo-fu-session` (persistent history), and `vundo` (visual undo tree).
+- **Undo System:** Native Emacs 28+ `undo-redo` with increased limits, and `vundo` (visual undo tree).
 
 ### Modern UI
 - **Themes:** `doom-themes` with `doom-solarized-light` by default.
-- **Modeline:** `doom-modeline` with custom configuration.
+- **Modeline:** `doom-modeline` with custom configuration and Flymake integration.
 - **Icons:** `nerd-icons` throughout (mode line, completions, file explorer, etc.).
 - **Minimalist Defaults:** No toolbars, scrollbars, or menus for maximum screen real estate.
+- **Rainbow Identifiers:** Unique colors for each variable/identifier for better code readability.
 
 ### Completion System
 - **Vertico:** Modern vertical completion UI.
 - **Orderless:** Flexible fuzzy matching.
 - **Marginalia:** Rich annotations in completions.
 - **Consult:** Enhanced search and navigation commands.
-- **Corfu:** In-buffer auto-completion with Yasnippet integration.
+- **Corfu:** In-buffer auto-completion with icons and documentation popups.
 - **Cape:** Additional completion backends (file, dabbrev, keywords).
+- **Tempel:** Simple and flexible snippet system replacing heavy Yasnippet.
 
 ### Project Management
 - **Native Project.el:** Lightweight project navigation, file finding, and command execution using Emacs' built-in system.
-- **Perspective:** Workspace management with isolated buffer lists.
+- **Workspaces:** Built-in `tab-bar-mode` for isolated workspace management.
 - **Dirvish:** Modern, polished Dired experience replacing traditional sidebar explorers with project-aware navigation.
-- **Z.ai Integration:** Default coding assistant via `gptel` (GLM-4 models).
+
+### AI Assistant
+- **Agent Shell:** Integrated AI assistant shell supporting GitHub Copilot, Gemini (Google), and Opencode backends.
+- **Gptel:** Simple interface for LLM interaction within any buffer.
 
 ### Development Tools
 - **Eglot:** Native Emacs LSP client (replacing heavy lsp-mode).
 - **Eglot-Java:** Java LSP support with JDTLS integration.
-- **DAPE:** Modern debugger adapter (replacing dap-mode).
+- **Python Dev:** Comprehensive Python environment with `pet` (venv management), `pyright` (LSP), `ruff` (linter), and `pytest` integration.
+- **DAPE:** Modern debugger adapter (replacing dap-mode) with Java debug support.
 - **Magit:** Comprehensive Git interface with Doom-style bindings.
-- **Java Coverage:** Integrated JaCoCo coverage visualization with in-buffer lenses.
-- **Flymake:** Native linting with project-wide error search.
-- **Apheleia:** Code formatting on save.
-- **Agent Shell:** Integrated AI assistant shell for various LLM backends.
+- **Java Coverage:** Integrated JaCoCo coverage visualization with in-buffer lenses and tooltips.
+- **Flymake:** Native linting with project-wide error search and Consult integration.
+- **Apheleia:** Code formatting on save (Google Java Format, Black, etc.).
+- **Tree-sitter:** Native Tree-sitter integration for superior syntax highlighting and structural navigation.
 
 ### Quality of Life
-- **Super Save:** Auto-save on focus change, window switch, or buffer kill.
-- **Adaptive Wrap:** Smart line wrapping maintaining indentation.
-- **Evil Escape:** Quick escape from insert mode with custom sequence.
-- **Recentf:** Recent file tracking.
+- **Built-in Auto-save:** Native `auto-save-visited-mode` with custom advice on window/focus changes.
+- **Visual Wrapping:** Built-in `visual-wrap-prefix-mode` (Emacs 30+) for smart line wrapping maintaining indentation.
+- **Recentf:** Recent file tracking with project-scoped search.
 - **Saveplace:** Restore cursor position on file reopen.
-- **Eat:** Modern terminal emulator with Evil integration.
+- **Mise:** Environment manager integration for consistent toolchains.
 
 ## 🛠️ Management Tools
 
 This config includes a set of CLI tools for maintenance:
 
 - **`bin/emacs-cli sync`**: Synchronizes packages with `elpaca`. Automatically detects failures and prints detailed error logs for troubleshooting.
-- **`bin/emacs-cli update`**: Updates all packages and prunes obsolete ones.
-- **`bin/emacs-cli check`**: Validates Org block structure and Elisp syntax of core files.
-- **`bin/validate-config`**: Checks `config.org` for syntax errors or unclosed source blocks.
+- **`bin/emacs-cli update`**: Updates all packages to their latest versions.
+- **`bin/emacs-cli doctor`**: Environment health check and validation baseline.
+- **`bin/test-validators`**: Runs the full validation suite (Org blocks, parens, tangle, startup smoke test, strict byte-compile).
+- **`bin/validate-config [file.org]`**: Validates `config.org` by checking source block balance and tangling.
+
+Common `emacs-cli` options (`sync`/`update`): `-v/--verbose`, `-s/--safe` (sync), `-d/--dry-run` (sync), `-b/--background`, `-t/--timeout N`, `--skip-wait`.
 
 ## 📂 Structure
 
@@ -79,36 +87,23 @@ This configuration keeps your `~/.config/emacs/` clean by strictly separating co
     ├── packages/       # Installed packages (ELPA), LSPs, Grammars
     ├── state/          # Persistent history, bookmarks, sessions
     ├── cache/          # Disposable cache, backups, autosaves
-    ├── docs/           # Documentation archive
-    └── etc/            # Misc configuration data
+    ├── etc/            # Misc configuration data
 ```
-
-A backup of the essential configuration is maintained in `emacs-config.tar.gz`.
 
 ## 🚀 Installation
 
-1. **Backup your existing configuration:**
-   ```bash
-   mv ~/.config/emacs ~/.config/emacs.bak
-   ```
-
-2. **Clone this repository:**
+1. **Clone this repository:**
    ```bash
    git clone <your-repo-url> ~/.config/emacs
    ```
-   *Alternatively, if restoring from a backup, extract the archive:*
-   ```bash
-   tar -xzf emacs-config.tar.gz -C ~/.config/emacs
-   ```
 
-3. **Install Fonts:**
-   Ensure you have a [Nerd Font](https://www.nerdfonts.com/) installed (e.g., JetBrains Mono Nerd Font). After opening Emacs, run `M-x nerd-icons-install-fonts`.
+2. **Install Fonts:**
+   Ensure you have a [Nerd Font](https://www.nerdfonts.com/) installed. After opening Emacs, run `M-x nerd-icons-install-fonts`.
 
-4. **Sync Packages:**
+3. **Sync Packages:**
    ```bash
    ./bin/emacs-cli sync
    ```
-   *This will automatically populate `.local/packages/`.*
 
 ## ⌨️ Keybindings
 
@@ -124,7 +119,6 @@ All keybindings use Doom-style leader keys:
 | `SPC \`` | `evil-switch-to-windows-last-buffer` | Last window buffer |
 | `SPC SPC` | `execute-extended-command` | M-x |
 | `SPC ;` | `embark-act` | Embark Act |
-| `SPC A` | `embark-act` | Embark Actions |
 | `SPC u` | `vundo` | Undo Tree (Visual) |
 
 ### AI Assistant (`SPC a`)
@@ -133,11 +127,12 @@ All keybindings use Doom-style leader keys:
 | `a s` | `agent-shell` | Agent Shell Menu |
 | `a g` | `agent-shell-google-start-gemini` | Gemini CLI |
 | `a o` | `agent-shell-opencode-start-agent` | Opencode Agent |
+| `a q` | `gptel-send` | Gptel Send |
 
 ### Buffer (`SPC b`)
 | Key | Action | Description |
 | :--- | :--- | :--- |
-| `b b` | `project-switch-to-buffer` | Switch buffer (Project) |
+| `b b` | `consult-buffer` | Switch buffer |
 | `b B` | `switch-to-buffer` | Switch buffer (Global) |
 | `b i` | `ibuffer` | IBuffer |
 | `b k` | `kill-current-buffer` | Kill buffer |
@@ -145,8 +140,6 @@ All keybindings use Doom-style leader keys:
 | `b O` | `my/kill-other-buffers` | Kill other buffers |
 | `b n/p` | `next/previous-buffer` | Next/Prev buffer |
 | `b s` | `save-buffer` | Save buffer |
-| `b S` | `evil-write-all` | Save all |
-| `b r` | `revert-buffer` | Revert buffer |
 | `b y` | `my/copy-this-file` | Copy file contents |
 
 ### Code & LSP (`SPC c`)
@@ -159,7 +152,7 @@ All keybindings use Doom-style leader keys:
 | `c D` | `xref-find-references` | Find references |
 | `c j n` | `eglot-java-create-project` | New Java Project |
 | `c j i` | `eglot-java-organize-imports` | Organize Imports |
-| `c j r` | `my/eglot-restart` | Restart JDTLS |
+| `c j r` | `my/eglot-restart` | Restart LSP |
 | `c C t` | `my/java-coverage-toggle` | Toggle Coverage |
 | `c C h` | `my/java-coverage-browse-report` | Open HTML Report |
 
@@ -175,15 +168,6 @@ All keybindings use Doom-style leader keys:
 | `d r` | `dape-restart` | Restart Session |
 | `d Q` | `dape-kill` | Quit Debugger |
 
-### Errors (`SPC e`)
-| Key | Action | Description |
-| :--- | :--- | :--- |
-| `e p` | `flymake-show-project-diagnostics` | Project Errors |
-| `e b` | `flymake-show-buffer-diagnostics` | Buffer Errors |
-| `e l` | `consult-flymake` | Search Buffer Errors |
-| `e L` | `my/consult-flymake-project` | Search Project Errors |
-| `e n/N` | `flymake-goto-next/prev-error` | Next/Prev Error |
-
 ### Explorer (`SPC E`)
 | Key | Action | Description |
 | :--- | :--- | :--- |
@@ -195,26 +179,11 @@ All keybindings use Doom-style leader keys:
 | Key | Action | Description |
 | :--- | :--- | :--- |
 | `f f` | `my/project-find-file` | Find in Project |
-| `f F` | `find-file` | Find Anywhere |
 | `f r` | `consult-recent-file` | Recent Files |
-| `f s` | `save-buffer` | Save |
-| `f S` | `write-file` | Save As... |
+| `f R` | `my/move-this-file` | Rename/Move File |
+| `f D` | `my/delete-this-file` | Delete File |
 | `f y` | `my/copy-file-path` | Copy Path |
-| `f Y` | `my/copy-file-path-relative...` | Copy Relative Path |
 | `f p` | *(lambda)* | Open Config |
-
-### Git (`SPC g`)
-| Key | Action | Description |
-| :--- | :--- | :--- |
-| `g s` | `magit-status` | Status |
-| `g S` | `magit-status-here` | Status Here |
-| `g /` | `magit-dispatch` | Dispatch Menu |
-| `g .` | `magit-file-dispatch` | File Dispatch |
-| `g f` | `magit-find-file` | Find File in Git |
-| `g b` | `magit-blame-addition` | Blame |
-| `g t` | `git-timemachine-toggle` | Time Machine |
-| `g l c` | `magit-log-current` | Log Current Branch |
-| `g l g` | `magit-log-all` | Log All |
 
 ### Project (`SPC p`)
 | Key | Action | Description |
@@ -222,40 +191,18 @@ All keybindings use Doom-style leader keys:
 | `p p` | `project-switch-project` | Switch Project |
 | `p f` | `project-find-file` | Find File |
 | `p /` | `consult-ripgrep` | Search (ripgrep) |
-| `p b` | `project-switch-to-buffer` | Switch Buffer |
+| `p r` | `my/project-recent-files` | Recent Project Files |
 | `p c` | `my/project-compile` | Compile |
 | `p t` | `my/project-test` | Test |
 | `p x` | `my/project-run` | Run |
-| `p !` | `project-shell-command` | Run Cmd |
-| `p m` | `my/project-dispatch` | Dispatch Palette |
 
-### Search (`SPC s`)
+### Workspaces (`SPC l`)
 | Key | Action | Description |
 | :--- | :--- | :--- |
-| `s s` | `consult-line` | Search Buffer |
-| `s S` | `consult-line-multi` | Search All Buffers |
-| `s g` | `consult-goto-line` | Go to Line |
-| `s i` | `consult-imenu` | Jump to Symbol |
-| `s f` | `consult-find` | Find File (Live) |
-| `s k` | `consult-yank-pop` | Yank Ring |
-
-### Windows (`SPC w`)
-| Key | Action | Description |
-| :--- | :--- | :--- |
-| `w h/j/k/l` | `evil-window-...` | Navigate |
-| `w H/J/K/L` | `evil-window-move-...` | Move Window |
-| `w s` | `evil-window-split` | Split Horizontal |
-| `w v` | `evil-window-vsplit` | Split Vertical |
-| `w c` | `evil-window-delete` | Close Window |
-| `w =` | `balance-windows` | Balance |
-
-### Workspaces (`SPC W`)
-| Key | Action | Description |
-| :--- | :--- | :--- |
-| `W s` | `persp-switch` | Switch Workspace |
-| `W n` | `persp-switch` | New/Switch |
-| `W k` | `persp-kill` | Kill Workspace |
-| `W r` | `persp-rename` | Rename Workspace |
+| `l l` | `tab-bar-switch-to-tab` | Switch Workspace |
+| `l n` | `tab-new` | New Workspace |
+| `l c` | `tab-close` | Close Workspace |
+| `l r` | `tab-rename` | Rename Workspace |
 
 ## 🔧 Customization
 
@@ -265,38 +212,11 @@ To modify the configuration:
 2. Run `./bin/emacs-cli sync` if you added new packages.
 3. Restart Emacs or reload config with `SPC h r r` to apply changes.
 
-### Adding New Packages
-
-1. Add `(use-package package-name :ensure t ...)` to the appropriate section in `config.org`.
-2. Run `./bin/emacs-cli sync` to install.
-
-### Customizing Keybindings
-
-Keybindings are defined using the native `keymap-set` logic via the `my/bind-leader` helper:
-
-```emacs-lisp
-(my/bind-leader "c f" 'my-function "description")
-```
-
-Prefix labels for `which-key` are managed in the **Vanilla Keymap Setup** section of `config.org` using `which-key-add-keymap-based-replacements`.
-
-## 🎨 Themes
-
-The default theme is `doom-solarized-light`. To change:
-
-1. Edit the Themes section in `config.org`
-2. Change `(load-theme 'doom-solarized-light t)` to your preferred theme
-3. Reload config
-
-Available themes include all `doom-themes` colorschemes.
-
 ## 🐛 Troubleshooting
 
-- **Package not found**: Run `./bin/emacs-cli sync -r` to refresh package list
-- **Config errors**: Run `./bin/validate-config` to check syntax
-- **Java LSP issues**: Ensure JDTLS is installed via `eglot-java` and run `SPC c j r` to restart
-- **Home folder detected as project**: This can happen if you have a `package.json` or other markers in your home directory. The config now explicitly ignores the home folder in `my/project-try-local`.
-- **Debugging fails**: Make sure to launch test with `SPC d t` first, then attach with DAPE
+- **Package or build issues**: Run `./bin/emacs-cli doctor`, then `./bin/emacs-cli sync`.
+- **Config errors**: Run `./bin/test-validators` for the full suite.
+- **Java LSP issues**: Run `SPC c j r` to restart JDTLS.
 
 ## 📝 License
 

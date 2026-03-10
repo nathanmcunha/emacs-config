@@ -157,98 +157,97 @@
 ** Defaults and UI
 We start by cleaning up the UI to make it look modern and minimal, similar to Doom's defaults.
 #+begin_src emacs-lisp
-  ;; --- Emacs Build Information ---
-  (defun my/emacs-build-info ()
-    "Display detailed information about Emacs build and features."
-    (interactive)
-    (with-output-to-temp-buffer "*Emacs Build Info*"
-      (princ (format "Emacs Version: %s\n\n" emacs-version))
-      (princ (format "System Configuration: %s\n\n" system-configuration))
-      (princ "Compilation Options:\n")
-      (princ "====================\n")
-      (dolist (opt (split-string system-configuration-options))
-        (princ (format "  %s\n" opt)))
-      (princ "\n\nNative Compilation:\n")
-      (princ "===================\n")
-      (princ (format "  Available: %s\n" (if (featurep 'native-compile) "Yes" "No")))
-      (when (featurep 'native-compile)
-        (princ (format "  Version: %s\n" native-comp-version))
-        (princ (format "  ELN Load Path: %s\n" native-comp-eln-load-path)))
-      (princ "\n\nFeatures:\n")
-      (princ "=========\n")
-      (dolist (feature features)
-        (when (string-match-p "^\\(jansson\\|libxml2\\|sqlite\\|json\\|tree-sitter\\|gnutls\\|imagemagick\\)" (symbol-name feature))
-          (princ (format "  %s\n" feature))))
-      (switch-to-buffer "*Emacs Build Info*")
-      (view-mode)))
+    ;; --- Emacs Build Information ---
+    (defun my/emacs-build-info ()
+      "Display detailed information about Emacs build and features."
+      (interactive)
+      (with-output-to-temp-buffer "*Emacs Build Info*"
+        (princ (format "Emacs Version: %s\n\n" emacs-version))
+        (princ (format "System Configuration: %s\n\n" system-configuration))
+        (princ "Compilation Options:\n")
+        (princ "====================\n")
+        (dolist (opt (split-string system-configuration-options))
+          (princ (format "  %s\n" opt)))
+        (princ "\n\nNative Compilation:\n")
+        (princ "===================\n")
+        (princ (format "  Available: %s\n" (if (featurep 'native-compile) "Yes" "No")))
+        (when (featurep 'native-compile)
+          (princ (format "  Version: %s\n" native-comp-version))
+          (princ (format "  ELN Load Path: %s\n" native-comp-eln-load-path)))
+        (princ "\n\nFeatures:\n")
+        (princ "=========\n")
+        (dolist (feature features)
+          (when (string-match-p "^\\(jansson\\|libxml2\\|sqlite\\|json\\|tree-sitter\\|gnutls\\|imagemagick\\)" (symbol-name feature))
+            (princ (format "  %s\n" feature))))
+        (switch-to-buffer "*Emacs Build Info*")
+        (view-mode)))
+    ;; Remove GUI clutter
+    (setq inhibit-startup-message t)
+    (scroll-bar-mode -1)        ; Disable visible scrollbar
+    (tool-bar-mode -1)          ; Disable the toolbar
+    (tooltip-mode -1)           ; Disable tooltips
+    (set-fringe-mode 25)        ; Give some breathing room
+    (menu-bar-mode -1)          ; Disable the menu bar
 
-  ;; Remove GUI clutter
-  (setq inhibit-startup-message t)
-  (scroll-bar-mode -1)        ; Disable visible scrollbar
-  (tool-bar-mode -1)          ; Disable the toolbar
-  (tooltip-mode -1)           ; Disable tooltips
-  (set-fringe-mode 25)        ; Give some breathing room
-  (menu-bar-mode -1)          ; Disable the menu bar
+    ;; Fix frame gap and maximize for emacsclient (GNOME behavior)
+    (setq frame-resize-pixelwise t)
+    (add-to-list 'default-frame-alist '(fullscreen . maximized))
 
-  ;; Fix frame gap and maximize for emacsclient (GNOME behavior)
-  (setq frame-resize-pixelwise t)
-  (add-to-list 'default-frame-alist '(fullscreen . maximized))
+     ;; Line Numbers & Visuals
+    (global-display-line-numbers-mode t)
+    (setopt display-line-numbers-type t)       ; Use 'relative for Doom style
+    (setopt display-line-numbers-grow-only t)  ; Prevent jitter
 
-   ;; Line Numbers & Visuals
-  (global-display-line-numbers-mode t)
-  (setopt display-line-numbers-type t)       ; Use 'relative for Doom style
-  (setopt display-line-numbers-grow-only t)  ; Prevent jitter
+    ;; Indentation (2 Spaces)
+    (setq-default tab-width 2)
+    (setq-default indent-tabs-mode nil)
 
-  ;; Indentation (2 Spaces)
-  (setq-default tab-width 2)
-  (setq-default indent-tabs-mode nil)
+    ;; Visual column indicator (100 characters)
+    (setopt display-fill-column-indicator-column 100)
+    (setq-default display-fill-column-indicator-character ?|)
+    (add-hook 'prog-mode-hook #'display-fill-column-indicator-mode)
+    ;; (set-face-attribute 'fill-column-indicator nil :foreground "grey90" :background "transparent")
 
-  ;; Visual column indicator (100 characters)
-  (setopt display-fill-column-indicator-column 100)
-  (setq-default display-fill-column-indicator-character ?|)
-  (add-hook 'prog-mode-hook #'display-fill-column-indicator-mode)
-  ;; (set-face-attribute 'fill-column-indicator nil :foreground "grey90" :background "transparent")
+    ;; Disable line numbers in specific modes
+    (dolist (mode '(org-mode-hook
+                    term-mode-hook
+                    shell-mode-hook
+                    eshell-mode-hook
+                    eat-mode-hook
+                    gemini-cli-mode-hook
+                    dirvish-mode-hook
+                    dirvish-side-mode-hook))
+      (add-hook mode (lambda () (display-line-numbers-mode 0))))
 
-  ;; Disable line numbers in specific modes
-  (dolist (mode '(org-mode-hook
-                  term-mode-hook
-                  shell-mode-hook
-                  eshell-mode-hook
-                  eat-mode-hook
-                  gemini-cli-mode-hook
-                  dirvish-mode-hook
-                  dirvish-side-mode-hook))
-    (add-hook mode (lambda () (display-line-numbers-mode 0))))
+    ;; Zoom shortcuts
+    (global-set-key (kbd "C-=") 'text-scale-increase)
+    (global-set-key (kbd "C--") 'text-scale-decrease)
+    (global-set-key (kbd "C-0") 'text-scale-adjust)
 
-  ;; Zoom shortcuts
-  (global-set-key (kbd "C-=") 'text-scale-increase)
-  (global-set-key (kbd "C--") 'text-scale-decrease)
-  (global-set-key (kbd "C-0") 'text-scale-adjust)
-
-  (defun my/open-personal-folder()
-    (interactive)
-    (dired (expand-file-name "~/.config/emacs/")))
+    (defun my/open-personal-folder()
+      (interactive)
+      (dired (expand-file-name "~/.config/emacs/")))
 
 
-   ;; Recent files tracking
-  (use-package recentf
-     :ensure nil
-     :init
-     (recentf-mode 1)
-     :config
-     (setopt recentf-max-saved-items 200)
-     (setopt recentf-exclude '("\.git/" "\.emacs\.d/eln-cache/" "/tmp/" "/elpa/")))
+     ;; Recent files tracking
+    (use-package recentf
+       :ensure nil
+       :init
+       (recentf-mode 1)
+       :config
+       (setopt recentf-max-saved-items 200)
+       (setopt recentf-exclude '("\.git/" "\.emacs\.d/eln-cache/" "/tmp/" "/elpa/")))
 
-  ;; Save Place (Restore cursor position)
-  (use-package saveplace
-    :ensure nil
-    :init (save-place-mode 1))
+    ;; Save Place (Restore cursor position)
+    (use-package saveplace
+      :ensure nil
+      :init (save-place-mode 1))
 
-   ;; Auto-save on idle and on Evil window switches (replaces super-save)
-  (setq auto-save-visited-interval 60)
-  (auto-save-visited-mode +1)
-  (dolist (cmd '(evil-window-next evil-window-prev balance-windows other-window))
-    (advice-add cmd :before (lambda (&rest _) (save-some-buffers t))))
+     ;; Auto-save on idle and on Evil window switches (replaces super-save)
+    (setq auto-save-visited-interval 60)
+    (auto-save-visited-mode +1)
+    (dolist (cmd '(evil-window-next evil-window-prev balance-windows other-window))
+      (advice-add cmd :before (lambda (&rest _) (save-some-buffers t))))
 #+end_src
 
 ** Project.el
@@ -481,12 +480,12 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
              ("\\*\\(Output\\|Injector\\|Async Shell Command\\).*"
               (display-buffer-reuse-window display-buffer-at-bottom)
               (window-height . 0.3))
-             
+
              ;; Help buffers
              ("\\*Help.*"
               (display-buffer-reuse-window display-buffer-at-bottom)
               (window-height . 0.4))
-             
+
              ;; Magit: Let it do its own thing (it manages windows well)
              ("Magit.*"
               (display-buffer-same-window))
@@ -530,7 +529,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     :config
     (evil-collection-init))
 #+end_src
-              
+
 ** Evil Extensions & Avy
 #+begin_src emacs-lisp
   (use-package evil-surround
@@ -578,70 +577,81 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
 * Visuals & Themes
 #+begin_src emacs-lisp
   (use-package doom-themes
-    :demand t
-    :config
-    (setq doom-themes-enable-bold t
-          doom-themes-enable-italic t)
-    (load-theme 'doom-solarized-light t)
-    (doom-themes-visual-bell-config)
-    (doom-themes-org-config))
+   :demand t
+   :config
+   (setq doom-themes-enable-bold t
+         doom-themes-enable-italic t)
 
-  (use-package nerd-icons
-    :ensure t
-    :demand t
-    :config
-    (defun my-nerd-icons-faicon-small (name &rest args)
-      (apply #'nerd-icons-faicon name (plist-put (copy-sequence args) :height 0.8)))
-    (defun my-nerd-icons-devicon-small (name &rest args)
-      (apply #'nerd-icons-devicon name (plist-put (copy-sequence args) :height 0.8)))
+   (defun my/setup-frame-visuals (frame)
+     (with-selected-frame frame
+       (load-theme 'doom-solarized-light t)
+       (doom-themes-visual-bell-config)
+       (doom-themes-org-config)
+       (scroll-bar-mode -1)
+       (tool-bar-mode -1)
+       (menu-bar-mode -1)))
 
-    (add-to-list 'nerd-icons-extension-icon-alist '("gradle" my-nerd-icons-devicon-small "nf-dev-gradle"))
-    (add-to-list 'nerd-icons-extension-icon-alist '("kts" my-nerd-icons-devicon-small "nf-dev-gradle"))
-    (add-to-list 'nerd-icons-extension-icon-alist '("properties" my-nerd-icons-faicon-small "nf-fa-cog"))
-    (add-to-list 'nerd-icons-extension-icon-alist '("project" nerd-icons-octicon "nf-oct-file_code"))
-    (add-to-list 'nerd-icons-extension-icon-alist '("classpath" nerd-icons-octicon "nf-oct-file_code")))
+   (if (daemonp)
+       (add-hook 'after-make-frame-functions #'my/setup-frame-visuals)
+     (my/setup-frame-visuals (selected-frame))))
 
-  (use-package doom-modeline
-    :init (doom-modeline-mode 1)
-    :config
-    (setq doom-modeline-hud t)
-    (setq doom-modeline-buffer-file-name-style 'relative-from-project)
-    (setq doom-modeline-height 25)
-    (setq doom-modeline-checker-enable t)
-    (setq doom-modeline-checker-simple-format nil)
-    (setq doom-modeline-support-mouse nil)
-    (setq doom-modeline-column-number nil)
-    (setq doom-modeline-percent-position nil)
-    (setq doom-modeline-position-line-format '("%l"))
-    (setq doom-modeline-buffer-encoding nil)
-    (setq doom-modeline-major-mode-icon t)
-    (setq doom-modeline-major-mode-hide-name t)
-    (setq doom-modeline-project-name t)
-    
-    (column-number-mode -1)
+     (use-package nerd-icons
+       :ensure t
+       :demand t
+       :config
+       (defun my-nerd-icons-faicon-small (name &rest args)
+         (apply #'nerd-icons-faicon name (plist-put (copy-sequence args) :height 0.8)))
+       (defun my-nerd-icons-devicon-small (name &rest args)
+         (apply #'nerd-icons-devicon name (plist-put (copy-sequence args) :height 0.8)))
 
-    ;; Click integration for Flymake
-    (defun my/doom-modeline-flymake-click ()
-      (interactive)
-      (if (bound-and-true-p flymake-mode)
-          (flymake-show-buffer-diagnostics)
-        (message "Flymake not active")))
-    
-    (define-key doom-modeline-mode-map (kbd "<mode-line> <flymake> <mouse-1>") 'my/doom-modeline-flymake-click))
+       (add-to-list 'nerd-icons-extension-icon-alist '("gradle" my-nerd-icons-devicon-small "nf-dev-gradle"))
+       (add-to-list 'nerd-icons-extension-icon-alist '("kts" my-nerd-icons-devicon-small "nf-dev-gradle"))
+       (add-to-list 'nerd-icons-extension-icon-alist '("properties" my-nerd-icons-faicon-small "nf-fa-cog"))
+       (add-to-list 'nerd-icons-extension-icon-alist '("project" nerd-icons-octicon "nf-oct-file_code"))
+       (add-to-list 'nerd-icons-extension-icon-alist '("classpath" nerd-icons-octicon "nf-oct-file_code")))
 
-  ;; Ansi Colors for Compilation
-  (use-package ansi-color
-    :ensure nil
-    :hook (compilation-filter . ansi-color-compilation-filter))
-  
-  ;; Rainbow Identifiers
-  (use-package rainbow-identifiers
-    :ensure t
-    :hook (prog-mode . rainbow-identifiers-mode)
-    :config
-    (setq rainbow-identifiers-cie-l-saturation 45
-          rainbow-identifiers-cie-l-lightness 70
-          rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
+     (use-package doom-modeline
+       :ensure t
+       :init (doom-modeline-mode 1)
+       :config
+       (setq doom-modeline-hud t)
+       (setq doom-modeline-buffer-file-name-style 'relative-from-project)
+       (setq doom-modeline-height 25)
+       (setq doom-modeline-checker-enable t)
+       (setq doom-modeline-checker-simple-format nil)
+       (setq doom-modeline-support-mouse nil)
+       (setq doom-modeline-column-number nil)
+       (setq doom-modeline-percent-position nil)
+       (setq doom-modeline-position-line-format '("%l"))
+       (setq doom-modeline-buffer-encoding nil)
+       (setq doom-modeline-major-mode-icon t)
+       (setq doom-modeline-major-mode-hide-name t)
+       (setq doom-modeline-project-name t)
+
+       (column-number-mode -1)
+
+       ;; Click integration for Flymake
+       (defun my/doom-modeline-flymake-click ()
+         (interactive)
+         (if (bound-and-true-p flymake-mode)
+             (flymake-show-buffer-diagnostics)
+           (message "Flymake not active")))
+
+       (define-key doom-modeline-mode-map (kbd "<mode-line> <flymake> <mouse-1>") 'my/doom-modeline-flymake-click))
+
+     ;; Ansi Colors for Compilation
+     (use-package ansi-color
+       :ensure nil
+       :hook (compilation-filter . ansi-color-compilation-filter))
+
+     ;; Rainbow Identifiers
+     (use-package rainbow-identifiers
+       :ensure t
+       :hook (prog-mode . rainbow-identifiers-mode)
+       :config
+       (setq rainbow-identifiers-cie-l-saturation 45
+             rainbow-identifiers-cie-l-lightness 70
+             rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
 #+end_src
 
 * Completion System (Vertico stack)
@@ -752,7 +762,7 @@ Sets up the popup, cycling, and integration with icons.
       (corfu-auto-prefix 2)          ;; Minimum length to trigger
       (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
       (corfu-preselect 'prompt)      ;; Always preselect the prompt (first candidate is not auto-selected)
-      
+
       (corfu-popupinfo-delay 0.5)    ;; Delay before showing docs
       (corfu-max-width 80)
       (corfu-preview-current nil)    ;; Disable previewing current candidate (can be distracting)
@@ -807,7 +817,7 @@ Sets up the popup, cycling, and integration with icons.
 
 ** Extended Backends (Cape)
  Configures additional completion backends and the specific TAB integration strategy.
- 
+
 
 #+begin_src emacs-lisp
   (use-package cape
@@ -824,7 +834,7 @@ Sets up the popup, cycling, and integration with icons.
     (setq pcomplete-ignore-case t)
     (setq cape-dabbrev-check-other-buffers t))
 #+end_src
- 
+
 ** Git (Magit)
 #+begin_src emacs-lisp
    (use-package magit
@@ -871,7 +881,7 @@ A modern, polished Dired experience that can replace Treemacs.
                 ("j" . dired-next-line)
                 ("k" . dired-previous-line)
                 ("TAB" . dirvish-subtree-toggle)))
-  
+
 #+end_src
 
 ** Formatting (Apheleia)
@@ -896,12 +906,12 @@ A modern, polished Dired experience that can replace Treemacs.
  #+begin_src emacs-lisp
   ;; Simple flymake configuration - avoid eval-after-load to prevent macro expansion errors
   (add-hook 'prog-mode-hook #'flymake-mode)
-  
+
   ;; Configure flymake when loaded
   (eval-after-load 'flymake
     '(progn
        (setq flymake-fringe-indicator-position 'left-fringe)
-       
+
         ;; 1. Window Configuration (Clean Popup at Bottom)
        (add-to-list 'display-buffer-alist
                     '("\*Flymake diagnostics.*"
@@ -912,11 +922,11 @@ A modern, polished Dired experience that can replace Treemacs.
                       (preserve-size . (nil . t))
                       (window-parameters . ((no-other-window . nil)
                                             (mode-line-format . none)))))
-       
+
         ;; 2. Diagnostics buffer visuals
        (add-hook 'flymake-project-diagnostics-mode-hook
                  (lambda ()
-                   (setq header-line-format nil) 
+                   (setq header-line-format nil)
                    (setq tabulated-list-use-header-line nil)
                    (setq tabulated-list-gui-sort-indicator-mode nil)
                    (display-line-numbers-mode 0)
@@ -945,12 +955,12 @@ A modern, polished Dired experience that can replace Treemacs.
                           (file (buffer-name buffer))
                           (face (flymake-diagnostic-type-face type))
                           (type-str (propertize (symbol-name type) 'face face))
-                          (cand-str (format "%-20s %-8s %s" 
+                          (cand-str (format "%-20s %-8s %s"
                                             (propertize file 'face 'font-lock-variable-name-face)
                                             type-str
                                             (propertize text 'face 'shadow))))
-                     (push (propertize cand-str 
-                                       'consult--candidate 
+                     (push (propertize cand-str
+                                       'consult--candidate
                                        (cons (set-marker (make-marker) (flymake-diagnostic-beg diag)) buffer))
                            candidates)))))
              (if candidates
@@ -1021,14 +1031,14 @@ A modern, polished Dired experience that can replace Treemacs.
 
 ** Eglot + Pyright
  Complete Python LSP setup with Pyright and Ruff linter.
- 
+
  To use requirements.txt with Pyright, activate your venv:
- 
+
    1. Auto-activate: Pyright uses the venv specified in .dir-locals.el
       Create .dir-locals.el: ((python-mode . ((pyvenv-workon . ".venv"))))
-   
+
    2. Manual: M-x pyvenv-activate RET .venv RET
-   
+
     3. External: source .venv/bin/activate && emacs
 
   #+begin_src emacs-lisp
@@ -1041,7 +1051,7 @@ A modern, polished Dired experience that can replace Treemacs.
        (add-to-list 'eglot-server-programs
                     '((python-mode python-ts-mode)
                       . ("pyright-langserver" "--stdio")))
-       
+
       (defun my/python-eglot-ensure ()
         "Configure Eglot workspace settings and start Eglot for Python."
         (let ((project-root (or (locate-dominating-file default-directory ".dir-locals.el")
@@ -1058,13 +1068,13 @@ A modern, polished Dired experience that can replace Treemacs.
                                            :diagnosticMode "workspace"))))
          (cd project-root)
          (eglot-ensure)))
-       
+
        (add-hook 'python-mode-hook 'my/python-eglot-ensure)
        (add-hook 'python-ts-mode-hook 'my/python-eglot-ensure))
 
       ;; Note: Eglot keybindings are available via leader keys (SPC c prefix)
       ;; to avoid python-mode-map void errors when eglot loads for other modes.
-    
+
 
     (use-package flymake
       :ensure nil
@@ -1080,7 +1090,7 @@ A modern, polished Dired experience that can replace Treemacs.
         (unless (executable-find "ruff")
           (funcall callback '())
           (cl-return-from my/python-ruff-diagnostics))
-        
+
         (when-let ((file (buffer-file-name buffer)))
           (make-process
            :name "ruff-flymake"
@@ -1173,8 +1183,8 @@ A modern, polished Dired experience that can replace Treemacs.
         (setq electric-pair-inhibit-predicate
               `(lambda (c)
                  (if (char-equal c ?<) t (electric-pair-default-inhibit c)))))
-#+end_src 
-   
+#+end_src
+
 ** AI Code Assistant (agent-shell)
 #+begin_src emacs-lisp
   (use-package shell-maker
@@ -1200,7 +1210,7 @@ A modern, polished Dired experience that can replace Treemacs.
     (setq agent-shell-google-authentication
           (agent-shell-google-make-authentication
            :api-key (lambda () (getenv "GEMINI_API_KEY"))))
-    
+
      (setq agent-shell-google-gemini-environment
            (agent-shell-make-environment-variables
             :inherit-env t))
@@ -1297,38 +1307,38 @@ A modern, polished Dired experience that can replace Treemacs.
      ;; === Opencode Configuration ===
     (setq agent-shell-opencode-authentication
           (agent-shell-opencode-make-authentication :none t))
-    
+
     (setq agent-shell-opencode-environment
            (agent-shell-make-environment-variables
             :inherit-env t))
-    
+
     ;; === Keybindings ===
     ;; Main menu: M-x agent-shell (start/reuse agent)
     ;; Specific agents: M-x agent-shell-google-start-gemini
     ;;             M-x agent-shell-opencode-start-agent
-    
+
     ;; === Evil Mode Integration ===
     (with-eval-after-load 'evil
       ;; Evil state-specific RET behavior: insert mode = newline, normal mode = send
       (evil-define-key 'insert agent-shell-mode-map (kbd "RET") #'newline)
       (evil-define-key 'normal agent-shell-mode-map (kbd "RET") #'comint-send-input)
-      
+
       ;; Configure *agent-shell-diff* buffers to start in Emacs state
       (add-hook 'diff-mode-hook
                 (lambda ()
                   (when (string-match-p "\\\\*agent-shell-diff\\\\\*" (buffer-name))
                     (evil-emacs-state)))))
-    
+
     ;; === Display Configuration ===
     ;; Show welcome message
     (setq agent-shell-show-welcome-message t)
-    
+
     ;; Show context usage indicator
     (setq agent-shell-show-context-usage-indicator t)
-    
+
     ;; Show usage at turn end
     (setq agent-shell-show-usage-at-turn-end t)
-    
+
      ;; Enable file completion
      (setq agent-shell-file-completion-enabled t)
 
@@ -1455,10 +1465,10 @@ Modern debug configuration without dap-mode.
         (kill-buffer buf-name))
 
       (message "Launching JVM for: %s..." test-target)
-      
+
       (let* ((default-directory project-root)
              (proc (start-process-shell-command "java-debug-proc" buf-name cmd)))
-        
+
         (set-process-filter
          proc
          (lambda (process output)
@@ -1467,7 +1477,7 @@ Modern debug configuration without dap-mode.
                (save-excursion
                  (goto-char (point-max))
                  (insert output))))
-           
+
            (when (string-match-p "Listening for transport dt_socket" output)
              (message "JVM ready for [%s]! Use Dape to attach." test-target)))))))
 
@@ -1482,7 +1492,7 @@ Modern debug configuration without dap-mode.
     :ensure t
     :config
     (setq dape-buffer-window-arrangement 'right)
-    
+
     (add-to-list 'dape-configs
                  `(java-attach
                    modes (java-mode java-ts-mode)
@@ -1593,8 +1603,8 @@ Module for subtle coverage visualization.
                         (covered (string-to-number (xml-get-attribute line 'ci)))
                         (line-num (string-to-number (xml-get-attribute line 'nr))))
                     (when (> missed 0)
-                      (my/java--highlight-missed-line 
-                       line-num 
+                      (my/java--highlight-missed-line
+                       line-num
                        (format "JaCoCo: Missed %s instructions (Covered: %s)" missed covered))))))))))))
 
   (defun my/java--create-lens-at-signature (line text)
@@ -1605,8 +1615,8 @@ Module for subtle coverage visualization.
                   (looking-at "^[[:space:]]*\\(\{\\|$\\|@\\)"))
         (forward-line -1))
       (let ((ov (make-overlay (line-beginning-position) (line-beginning-position))))
-        (overlay-put ov 'before-string 
-                     (propertize (format "%s%s\n" (make-string (current-indentation) ?\s) text) 
+        (overlay-put ov 'before-string
+                     (propertize (format "%s%s\n" (make-string (current-indentation) ?\s) text)
                                  'face 'my/jacoco-lens-face))
         (push ov my/java-coverage-overlays))))
 
@@ -1621,7 +1631,7 @@ Module for subtle coverage visualization.
           (push ov my/java-coverage-overlays)))))
 
   ;; Auto-refresh integration
-  (advice-add 'my/project-test :after 
+  (advice-add 'my/project-test :after
               (lambda (&rest _) (when my/java-coverage-visible (my/java-apply-subtle-coverage))))
 #+end_src
 
