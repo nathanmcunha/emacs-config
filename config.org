@@ -470,26 +470,30 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
 
 ** Window Placement Rules (display-buffer-alist)
 #+begin_src emacs-lisp
-   (use-package emacs
-     :ensure nil
-     :config
-     ;; Prevent some buffers from taking over the whole frame
-     (setq display-buffer-alist
-           '(
-             ;; Bottom side buffers (Height 0.3)
-             ("\\*\\(Output\\|Injector\\|Async Shell Command\\).*"
-              (display-buffer-reuse-window display-buffer-at-bottom)
-              (window-height . 0.3))
+  (use-package emacs
+    :ensure nil
+    :config
+    ;; Prevent some buffers from taking over the whole frame
+    (setq select-enable-clipboard t)
+    (setq select-enable-primary t)
+    (setq save-interprogram-paste-before-kill t)
+    (setq selection-coding-system 'utf-8)
+    (setq display-buffer-alist
+        '(
+          ;; Bottom side buffers (Height 0.3)
+          ("\\*\\(Output\\|Injector\\|Async Shell Command\\).*"
+           (display-buffer-reuse-window display-buffer-at-bottom)
+           (window-height . 0.3))
 
-             ;; Help buffers
-             ("\\*Help.*"
-              (display-buffer-reuse-window display-buffer-at-bottom)
-              (window-height . 0.4))
+          ;; Help buffers
+          ("\\*Help.*"
+           (display-buffer-reuse-window display-buffer-at-bottom)
+           (window-height . 0.4))
 
-             ;; Magit: Let it do its own thing (it manages windows well)
-             ("Magit.*"
-              (display-buffer-same-window))
-             )))
+          ;; Magit: Let it do its own thing (it manages windows well)
+          ("Magit.*"
+           (display-buffer-same-window))
+          )))
 #+end_src
 
 * Evil Mode (Vim Emulation)
@@ -893,12 +897,13 @@ A modern, polished Dired experience that can replace Treemacs.
      (setq apheleia-log-only-errors nil)
      (setf (alist-get 'google-java-format apheleia-formatters)
            '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
-     (setf (alist-get 'black apheleia-formatters)
-           '("black" "-" "-"))
+     ;; Define Ruff as the primary formatter for Python
+  (setf (alist-get 'ruff apheleia-formatters)
+        '("ruff" "format" "--stdin-filename" filepath "-"))
      (push '(java-mode . google-java-format) apheleia-mode-alist)
      (push '(java-ts-mode . google-java-format) apheleia-mode-alist)
-     (push '(python-mode . black) apheleia-mode-alist)
-      (push '(python-ts-mode . black) apheleia-mode-alist))
+     (push '(python-mode . ruff) apheleia-mode-alist)
+      (push '(python-ts-mode . ruff) apheleia-mode-alist))
 #+end_src
 
 ** Linting (Flymake)
@@ -984,7 +989,9 @@ A modern, polished Dired experience that can replace Treemacs.
             (javascript "https://github.com/tree-sitter/tree-sitter-javascript")
             (typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
             (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")
-            (python "https://github.com/tree-sitter/tree-sitter-python")))
+            (python "https://github.com/tree-sitter/tree-sitter-python")
+            (dockerfile "https://github.com/camdencheek/tree-sitter-dockerfile")
+            (yaml "https://github.com/ikatyang/tree-sitter-yaml")))
 
    (defun my/install-java-tree-sitter ()
      "Install the Java tree-sitter grammar."
@@ -1017,153 +1024,61 @@ A modern, polished Dired experience that can replace Treemacs.
   (setq eglot-java-user-init-opts-fn 'my/eglot-java-init-opts))
   #+end_src
 
-** Python Development
-  #+begin_src emacs-lisp
-    (use-package pet
+** Python Development (Eglot + Pyright + Ruff)
+This configuration ensures that Eglot communicates with Pyright using strict type checking while pet.el handles your virtual environments and Ruff handles your linting.
+
+#+begin_src emacs-lisp
+    (with-eval-after-load 'project
+      ;; Add these markers so Emacs finds the TRUE project root where the venv is
+      (add-to-list 'project-vc-extra-root-markers "pyproject.toml")
+      (add-to-list 'project-vc-extra-root-markers "requirements.txt")
+      (add-to-list 'project-vc-extra-root-markers ".venv"))
+
+      (use-package eglot
+      :ensure nil
+      :hook ((python-mode python-ts-mode) . eglot-ensure)
+      :config
+      (setq jsonrpc-process-connection-timeout 120)
+      (setq eglot-max-file-watches 500000)
+
+      (add-to-list 'eglot-server-programs
+      '((python-mode python-ts-mode) . ("pyright-langserver" "--stdio")))
+      
+      ;; Add Ruff LSP support using the built-in 'ruff server'
+      (add-to-list 'eglot-server-programs
+                   '((python-mode python-ts-mode) . ("ruff" "server")))
+
+      (add-to-list 'eglot-server-programs
+                   '(dockerfile-ts-mode . ("docker-langserver" "--stdio")))
+
+      (add-to-list 'eglot-server-programs
+                   '(yaml-ts-mode . ("yaml-language-server" "--stdio")))
+
+      ;; Optimized for "PyCharm" balance: Deep analysis without "Strict" noise
+      (setq-default eglot-workspace-configuration
+      '(:python (:analysis (:typeCheckingMode "basic" ; Changed from strict to basic
+      :autoSearchPaths t
+      :useLibraryCodeForTypes t
+      :diagnosticMode "workspace"
+      :indexing t))
+        :ruff (:line-length 88
+               :lint (:enable t)
+               :format (:enable t))
+        :yaml (:schemas (:kubernetes "/*.yaml")
+               :format (:enable t)))))
+
+      (use-package pet
       :ensure t
       :config
       (add-hook 'python-base-mode-hook
-                (lambda ()
-                  (setq-local python-shell-interpreter (or (pet-executable-find "python") "python3")
-                              python-shell-virtualenv-root (pet-virtualenv-root))
-                  (pet-eglot-setup))))
-  #+end_src
+      (lambda ()
+      (setq-local python-shell-interpreter (or (pet-executable-find "python") "python3")
+      python-shell-virtualenv-root (pet-virtualenv-root))
 
-** Eglot + Pyright
- Complete Python LSP setup with Pyright and Ruff linter.
-
- To use requirements.txt with Pyright, activate your venv:
-
-   1. Auto-activate: Pyright uses the venv specified in .dir-locals.el
-      Create .dir-locals.el: ((python-mode . ((pyvenv-workon . ".venv"))))
-
-   2. Manual: M-x pyvenv-activate RET .venv RET
-
-    3. External: source .venv/bin/activate && emacs
-
-  #+begin_src emacs-lisp
-     (use-package eglot
-       :ensure nil
-       :config
-       ;; Configure Eglot for Python with Pyright
-       ;; Pyright automatically reads from your virtual environment if activated
-       ;; Run: source .venv/bin/activate && emacs
-       (add-to-list 'eglot-server-programs
-                    '((python-mode python-ts-mode)
-                      . ("pyright-langserver" "--stdio")))
-
-      (defun my/python-eglot-ensure ()
-        "Configure Eglot workspace settings and start Eglot for Python."
-        (let ((project-root (or (locate-dominating-file default-directory ".dir-locals.el")
-                                 (locate-dominating-file default-directory ".git")
-                                 (locate-dominating-file default-directory "pyproject.toml")
-                                 (locate-dominating-file default-directory "pyrightconfig.json")
-                                 default-directory)))
-         (setq-local eglot-workspace-configuration
-                     `(:python (:venvPath ,project-root
-                                :venv ".venv"
-                                :analysis (:typeCheckingMode "strict"
-                                           :autoSearchPaths t
-                                           :useLibraryCodeForTypes t
-                                           :diagnosticMode "workspace"))))
-         (cd project-root)
-         (eglot-ensure)))
-
-       (add-hook 'python-mode-hook 'my/python-eglot-ensure)
-       (add-hook 'python-ts-mode-hook 'my/python-eglot-ensure))
-
-      ;; Note: Eglot keybindings are available via leader keys (SPC c prefix)
-      ;; to avoid python-mode-map void errors when eglot loads for other modes.
-
-
-    (use-package flymake
-      :ensure nil
-      :hook
-      ((python-mode python-ts-mode) . flymake-mode)
-      :config
-      (setq flymake-fringe-indicator-position 'left-fringe))
-
-    ;; Ruff linter configuration
-    (defun my/python-ruff-diagnostics (source callback)
-      "Run Ruff as a Flymake backend for Python."
-      (let ((buffer (current-buffer)))
-        (unless (executable-find "ruff")
-          (funcall callback '())
-          (cl-return-from my/python-ruff-diagnostics))
-
-        (when-let ((file (buffer-file-name buffer)))
-          (make-process
-           :name "ruff-flymake"
-           :buffer (generate-new-buffer " *ruff-flymake*")
-           :command (list "ruff" "check" "--output-format=json" file)
-           :sentinel
-           (lambda (process _event)
-             (when (eq (process-status process) 'exit)
-               (unwind-protect
-                   (with-current-buffer (process-buffer process)
-                     (let ((json-array-type 'list))
-                       (let ((diagnostics
-                              (mapcar
-                               (lambda (item)
-                                 (let* ((start-line (1- (alist-get 'start_line item)))
-                                        (start-col (alist-get 'start_column item))
-                                        (end-line (1- (alist-get 'end_line item)))
-                                        (end-col (alist-get 'end_column item))
-                                        (message (alist-get 'message item))
-                                        (code (alist-get 'code item))
-                                        (severity (alist-get 'severity item))
-                                        (type (cond
-                                               ((string= severity "error") :error)
-                                               ((string= severity "warning") :warning)
-                                               (t :note))))
-                                   (flymake-make-diagnostic
-                                    (current-buffer)
-                                    (flymake-diag-region buffer start-line start-col end-line end-col)
-                                    type
-                                    message
-                                    :code code
-                                    :source "Ruff"))))
-                               (condition-case nil
-                                   (json-read-from-string
-                                    (buffer-string))
-                                 (error '())))))
-                         (funcall callback diagnostics)))
-                 (kill-buffer (process-buffer process)))))))))
-
-    ;; Register Ruff as a Flymake backend
-    (add-hook 'python-mode-hook
-              (lambda ()
-                (add-hook 'flymake-diagnostic-functions 'my/python-ruff-diagnostics nil t)))
-    (add-hook 'python-ts-mode-hook
-              (lambda ()
-                (add-hook 'flymake-diagnostic-functions 'my/python-ruff-diagnostics nil t)))
-
-    ;; pytest integration
-    (defun my/python-run-pytest-file ()
-      "Run pytest on the current file."
-      (interactive)
-      (let ((file (buffer-file-name)))
-        (compile (format "pytest %s" file))))
-
-    (defun my/python-run-pytest-function ()
-      "Run pytest on the function at point."
-      (interactive)
-      (save-excursion
-        (beginning-of-defun)
-        (let* ((func-name (python-info-current-defun))
-               (file (buffer-file-name)))
-          (compile (format "pytest %s::%s" file func-name)))))
-
-    ;; Python keybindings
-    (with-eval-after-load 'python
-      (define-key python-mode-map (kbd "C-c C-t") 'my/python-run-pytest-file)
-      (define-key python-mode-map (kbd "C-c C-f") 'my/python-run-pytest-function)
-      (define-key python-mode-map (kbd "C-c C-l") 'my/consult-flymake-project))
-
-    ;; Note: Python project test/format now handled by global my/project-test
-    ;; and my/project-compile functions, which detect Python projects automatically.
+                ;; Ensure pet-eglot-setup runs to inject venv paths into Eglot
+                (pet-eglot-setup))))
+    
 #+end_src
-
 ** Visual Wrapping (built-in Emacs 30)
  Improves reading of long lines in code buffers, maintaining visual indentation.
 
@@ -1412,6 +1327,21 @@ A modern, polished Dired experience that can replace Treemacs.
     :config (setq markdown-fontify-code-blocks-natively t))
 #+end_src
 
+** Docker & Kubernetes
+#+begin_src emacs-lisp
+  (use-package docker
+    :ensure t
+    :commands docker)
+
+  (use-package kubernetes
+    :ensure t
+    :commands kubernetes)
+
+  ;; Enable eglot automatically for these modes
+  (add-hook 'dockerfile-ts-mode-hook #'eglot-ensure)
+  (add-hook 'yaml-ts-mode-hook #'eglot-ensure)
+#+end_src
+
 ** Environment (Mise)
 #+begin_src emacs-lisp
   (use-package mise
@@ -1635,6 +1565,18 @@ Module for subtle coverage visualization.
               (lambda (&rest _) (when my/java-coverage-visible (my/java-apply-subtle-coverage))))
 #+end_src
 
+** Eat(Terminal Emulator)
+ #+begin_src emacs-lisp
+(use-package eat
+  :ensure t
+  :config
+  ;; Integração com Evil-mode: garante que as teclas passem para o terminal
+  (setq eat-kill-buffer-on-exit t)
+  (setq eat-enable-mouse t)
+  
+  ;; Adiciona o Eat à lista de modos que não exibem números de linha
+  (add-hook 'eat-mode-hook (lambda () (display-line-numbers-mode 0))))
+#+end_src
 * Keybindings Configuration
 ** Centralized Leader Bindings
 #+begin_src emacs-lisp
@@ -1711,7 +1653,7 @@ Module for subtle coverage visualization.
   (my/bind-leader "f f" 'my/project-find-file "find file in project")
   (my/bind-leader "f F" 'find-file "find file anywhere")
   (my/bind-leader "f r" 'consult-recent-file "recent files")
-  (my/bind-leader "f s" 'save-buffer "save file")
+  (my/bind-leader "f s" 'dirvish-side "sidebar")
   (my/bind-leader "f S" 'write-file "save as...")
   (my/bind-leader "f R" 'my/move-this-file "rename/move file")
   (my/bind-leader "f D" 'my/delete-this-file "delete file")
@@ -1758,6 +1700,8 @@ Module for subtle coverage visualization.
   (my/bind-leader "o p" 'popper-toggle "toggle popup")
   (my/bind-leader "o t h" 'my/open-terminal-here "here")
   (my/bind-leader "o t p" 'my/open-terminal-in-project "project")
+  (my/bind-leader "o d" 'docker "docker TUI")
+  (my/bind-leader "o k" 'kubernetes "kubernetes TUI")
 
   ;; --- Project (p) ---
   (my/bind-leader "p p" 'project-switch-project "switch project")

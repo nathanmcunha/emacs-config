@@ -86,7 +86,9 @@
   (setq evil-want-C-u-scroll t)
   (setq evil-undo-system 'undo-redo)
   :config
-  (evil-mode 1))
+  (evil-mode 1)
+  (setq evil-select-enable-clipboard t))
+
 
 ;; --- FIM CORE ---
 

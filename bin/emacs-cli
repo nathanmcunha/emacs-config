@@ -117,6 +117,14 @@ function stop_server() {
     fi
 }
 
+function prune_elc() {
+    log_info "Pruning stale .elc files (init.elc, early-init.elc)..."
+    rm -f "$PROJECT_ROOT/init.elc" "$PROJECT_ROOT/early-init.elc"
+    # Also clean any other .elc in the root to be safe
+    find "$PROJECT_ROOT" -maxdepth 1 -name "*.elc" -delete
+    log_success "Stale .elc files pruned."
+}
+
 function cmd_check() {
     local exit_code=0
 
@@ -188,8 +196,11 @@ function cmd_sync() {
         cmd_args+=("--eval" "(setq elpaca-menu-disabled '(elpaca-menu-melpa elpaca-menu-elpa))")
     fi
 
+    stop_server
     log_info "Syncing packages with Elpaca..."
     log_info "Timeout set to ${TIMEOUT} seconds"
+
+    prune_elc
 
     # Run Emacs in batch mode with proper config directory and timeout
     local sync_start=$(date +%s)
@@ -249,8 +260,11 @@ function cmd_update() {
         cmd_args+=("--eval" "(setq elpaca-log-events t)" "--eval" "(setq elpaca-verbose t)")
     fi
 
+    stop_server
     log_info "Updating packages with Elpaca..."
     log_info "Timeout set to ${TIMEOUT} seconds"
+
+    prune_elc
 
     # Run Emacs in batch mode with proper config directory and timeout
     local update_start=$(date +%s)

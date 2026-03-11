@@ -14,3 +14,9 @@
 (setq native-comp-jit-compilation t)
 (setq native-comp-async-jobs-number 4)
 (setq native-comp-speed 3)
+
+;; UI PGTK/WAYLAND optimizations
+(push '(menu-bar-lines . 0) default-frame-alist)
+(push '(tool-bar-lines . 0) default-frame-alist)
+(push '(vertical-scroll-bars) default-frame-alist)
+(setq-default frame-background-mode 'light)
