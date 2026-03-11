@@ -364,7 +364,7 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
    (use-package server
      :ensure nil
      :config
-     (unless (server-running-p)
+     (unless (or (daemonp) (server-running-p))
        (server-start)))
 
    ;; Repeat Mode (Emacs 28+) - Repeat commands without prefix keys
