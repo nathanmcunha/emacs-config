@@ -427,6 +427,13 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     :init (which-key-mode)
     :config
     (setq which-key-idle-delay 0.3))
+
+  ;; Inherit shell PATH so mise shims (python, pyright, etc.) are visible in GUI Emacs.
+  (use-package exec-path-from-shell
+    :ensure t
+    :config
+    (when (or (display-graphic-p) (daemonp))
+      (exec-path-from-shell-initialize)))
 #+end_src
 
 * Window Management (Popups & Rules)
@@ -757,24 +764,19 @@ This module configures the "Intellisense" experience using Corfu, with specific 
 ** UI Configuration (Corfu)
 Sets up the popup, cycling, and integration with icons.
 
-#+begin_src emacs-lisp
+#+begin_src emacs-lisp :tangle yes
     (use-package corfu
       :demand t
       :custom
-      (corfu-auto t)                 ;; Enable auto completion
-      (corfu-auto-delay 0.2)         ;; Small delay to prevent stuttering
-      (corfu-auto-prefix 2)          ;; Minimum length to trigger
-      (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
-      (corfu-preselect 'prompt)      ;; Always preselect the prompt (first candidate is not auto-selected)
-
-      (corfu-popupinfo-delay 0.5)    ;; Delay before showing docs
-      (corfu-max-width 80)
-      (corfu-preview-current nil)    ;; Disable previewing current candidate (can be distracting)
-
+      (corfu-auto t)
+      (corfu-auto-delay 0.2)
+      (corfu-auto-prefix 2)
+      (corfu-cycle t)
+      (corfu-preselect 'prompt)
+      (corfu-quit-no-match 'separator) ;; Keep popup open even when LSP filters everything
       :init
       (global-corfu-mode)
-      :config
-      (corfu-popupinfo-mode)
+      (setq tab-always-indent 'complete)
       :bind
       (:map corfu-map
             ("TAB" . corfu-next)
@@ -784,59 +786,93 @@ Sets up the popup, cycling, and integration with icons.
             ("C-j" . corfu-next)
             ("C-k" . corfu-previous)
             ("RET" . corfu-insert)
-            ("C-e" . corfu-send-shell)    ;; Send candidate to shell/minibuffer
-            ("SPC" . corfu-insert-separator))
+            ("M-d" . corfu-popupinfo-toggle)
+            ("M-p" . corfu-popupinfo-scroll-up)
+            ("M-n" . corfu-popupinfo-scroll-down))
     :config
-    ;; Manually trigger completion with C-Space when popup is closed
+    (corfu-popupinfo-mode 1)
+    (corfu-history-mode 1)
     (keymap-global-set "C-SPC" #'completion-at-point)
 
-      ) ;; Helps filtering with Orderless
+    ;; Use orderless for Eglot completion
+    (setq completion-category-overrides
+          '((eglot (styles orderless))
+            (eglot-capf (styles orderless))))
+
+    (with-eval-after-load 'savehist
+      (add-to-list 'savehist-additional-variables 'corfu-history)))
 
     ;; Pretty icons for Corfu
     (use-package nerd-icons-corfu
       :after corfu
       :config
       (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
- #+end_src
+#+end_src
 
 * Development Tools
 ** Snippets (Tempel)
- #+begin_src emacs-lisp
-  (use-package tempel
-    :ensure t
-    :bind (("M-+" . tempel-complete)
-           ("M-*" . tempel-insert)
-           :map tempel-map
-           ("TAB"   . tempel-next)
-           ("S-TAB" . tempel-previous))
-    :init
-    (defun tempel-setup-capf ()
-      (setq-local completion-at-point-functions
-                  (cons #'tempel-expand completion-at-point-functions)))
-    (add-hook 'prog-mode-hook 'tempel-setup-capf)
-    (add-hook 'text-mode-hook 'tempel-setup-capf))
+ #+begin_src emacs-lisp :tangle yes
+   (use-package tempel
+     :ensure t
+     :bind (("M-+" . tempel-complete)
+            ("M-*" . tempel-insert)
+            :map tempel-map
+            ("TAB"   . tempel-next)
+            ("S-TAB" . tempel-previous)))
 
-  (use-package tempel-collection :ensure t)
+   (use-package tempel-collection :ensure t)
 #+end_src
 
 ** Extended Backends (Cape)
- Configures additional completion backends and the specific TAB integration strategy.
-
-
-#+begin_src emacs-lisp
+#+begin_src emacs-lisp :tangle yes
   (use-package cape
     :ensure t
     :init
-    ;; Add `completion-at-point-functions`, used by `corfu`.
-    ;; Note: We omit 't' (append) for cape-file so it takes precedence over normal code completion.
-    (add-to-list 'completion-at-point-functions #'cape-file)
-    (add-to-list 'completion-at-point-functions #'cape-dabbrev t)
-    (add-to-list 'completion-at-point-functions #'cape-keyword t)
-    (add-to-list 'completion-at-point-functions #'cape-elisp-block)
-
+    ;; Global fallbacks used in non-LSP buffers
+    (add-hook 'completion-at-point-functions #'cape-dabbrev)
+    (add-hook 'completion-at-point-functions #'cape-file)
+    (add-hook 'completion-at-point-functions #'cape-keyword)
     :config
+    ;; In Eglot buffers: mark the LSP capf as non-exclusive so tempel/file/dabbrev
+    ;; can also contribute without interfering with Eglot's async completion.
+    (defun my/eglot-capf-setup ()
+      (setq-local completion-at-point-functions
+                  (list (cape-wrap-nonexclusive #'eglot-completion-at-point)
+                        #'tempel-expand
+                        #'cape-file
+                        #'cape-dabbrev)))
+    (add-hook 'eglot-managed-mode-hook #'my/eglot-capf-setup)
+
     (setq pcomplete-ignore-case t)
     (setq cape-dabbrev-check-other-buffers t))
+#+end_src
+
+** Spell Checking and Dictionary (Jinx + Cape-Dict)
+#+begin_src emacs-lisp :tangle yes
+  (use-package jinx
+    :ensure t
+    :hook (prog-mode . jinx-mode)
+    :hook (text-mode . jinx-mode)
+    :hook (org-mode . jinx-mode)
+    :bind (("M-$" . jinx-correct)
+           ("C-M-$" . jinx-languages)))
+
+  (defun my/spell-toggle-lang ()
+    "Toggle between English and Brazilian Portuguese for Jinx and Cape."
+    (interactive)
+    (if (string-match-p "en_US" (or (getenv "DICTIONARY") ""))
+        (setenv "DICTIONARY" "pt_BR")
+      (setenv "DICTIONARY" "en_US"))
+    (when (fboundp 'jinx-languages)
+      (if (member "pt_BR" (split-string (or (jinx--get-languages) "") " "))
+          (jinx-languages "en_US")
+        (jinx-languages "pt_BR en_US")))
+    (message "Spell language: %s" (if (string-match-p "pt_BR" (or (getenv "DICTIONARY") "")) "pt_BR" "en_US")))
+
+  ;; Add dictionary completion to global CAPF
+  (add-hook 'completion-at-point-functions #'cape-dict t)
+
+(elpaca-wait)
 #+end_src
 
 ** Git (Magit)
@@ -1663,7 +1699,12 @@ Module for subtle coverage visualization.
   (my/bind-leader "f e" (lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) "open early-init")
   (my/bind-leader "f E" (lambda () (interactive) (dired (expand-file-name user-emacs-directory))) "browse emacs.d")
 
-  ;; --- Git (g) ---
+  ;; --- Spell & Language (S) ---
+  (my/bind-leader "S s" 'jinx-correct "correct word")
+  (my/bind-leader "S t" 'my/spell-toggle-lang "toggle lang (EN/PT)")
+  (my/bind-leader "S l" 'jinx-languages "select languages")
+
+  ;; --- Go to (g) ---
   (my/bind-leader "g s" 'magit-status "magit status")
   (my/bind-leader "g S" 'magit-status-here "magit status here")
   (my/bind-leader "g /" 'magit-dispatch "Magit dispatch")

@@ -4,6 +4,20 @@
 (defvar elpaca--prev-progress nil)
 
 (message "[Elpaca] Starting package sync...")
+
+;; Ensure queues start processing if they haven't already
+(unless (bound-and-true-p elpaca--queues)
+  (elpaca-process-queues))
+
+;; Wait for any initial recipe fetches or installations to start
+(message "[Elpaca] Waiting for queue activation...")
+(let ((wait-count 0))
+  (while (and (< wait-count 10) ; wait max 10s for something to appear in queue
+              (not (cl-loop for q in elpaca--queues thereis (elpaca-q<-elpacas q))))
+    (elpaca-process-queues)
+    (sit-for 1)
+    (setq wait-count (1+ wait-count))))
+
 (while (cl-loop for q in elpaca--queues thereis
                 (and (not (eq (elpaca-q<-status q) 'complete))
                      (elpaca-q<-elpacas q)))
@@ -22,4 +36,5 @@
       (when (and (boundp 'elpaca-verbose) elpaca-verbose current)
         (message "[Elpaca] Current: %s" (truncate-string-to-width (format "%s" current) 80 nil nil "...")))))
   (sit-for 1))
+
 (message "✨ Sync complete.")
