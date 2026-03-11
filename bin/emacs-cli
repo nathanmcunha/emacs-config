@@ -109,11 +109,21 @@ function log_error() {
 }
 
 function stop_server() {
-    log_info "Stopping Emacs server..."
-    if "$EMACSCLIENT" -e '(kill-emacs)' -a '' >/dev/null 2>&1; then
-        log_info "Emacs server stopped."
+    log_info "Stopping Emacs service (systemd)..."
+    if systemctl --user is-active --quiet emacs.service; then
+        systemctl --user stop emacs.service
+        log_success "Emacs service stopped."
     else
-        log_info "No running Emacs server found."
+        log_info "Emacs service is not running."
+    fi
+}
+
+function start_server() {
+    log_info "Starting Emacs service (systemd)..."
+    if systemctl --user start emacs.service; then
+        log_success "Emacs service started."
+    else
+        log_error "Failed to start Emacs service via systemd."
     fi
 }
 
@@ -233,6 +243,7 @@ function cmd_sync() {
     fi
 
     rm -f "$log_file"
+    start_server
     return 0
 }
 
@@ -297,6 +308,7 @@ function cmd_update() {
     fi
 
     rm -f "$log_file"
+    start_server
     return 0
 }
 
