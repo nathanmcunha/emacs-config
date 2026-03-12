@@ -441,7 +441,8 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
 #+begin_src emacs-lisp
   (defvar my/popup-buffer-regexps
     '("\\*Messages\\*" "Output\\*$" "\\*Async Shell Command\\*"
-      "\\*Help\\*" "\\*compilation\\*" "\\*Flymake diagnostics\\*" "\\*Warnings\\*")
+      "\\*Help\\*" "\\*compilation\\*" "\\*Flymake diagnostics\\*" "\\*Warnings\\*"
+      "\\*docker-compose\\*" "\\*docker-run\\*")
     "Regexps matching buffers treated as popups.")
 
   (defun my/popup-buffer-p (buf)
@@ -539,6 +540,61 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     (evil-collection-magit-want-horizontal-movement t)
     :config
     (evil-collection-init))
+
+  (with-eval-after-load 'evil
+    (setq evil-emacs-state-modes
+          '(help-mode
+            helpful-mode
+            info-mode
+            info-lookup-mode
+            man-mode
+            woman-mode
+            epa-key-list-mode
+            epa-key-mode
+            occur-mode
+            diff-mode
+            proced-mode
+            completion-list-mode
+            completion-pcm--local-minibuffer-map
+            telega-chat-mode
+            telega-root-mode
+            mu4e-view-mode
+            mu4e-headers-mode
+            gnus-article-mode
+            gnus-group-mode
+            gnus-summary-mode
+            browse-kill-ring-mode
+            thingatpt-mode
+            view-mode
+            adoc-mode
+            term-mode
+            vterm-mode
+            eshell-mode
+            shell-mode))
+    (setq evil-normal-state-modes
+          '(magit-mode
+            magit-status-mode
+            magit-log-mode
+            magit-diff-mode
+            magit-process-mode
+            magit-refs-mode
+            magit-revision-mode
+            docker-mode
+            docker-container-mode
+            docker-image-mode
+            docker-network-mode
+            docker-volume-mode
+            docker-engine-mode
+            kubernetes-mode
+            kubernetes-overview-mode
+            kubernetes-logs-mode
+            org-mode
+            markdown-mode
+            js-md-mode))
+    (dolist (mode evil-emacs-state-modes)
+      (evil-set-initial-state mode 'emacs))
+    (dolist (mode evil-normal-state-modes)
+      (evil-set-initial-state mode 'normal)))
 #+end_src
 
 ** Evil Extensions & Avy
@@ -765,48 +821,53 @@ This module configures the "Intellisense" experience using Corfu, with specific 
 Sets up the popup, cycling, and integration with icons.
 
 #+begin_src emacs-lisp :tangle yes
-    (use-package corfu
-      :demand t
-      :custom
-      (corfu-auto t)
-      (corfu-auto-delay 0.2)
-      (corfu-auto-prefix 2)
-      (corfu-cycle t)
-      (corfu-preselect 'prompt)
-      (corfu-quit-no-match 'separator) ;; Keep popup open even when LSP filters everything
-      :init
-      (global-corfu-mode)
-      (setq tab-always-indent 'complete)
-      :bind
-      (:map corfu-map
-            ("TAB" . corfu-next)
-            ([tab] . corfu-next)
-            ("S-TAB" . corfu-previous)
-            ([backtab] . corfu-previous)
-            ("C-j" . corfu-next)
-            ("C-k" . corfu-previous)
-            ("RET" . corfu-insert)
-            ("M-d" . corfu-popupinfo-toggle)
-            ("M-p" . corfu-popupinfo-scroll-up)
-            ("M-n" . corfu-popupinfo-scroll-down))
+  (use-package corfu
+    :demand t
+    :custom
+    (corfu-auto t)
+    (corfu-auto-delay 0.2)
+    (corfu-auto-prefix 2)
+    (corfu-cycle t)
+    (corfu-preselect 'prompt)
+    (corfu-count 16)
+    (corfu-max-width 120)
+    (corfu-on-exact-match nil)
+    (corfu-quit-at-boundary 'separator)
+    (corfu-quit-no-match 'separator)
+    :init
+    (global-corfu-mode)
+    (setq tab-always-indent 'complete)
+    :bind
+    (:map corfu-map
+          ("TAB" . corfu-next)
+          ([tab] . corfu-next)
+          ("S-TAB" . corfu-previous)
+          ([backtab] . corfu-previous)
+          ("C-j" . corfu-next)
+          ("C-k" . corfu-previous)
+          ("RET" . corfu-insert)
+          ("M-d" . corfu-popupinfo-toggle)
+          ("M-p" . corfu-popupinfo-scroll-up)
+          ("M-n" . corfu-popupinfo-scroll-down))
     :config
     (corfu-popupinfo-mode 1)
     (corfu-history-mode 1)
     (keymap-global-set "C-SPC" #'completion-at-point)
 
-    ;; Use orderless for Eglot completion
+    ;; Orderless for Eglot/LSP completions
     (setq completion-category-overrides
           '((eglot (styles orderless))
-            (eglot-capf (styles orderless))))
+            (eglot-capf (styles orderless))
+            (lsp-capf (styles orderless))))
 
     (with-eval-after-load 'savehist
       (add-to-list 'savehist-additional-variables 'corfu-history)))
 
-    ;; Pretty icons for Corfu
-    (use-package nerd-icons-corfu
-      :after corfu
-      :config
-      (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
+  ;; Pretty icons for Corfu
+  (use-package nerd-icons-corfu
+    :after corfu
+    :config
+    (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
 #+end_src
 
 * Development Tools
@@ -828,21 +889,31 @@ Sets up the popup, cycling, and integration with icons.
   (use-package cape
     :ensure t
     :init
-    ;; Global fallbacks used in non-LSP buffers
-    (add-hook 'completion-at-point-functions #'cape-dabbrev)
-    (add-hook 'completion-at-point-functions #'cape-file)
-    (add-hook 'completion-at-point-functions #'cape-keyword)
-    :config
-    ;; In Eglot buffers: mark the LSP capf as non-exclusive so tempel/file/dabbrev
-    ;; can also contribute without interfering with Eglot's async completion.
-    (defun my/eglot-capf-setup ()
-      (setq-local completion-at-point-functions
-                  (list (cape-wrap-nonexclusive #'eglot-completion-at-point)
-                        #'tempel-expand
-                        #'cape-file
-                        #'cape-dabbrev)))
-    (add-hook 'eglot-managed-mode-hook #'my/eglot-capf-setup)
+    ;; Wrap Eglot completion globally (Doom-style)
+    ;; This prevents the "invalid-function" error with Company-specific properties
+    (advice-add #'eglot-completion-at-point :around #'cape-wrap-noninterruptible)
+    (advice-add #'eglot-completion-at-point :around #'cape-wrap-nonexclusive)
 
+    ;; Wrap comint and pcomplete for better shell/REPL completion
+    (advice-add #'comint-completion-at-point :around #'cape-wrap-nonexclusive)
+    (advice-add #'pcomplete-completions-at-point :around #'cape-wrap-nonexclusive)
+
+    ;; Add CAPFs buffer-locally with proper ordering (higher = higher priority)
+    ;; File completion in prog modes (depth -10 = lower priority than LSP)
+    (add-hook 'prog-mode-hook
+              (lambda () (add-hook 'completion-at-point-functions #'cape-file -10 t)))
+
+    ;; Dabbrev as fallback in most buffers (depth 20 = low priority fallback)
+    (dolist (hook '(prog-mode-hook text-mode-hook conf-mode-hook comint-mode-hook))
+      (add-hook hook (lambda () (add-hook 'completion-at-point-functions #'cape-dabbrev 20 t))))
+
+    ;; Elisp blocks in org/markdown
+    (add-hook 'org-mode-hook
+              (lambda () (add-hook 'completion-at-point-functions #'cape-elisp-block 0 t)))
+    (add-hook 'markdown-mode-hook
+              (lambda () (add-hook 'completion-at-point-functions #'cape-elisp-block 0 t)))
+
+    :config
     (setq pcomplete-ignore-case t)
     (setq cape-dabbrev-check-other-buffers t))
 #+end_src
@@ -974,46 +1045,96 @@ A modern, polished Dired experience that can replace Treemacs.
                    (hl-line-mode 1)))))
 
    ;; 3. Search function for Consult (simplified to avoid macro expansion issues)
-   (defun my/consult-flymake-project ()
-     "Search project errors via Consult, extracting data from Flymake."
-     (interactive)
-     (flymake-show-project-diagnostics)
-     (let ((diag-buffer (get-buffer "*Flymake diagnostics*")))
-       (if (not diag-buffer)
-           (message "Please wait... Eglot is still indexing errors.")
-         (with-current-buffer diag-buffer
-           (let ((entries-raw (if (functionp tabulated-list-entries)
-                                  (funcall tabulated-list-entries)
-                                tabulated-list-entries))
-                 candidates)
-             (dolist (entry entries-raw)
-               (let* ((diag (car entry))
-                      (buffer (flymake-diagnostic-buffer diag)))
-                 (when (buffer-live-p buffer)
-                   (let* ((line (line-number-at-pos (flymake-diagnostic-beg diag)))
-                          (type (flymake-diagnostic-type diag))
-                          (text (flymake-diagnostic-text diag))
-                          (file (buffer-name buffer))
-                          (face (flymake-diagnostic-type-face type))
-                          (type-str (propertize (symbol-name type) 'face face))
-                          (cand-str (format "%-20s %-8s %s"
-                                            (propertize file 'face 'font-lock-variable-name-face)
-                                            type-str
-                                            (propertize text 'face 'shadow))))
-                     (push (propertize cand-str
-                                       'consult--candidate
-                                       (cons (set-marker (make-marker) (flymake-diagnostic-beg diag)) buffer))
-                           candidates)))))
-             (if candidates
-                 (consult--read (nreverse candidates)
-                                :prompt "Project Issues: "
-                                :category 'consult-location
-                                :sort nil
-                                :lookup #'consult--lookup-candidate)
-               (message "No errors found in project.")))))))
+    (defun my/consult-flymake-project ()
+      "Search project errors via Consult, extracting data from Flymake."
+      (interactive)
+      (flymake-show-project-diagnostics)
+      (let ((diag-buffer (get-buffer "*Flymake diagnostics*")))
+        (if (not diag-buffer)
+            (message "Please wait... Eglot is still indexing errors.")
+          (with-current-buffer diag-buffer
+            (let ((entries-raw (if (functionp tabulated-list-entries)
+                                   (funcall tabulated-list-entries)
+                                 tabulated-list-entries))
+                  candidates)
+              (dolist (entry entries-raw)
+                (let* ((diag (car entry))
+                       (buffer (flymake-diagnostic-buffer diag)))
+                  (when (buffer-live-p buffer)
+                    (let* ((line (line-number-at-pos (flymake-diagnostic-beg diag)))
+                           (type (flymake-diagnostic-type diag))
+                           (text (flymake-diagnostic-text diag))
+                           (file (buffer-name buffer))
+                           (face (flymake-diagnostic-type-face type))
+                           (type-str (propertize (symbol-name type) 'face face))
+                           (cand-str (format "%-20s %-8s %s"
+                                             (propertize file 'face 'font-lock-variable-name-face)
+                                             type-str
+                                             (propertize text 'face 'shadow))))
+                      (push (propertize cand-str
+                                        'consult--candidate
+                                        (cons (set-marker (make-marker) (flymake-diagnostic-beg diag)) buffer))
+                            candidates)))))
+              (if candidates
+                  (consult--read (nreverse candidates)
+                                 :prompt "Project Issues: "
+                                 :category 'consult-location
+                                 :sort nil
+                                 :lookup #'consult--lookup-candidate)
+                (message "No errors found in project.")))))))
 
- #+end_src
-** Tree-Sitter Configuration
+   #+end_src
+
+** SQL
+   #+begin_src emacs-lisp
+    ;; 1. Global path fix for Org-Babel
+    (setq sql-postgres-program "psql")
+
+    (use-package sql
+      :ensure nil
+      :config
+      ;; 2. Ensure Org-mode uses 'postgres' engine for both names
+      (with-eval-after-load 'sql
+        (unless (assoc 'postgresql sql-product-alist)
+          (add-to-list 'sql-product-alist
+                       '(postgresql :name "PostgreSQL"
+                                    :font-lock sql-mode-postgres-font-lock-keywords
+                                    :sqli-program "psql"
+                                    :sqli-options sql-postgres-options
+                                    :sqli-login sql-postgres-login-params
+                                    :sqli-comint-regexp "^[[:alnum:]_]*=[#>] "))))
+
+            ;; 4. SMART COMPLETION: Enable SQL completion directly in Org blocks
+      (defun my/org-babel-sql-completion ()
+        "Enable SQL completion at point if inside a SQL source block."
+        (when (org-in-src-block-p)
+          (let ((lang (nth 0 (org-babel-get-src-block-info))))
+            (when (string= lang "sql")
+              (add-hook 'completion-at-point-functions #'sql-comint-completion-at-point nil t)))))
+
+      (add-hook 'org-mode-hook #'my/org-babel-sql-completion)
+
+      ;; 5. Built-in SQL completion for interactive sessions (buffer-local, preserves order)
+      (add-hook 'sql-interactive-mode-hook
+                (lambda ()
+                  (add-hook 'completion-at-point-functions #'sql-comint-completion-at-point 10 t))))
+
+    ;; 6. LSP support for SQL files via sqls
+    ;; Install: go install github.com/sqls-server/sqls@latest
+    ;; Config: ~/.config/sqls/config.yml with connection info
+    (with-eval-after-load 'eglot
+      (add-to-list 'eglot-server-programs
+                   '(sql-mode . ("sqls"))))
+
+    (add-hook 'sql-mode-hook #'eglot-ensure)
+
+    (use-package sql-indent
+      :ensure t
+      :after sql)
+   #+end_src
+
+   ** Tree-Sitter Configuration
+
  Configure Tree-sitter for better syntax highlighting and ensure grammars are installed.
 
  #+begin_src emacs-lisp
@@ -1309,6 +1430,8 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
                     ("TAB" . my/org-tab-dwim))
         :config
         (require 'org-tempo)
+        ;; Disable persistent cache to fix "Got element without parent" warnings
+        (setq org-element-use-cache nil)
         (setq org-ellipsis " ▾"
               org-hide-emphasis-markers t
               org-src-fontify-natively t
@@ -1342,7 +1465,8 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
         (set-face-attribute face nil :inherit 'fixed-pitch))
 
       (use-package ob-mermaid :ensure t :after org
-        :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (emacs-lisp . t))))
+        :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (sql . t) (emacs-lisp . t))))
+
 
       (use-package org-roam
         :ensure t
@@ -1367,7 +1491,24 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
 #+begin_src emacs-lisp
   (use-package docker
     :ensure t
-    :commands docker)
+    :commands (docker docker-compose)
+    :init
+    (setq docker-command "podman")
+    (setq docker-docker-path "podman")
+    (setq docker-compose-command "podman compose")
+    (setq docker-container-tramp-method "podman")
+    
+    (let ((uid (number-to-string (user-uid))))
+      (setenv "DOCKER_HOST" (concat "unix:///run/user/" uid "/podman/podman.sock"))
+      ;; Explicitly set the command with the socket path to avoid any environment issues
+      (setq docker-compose-command (concat "DOCKER_HOST=unix:///run/user/" uid "/podman/podman.sock podman compose")))
+    
+    :config
+    ;; Podman network ls doesn't support the 'Scope' field in older versions
+    (setq docker-network-columns
+          '((:name "Network ID" :width 20 :template "{{ json .ID }}" :sort nil :format nil)
+            (:name "Name" :width 50 :template "{{ json .Name }}" :sort nil :format nil)
+            (:name "Driver" :width 10 :template "{{ json .Driver }}" :sort nil :format nil))))
 
   (use-package kubernetes
     :ensure t
@@ -1742,6 +1883,7 @@ Module for subtle coverage visualization.
   (my/bind-leader "o t h" 'my/open-terminal-here "here")
   (my/bind-leader "o t p" 'my/open-terminal-in-project "project")
   (my/bind-leader "o d" 'docker "docker TUI")
+  (my/bind-leader "o C" 'docker-compose "docker compose")
   (my/bind-leader "o k" 'kubernetes "kubernetes TUI")
 
   ;; --- Project (p) ---

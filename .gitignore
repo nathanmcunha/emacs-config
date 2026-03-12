@@ -20,3 +20,5 @@ config.el
 
 # Project specific
 .aider*
+.gemini/
+gha-creds-*.json
