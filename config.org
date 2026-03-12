@@ -1107,6 +1107,11 @@ A modern, polished Dired experience that can replace Treemacs.
     (use-package sql
       :ensure nil
       :config
+      ;; Load external connections if the file exists
+      (let ((sql-file (expand-file-name "sql-connections.el" user-emacs-directory)))
+        (when (file-exists-p sql-file)
+          (load sql-file)))
+
       ;; 2. Ensure Org-mode uses 'postgres' engine for both names
       (with-eval-after-load 'sql
         (unless (assoc 'postgresql sql-product-alist)

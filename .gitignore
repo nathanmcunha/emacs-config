@@ -22,3 +22,4 @@ config.el
 .aider*
 .gemini/
 gha-creds-*.json
+sql-connections.el
