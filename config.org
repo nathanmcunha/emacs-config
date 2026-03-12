@@ -89,23 +89,37 @@
     (message "Copied '%s' to '%s'" filename new-name)))
 
 (defun my/move-this-file ()
-  "Move/rename the current file to a new location."
+  "Move or rename the current file to NEW-PATH."
   (interactive)
-  (let* ((filename (buffer-file-name))
-         (new-name (read-file-name "Move file to: " filename)))
-    (rename-file filename new-name 1)
-    (find-file new-name)
-    (set-visited-file-name new-name)
-    (message "Moved '%s' to '%s'" filename new-name)))
+  (let* ((old-path (buffer-file-name))
+         (new-path (read-file-name "Move file to: " old-path)))
+    (if (not (and old-path (file-exists-p old-path)))
+        (user-error "Buffer is not visiting any file")
+      (let ((new-path (expand-file-name new-path)))
+        (make-directory (file-name-directory new-path) t)
+        (rename-file old-path new-path 1)
+        (set-visited-file-name new-path t t)
+        (message "File moved to %s" new-path)))))
 
 (defun my/delete-this-file ()
   "Delete the current file and kill its buffer."
   (interactive)
-  (let ((filename (buffer-file-name)))
-    (when (and filename (y-or-n-p (format "Really delete '%s'?" filename)))
-      (delete-file filename)
-      (kill-current-buffer)
-      (message "Deleted '%s'" filename))))
+  (let ((path (buffer-file-name)))
+    (unless (and path (file-exists-p path))
+      (user-error "Buffer is not visiting any file"))
+    (when (y-or-n-p (format "Really delete %S?" (file-name-nondirectory path)))
+      (delete-file path)
+      (kill-buffer (current-buffer))
+      (message "File deleted: %s" path))))
+
+(defun my/create-file (filename)
+  "Create a new file named FILENAME."
+  (interactive "FCreate file: ")
+  (if (file-exists-p filename)
+      (find-file filename)
+    (write-region "" nil filename)
+    (find-file filename)
+    (message "Created file: %s" filename)))
 
 (defun my/copy-file-path ()
   "Copy the current file's path to the kill ring."
@@ -1829,10 +1843,13 @@ Module for subtle coverage visualization.
   ;; --- File (f) ---
   (my/bind-leader "f f" 'my/project-find-file "find file in project")
   (my/bind-leader "f F" 'find-file "find file anywhere")
+  (my/bind-leader "f n" 'my/create-file "new file")
+  (my/bind-leader "f c" 'my/copy-this-file "copy file")
   (my/bind-leader "f r" 'consult-recent-file "recent files")
   (my/bind-leader "f s" 'dirvish-side "sidebar")
   (my/bind-leader "f S" 'write-file "save as...")
   (my/bind-leader "f R" 'my/move-this-file "rename/move file")
+  (my/bind-leader "f d" 'my/delete-this-file "delete file")
   (my/bind-leader "f D" 'my/delete-this-file "delete file")
   (my/bind-leader "f y" 'my/copy-file-path "copy file path")
   (my/bind-leader "f Y" 'my/copy-file-path-relative-to-project "copy relative path")
