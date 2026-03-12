@@ -359,7 +359,7 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
         (let ((default-directory root)) (compile cmd)))))
 #+end_src
 
-** Workspaces (Tab-bar)
+** Tab-bar(simulating workspaces)
 #+begin_src emacs-lisp
   (use-package tab-bar
     :ensure nil
@@ -446,6 +446,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
   (use-package exec-path-from-shell
     :ensure t
     :config
+    (add-to-list 'exec-path (expand-file-name "~/.local/bin") t)
     (when (or (display-graphic-p) (daemonp))
       (exec-path-from-shell-initialize)))
 #+end_src
@@ -762,19 +763,57 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     :config
     (defun my/orderless-dispatch (pattern _index _total)
       (cond
+       ;; Standard dispatchers
        ((string-prefix-p "!" pattern) `(orderless-without-literal . ,(substring pattern 1)))
        ((string-suffix-p "=" pattern) `(orderless-literal . ,(substring pattern 0 -1)))
        ((string-prefix-p "," pattern) `(orderless-initialism . ,(substring pattern 1)))
-       ((string-suffix-p "~" pattern) `(orderless-flex . ,(substring pattern 0 -1)))))
+       ((string-suffix-p "~" pattern) `(orderless-flex . ,(substring pattern 0 -1)))
+       ;; New: Anchor dispatchers
+       ((string-prefix-p "^" pattern) `(orderless-regexp . ,(concat "^" (substring pattern 1))))
+       ((string-suffix-p "$" pattern) `(orderless-regexp . ,(concat (substring pattern 0 -1) "$")))))
     (setq orderless-style-dispatchers '(my/orderless-dispatch)))
 
   (use-package marginalia
+    :ensure t
     :after vertico
     :custom
     (marginalia-max-relative-age 0)
     (marginalia-align 'right)
     :init (marginalia-mode)
-    :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle)))
+    :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle))
+    :config
+    ;; Custom simplified annotator for Buffers
+    (defun my/marginalia-annotate-buffer (cand)
+      (when-let (buffer (get-buffer cand))
+        (let* ((file (buffer-file-name buffer))
+               (type (cond (file "File")
+                           ((derived-mode-p 'dired-mode) "Dir")
+                           (t "Buf")))
+               ;; Get path relative to project or home
+               (path (if file
+                         (if-let ((project (project-current nil (file-name-directory file))))
+                             (file-relative-name file (project-root project))
+                           (abbreviate-file-name file))
+                       "")))
+          (marginalia--fields
+           (type :width 5 :face 'marginalia-type)
+           (path :face 'marginalia-file-name)))))
+
+    ;; Custom simplified annotator for Files (Recentf)
+    (defun my/marginalia-annotate-file (cand)
+      (let* ((path (if-let ((project (project-current nil (file-name-directory cand))))
+                       (file-relative-name cand (project-root project))
+                     (abbreviate-file-name cand))))
+        (marginalia--fields
+         ("File" :width 5 :face 'marginalia-type)
+         (path :face 'marginalia-file-name))))
+
+    ;; Register the custom annotators safely
+    (with-eval-after-load 'marginalia
+      (setq marginalia-annotator-alist
+            (append '((buffer . my/marginalia-annotate-buffer)
+                      (file . my/marginalia-annotate-file))
+                    (bound-and-true-p marginalia-annotator-alist)))))
 
   (use-package nerd-icons-completion
     :after marginalia
@@ -786,7 +825,6 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
 ** Consult & Embark
 #+begin_src emacs-lisp
   (use-package consult
-    :hook (completion-list-mode . consult-preview-at-point-mode)
     :init
     (setq register-preview-delay 0.5
           register-preview-function #'consult-register-format)
@@ -795,37 +833,50 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     (setq consult-narrow-key "<")
     (setq consult-widen-key ">")
     (setq consult-preview-key 'any)
-    (setq consult-project-function (lambda (_) (project-root (project-current)))))
-
-  (use-package consult-dir
-    :bind (("C-x C-d" . consult-dir)
-           :map minibuffer-local-completion-map
-           ("C-x C-d" . consult-dir)
-           ("C-x C-j" . consult-dir-jump-file)))
-
-  ;; Wgrep enables editing the results of grep/ripgrep
-  (use-package wgrep :ensure t)
-
-  (use-package embark
-    :ensure t
-    :bind
-    (("C-;" . embark-act)
-     ("C-:" . embark-dwim)
-     ("C-h B" . embark-bindings))
-    :init
-    (setq prefix-help-command #'embark-prefix-help-command)
+    (setq consult-project-function (lambda (_) (project-root (project-current))))
+    
+    ;; REMOVEMOS A LINHA :bind QUE CAUSAVA O ERRO
+    
     :config
-    (add-to-list 'display-buffer-alist
-                 '("\`\*Embark Collect \(Live\|Completions\)\*"
-                   nil
-                   (window-parameters (mode-line-format . none)))))
+    (defun my/consult-project-group (cand transform)
+      (if transform cand
+        (let* ((buffer (get-buffer cand))
+               (path (if buffer (buffer-local-value 'default-directory buffer) cand))
+               (proj (project-current nil (if (and path (file-directory-p path)) path (and path (file-name-directory path))))))
+          (if proj
+              (format "Project: %s" (file-name-nondirectory (directory-file-name (project-root proj))))
+            "No Project / Misc"))))
 
-  ;; Connect Embark and Consult
-  (use-package embark-consult
-    :ensure t
-    :hook
-    (embark-collect-mode . consult-preview-at-point-mode))
+    (consult-customize
+     consult-source-buffer :group #'my/consult-project-group
+     consult-source-recent-file :group #'my/consult-project-group))
+  
+      (use-package consult-dir
+        :bind (("C-x C-d" . consult-dir)
+               :map minibuffer-local-completion-map
+               ("C-x C-d" . consult-dir)
+               ("C-x C-j" . consult-dir-jump-file)))
 
+      ;; Wgrep enables editing the results of grep/ripgrep
+      (use-package wgrep :ensure t)
+
+    (use-package embark
+      :ensure t
+      :bind
+      (("C-;" . embark-act)
+       ("C-:" . embark-dwim)
+       ("C-h B" . embark-bindings))
+      :init
+      (setq prefix-help-command #'embark-prefix-help-command)
+      :config
+      (add-to-list 'display-buffer-alist
+                   '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
+                     nil
+                     (window-parameters (mode-line-format . none)))))
+
+    (use-package embark-consult
+      :ensure t
+      :after (embark consult)) 
 #+end_src
 
 * In-Buffer Completion (Corfu + Cape)
@@ -1018,13 +1069,14 @@ A modern, polished Dired experience that can replace Treemacs.
      (setq apheleia-log-only-errors nil)
      (setf (alist-get 'google-java-format apheleia-formatters)
            '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
-     ;; Define Ruff as the primary formatter for Python
-  (setf (alist-get 'ruff apheleia-formatters)
-        '("ruff" "format" "--stdin-filename" filepath "-"))
+     ;; Define Ruff as the primary formatter and import organizer for Python
+     ;; Use a custom command to run both 'check --fix' (for imports) and 'format'
+     (setf (alist-get 'ruff apheleia-formatters)
+           '("sh" "-c" "ruff check --fix --stdin-filename \"$0\" - | ruff format --stdin-filename \"$0\" -" filepath))
      (push '(java-mode . google-java-format) apheleia-mode-alist)
      (push '(java-ts-mode . google-java-format) apheleia-mode-alist)
      (push '(python-mode . ruff) apheleia-mode-alist)
-      (push '(python-ts-mode . ruff) apheleia-mode-alist))
+     (push '(python-ts-mode . ruff) apheleia-mode-alist))
 #+end_src
 
 ** Linting (Flymake)
@@ -1147,6 +1199,12 @@ A modern, polished Dired experience that can replace Treemacs.
 
     (add-hook 'sql-mode-hook #'eglot-ensure)
 
+    ;; 7. EXTRA COMPLETION (when not connected): Keywords and Snippets
+    (add-hook 'sql-mode-hook
+              (lambda ()
+                (add-hook 'completion-at-point-functions #'cape-keyword 10 t)
+                (add-hook 'completion-at-point-functions #'tempel-capf 10 t)))
+
     (use-package sql-indent
       :ensure t
       :after sql)
@@ -1218,11 +1276,7 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
       (setq eglot-max-file-watches 500000)
 
       (add-to-list 'eglot-server-programs
-      '((python-mode python-ts-mode) . ("pyright-langserver" "--stdio")))
-      
-      ;; Add Ruff LSP support using the built-in 'ruff server'
-      (add-to-list 'eglot-server-programs
-                   '((python-mode python-ts-mode) . ("ruff" "server")))
+                   '((python-mode python-ts-mode) . ("basedpyright-langserver" "--stdio")))
 
       (add-to-list 'eglot-server-programs
                    '(dockerfile-ts-mode . ("docker-langserver" "--stdio")))
@@ -1232,27 +1286,17 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
 
       ;; Optimized for "PyCharm" balance: Deep analysis without "Strict" noise
       (setq-default eglot-workspace-configuration
-      '(:python (:analysis (:typeCheckingMode "basic" ; Changed from strict to basic
-      :autoSearchPaths t
-      :useLibraryCodeForTypes t
-      :diagnosticMode "workspace"
-      :indexing t))
+      '(:python (:analysis (:typeCheckingMode "basic"
+                :autoSearchPaths t
+                :useLibraryCodeForTypes t
+                :diagnosticMode "openFilesOnly"
+                :indexing t
+                :autoImportCompletions t))
         :ruff (:line-length 88
                :lint (:enable t)
                :format (:enable t))
         :yaml (:schemas (:kubernetes "/*.yaml")
                :format (:enable t)))))
-
-      (use-package pet
-      :ensure t
-      :config
-      (add-hook 'python-base-mode-hook
-      (lambda ()
-      (setq-local python-shell-interpreter (or (pet-executable-find "python") "python3")
-      python-shell-virtualenv-root (pet-virtualenv-root))
-
-                ;; Ensure pet-eglot-setup runs to inject venv paths into Eglot
-                (pet-eglot-setup))))
     
 #+end_src
 ** Visual Wrapping (built-in Emacs 30)
@@ -1776,14 +1820,15 @@ Module for subtle coverage visualization.
 * Keybindings Configuration
 ** Centralized Leader Bindings
 #+begin_src emacs-lisp
-  (my/bind-leader "SPC" 'execute-extended-command "M-x")
+  (my/bind-leader "SPC" 'project-find-file "find file in project")
+  (my/bind-leader ":"   'execute-extended-command "M-x")
 
   ;; --- Help & Config (h) ---
   (my/bind-leader "h b i" 'my/emacs-build-info "Emacs build info")
   (my/bind-leader "h r r" (lambda () (interactive) (load-file user-init-file)) "reload config")
 
   ;; --- Buffer (b) ---
-  (my/bind-leader "."   'find-file "find file")
+  (my/bind-leader "."   'find-file "browse files")
   (my/bind-leader ","   'switch-to-buffer "switch buffer")
   (my/bind-leader "`"   'evil-switch-to-windows-last-buffer "last buffer")
 
@@ -1846,7 +1891,7 @@ Module for subtle coverage visualization.
   (my/bind-leader "E ." 'dirvish "current dir")
 
   ;; --- File (f) ---
-  (my/bind-leader "f f" 'my/project-find-file "find file in project")
+  (my/bind-leader "f f" 'find-file "find file")
   (my/bind-leader "f F" 'find-file "find file anywhere")
   (my/bind-leader "f n" 'my/create-file "new file")
   (my/bind-leader "f c" 'my/copy-this-file "copy file")
@@ -1969,3 +2014,4 @@ Module for subtle coverage visualization.
   (my/bind-leader ";"   'embark-act "act (embark)")
   (my/bind-leader "A"   'embark-act "actions (embark)")
 #+end_src
+
