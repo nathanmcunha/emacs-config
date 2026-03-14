@@ -648,6 +648,15 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
         undo-strong-limit 100663296 ;; 96mb
         undo-outer-limit 1006632960) ;; 960mb
 
+   (use-package undo-fu
+     :ensure t)
+
+   (use-package undo-fu-session
+     :ensure t
+     :init (undo-fu-session-global-mode)
+     :config
+     (setq undo-fu-session-incompatible-files '("/COMMIT_EDITMSG\\'" "/git-rebase-todo\\'")))
+
    (use-package vundo
      :ensure t
      :commands (vundo)
@@ -1225,13 +1234,16 @@ A modern, polished Dired experience that can replace Treemacs.
             (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")
             (python "https://github.com/tree-sitter/tree-sitter-python")
             (dockerfile "https://github.com/camdencheek/tree-sitter-dockerfile")
-            (yaml "https://github.com/ikatyang/tree-sitter-yaml")))
+            (yaml "https://github.com/ikatyang/tree-sitter-yaml")
+            (html "https://github.com/tree-sitter/tree-sitter-html")
+            (css "https://github.com/tree-sitter/tree-sitter-css")))
 
-   (defun my/install-java-tree-sitter ()
-     "Install the Java tree-sitter grammar."
-     (interactive)
-     (treesit-install-language-grammar 'java)
-     (message "Java grammar installed! Restart Emacs or reload the mode.")))
+    (defun my/install-all-treesit-grammars ()
+      "Install all configured Tree-sitter grammars."
+      (interactive)
+      (dolist (grammar treesit-language-source-alist)
+        (treesit-install-language-grammar (car grammar)))
+      (message "All Tree-sitter grammars installed! Restart Emacs or reload modes.")))
  #+end_src
 
 ** Java Development (Eglot + JDTLS)
@@ -1270,19 +1282,59 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
 
       (use-package eglot
       :ensure nil
-      :hook ((python-mode python-ts-mode) . eglot-ensure)
+      :init
+      ;; Ensure .yml and .yaml files trigger yaml-ts-mode
+      (add-to-list 'auto-mode-alist '("\\.ya?ml\\'" . yaml-ts-mode))
+      (add-to-list 'auto-mode-alist '("Dockerfile\\'" . dockerfile-ts-mode))
+
+      ;; Remap standard modes to Tree-sitter variants
+      (setq-default major-mode-remap-alist
+                    '((python-mode . python-ts-mode)
+                      (js-mode . js-ts-mode)
+                      (javascript-mode . js-ts-mode)
+                      (typescript-mode . typescript-ts-mode)
+                      (tsx-mode . tsx-ts-mode)
+                      (html-mode . html-ts-mode)
+                      (css-mode . css-ts-mode)
+                      (dockerfile-mode . dockerfile-ts-mode)
+                      (yaml-mode . yaml-ts-mode)))
+      :hook (((python-mode python-ts-mode) . eglot-ensure)
+             ((js-ts-mode js-mode javascript-mode) . eglot-ensure)
+             ((typescript-ts-mode typescript-mode tsx-ts-mode) . eglot-ensure)
+             ((html-ts-mode html-mode) . eglot-ensure)
+             ((css-ts-mode css-mode) . eglot-ensure)
+             ((dockerfile-ts-mode dockerfile-mode) . eglot-ensure)
+             ((yaml-ts-mode yaml-mode) . eglot-ensure))
       :config
       (setq jsonrpc-process-connection-timeout 120)
       (setq eglot-max-file-watches 500000)
 
+      ;; Community Standards for LSP Servers (Install via npm):
+      ;; npm install -g dockerfile-language-server-nodejs yaml-language-server typescript-language-server typescript vscode-langservers-extracted
+
+      ;; 1. Python: basedpyright (or pyright)
       (add-to-list 'eglot-server-programs
                    '((python-mode python-ts-mode) . ("basedpyright-langserver" "--stdio")))
 
+      ;; 2. JavaScript/TypeScript: typescript-language-server
       (add-to-list 'eglot-server-programs
-                   '(dockerfile-ts-mode . ("docker-langserver" "--stdio")))
+                   '((js-ts-mode js-mode javascript-mode typescript-ts-mode typescript-mode tsx-ts-mode) . ("typescript-language-server" "--stdio")))
 
+      ;; 3. HTML: vscode-html-language-server (from vscode-langservers-extracted)
       (add-to-list 'eglot-server-programs
-                   '(yaml-ts-mode . ("yaml-language-server" "--stdio")))
+                   '((html-ts-mode html-mode) . ("vscode-html-language-server" "--stdio")))
+
+      ;; 4. CSS: vscode-css-language-server (from vscode-langservers-extracted)
+      (add-to-list 'eglot-server-programs
+                   '((css-ts-mode css-mode) . ("vscode-css-language-server" "--stdio")))
+
+      ;; 5. Docker: docker-langserver (from dockerfile-language-server-nodejs)
+      (add-to-list 'eglot-server-programs
+                   '((dockerfile-ts-mode dockerfile-mode) . ("docker-langserver" "--stdio")))
+
+      ;; 6. YAML: yaml-language-server
+      (add-to-list 'eglot-server-programs
+                   '((yaml-ts-mode yaml-mode) . ("yaml-language-server" "--stdio")))
 
       ;; Optimized for "PyCharm" balance: Deep analysis without "Strict" noise
       (setq-default eglot-workspace-configuration
@@ -1295,7 +1347,8 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
         :ruff (:line-length 88
                :lint (:enable t)
                :format (:enable t))
-        :yaml (:schemas (:kubernetes "/*.yaml")
+        :yaml (:schemas (:kubernetes "/*.yaml"
+                         :http://json.schemastore.org/docker-compose "docker-compose.ya?ml")
                :format (:enable t)))))
     
 #+end_src
@@ -1576,10 +1629,6 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
   (use-package kubernetes
     :ensure t
     :commands kubernetes)
-
-  ;; Enable eglot automatically for these modes
-  (add-hook 'dockerfile-ts-mode-hook #'eglot-ensure)
-  (add-hook 'yaml-ts-mode-hook #'eglot-ensure)
 #+end_src
 
 ** Environment (Mise)
@@ -1860,7 +1909,7 @@ Module for subtle coverage visualization.
   (my/bind-leader "c j i" 'eglot-java-organize-imports "organize imports")
   (my/bind-leader "c j r" (lambda () (interactive) (call-interactively #'eglot-shutdown) (eglot-ensure)) "restart eglot")
   (my/bind-leader "c j t" #'java-ts-mode "switch to java-ts-mode")
-  (my/bind-leader "c j I" 'my/install-java-tree-sitter "install java grammar")
+  (my/bind-leader "c i t" 'my/install-all-treesit-grammars "install all ts grammars")
 
   ;; Java Coverage
   (my/bind-leader "c C t" 'my/java-coverage-toggle "toggle coverage lenses")

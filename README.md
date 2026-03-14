@@ -195,7 +195,7 @@ All keybindings use Doom-style leader keys:
 | `c j i` | `eglot-java-organize-imports` | Organize Imports |
 | `c j r` | `my/eglot-restart` | Restart LSP |
 | `c j t` | `java-ts-mode` | Switch to java-ts-mode |
-| `c j I` | `my/install-java-tree-sitter` | Install Java Grammar |
+| `c i t` | `my/install-all-treesit-grammars` | Install All TS Grammars |
 | `c C t` | `my/java-coverage-toggle` | Toggle Coverage |
 | `c C h` | `my/java-coverage-browse-report` | Open HTML Report |
 

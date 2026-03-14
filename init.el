@@ -84,7 +84,7 @@
   (setq evil-want-integration t)
   (setq evil-want-keybinding nil) ;; Required for evil-collection
   (setq evil-want-C-u-scroll t)
-  (setq evil-undo-system 'undo-redo)
+  (setq evil-undo-system 'undo-fu)
   :config
   (evil-mode 1)
   (setq evil-select-enable-clipboard t))
