@@ -38,11 +38,11 @@
      (indent-for-tab-command))))
 
  ;; --- Global and Evil Mapping ---
-(global-set-key (kbd "TAB") 'my/smart-tab-dwim)
+(keymap-global-set "TAB" #'my/smart-tab-dwim)
 
  ;; Ensure Evil Mode in Insert State uses this logic
   (with-eval-after-load 'evil
-    (define-key evil-insert-state-map (kbd "TAB") 'my/smart-tab-dwim))
+    (keymap-set evil-insert-state-map "TAB" #'my/smart-tab-dwim))
 
 ;; --- Doom-like "K" Documentation Lookup ---
 (defun my/smart-lookup ()
@@ -76,7 +76,7 @@
     (call-interactively #'evil-lookup))))
 
 (with-eval-after-load 'evil
-  (define-key evil-motion-state-map (kbd "K") #'my/smart-lookup))
+  (keymap-set evil-motion-state-map "K" #'my/smart-lookup))
 
 ;; Doom-like utility functions for file operations
 (defun my/copy-this-file ()
@@ -203,6 +203,9 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (set-fringe-mode 25)        ; Give some breathing room
     (menu-bar-mode -1)          ; Disable the menu bar
 
+    ;; Smooth pixel scrolling (Emacs 29+)
+    (pixel-scroll-precision-mode 1)
+
     ;; Fix frame gap and maximize for emacsclient (GNOME behavior)
     (setq frame-resize-pixelwise t)
     (add-to-list 'default-frame-alist '(fullscreen . maximized))
@@ -234,9 +237,9 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
       (add-hook mode (lambda () (display-line-numbers-mode 0))))
 
     ;; Zoom shortcuts
-    (global-set-key (kbd "C-=") 'text-scale-increase)
-    (global-set-key (kbd "C--") 'text-scale-decrease)
-    (global-set-key (kbd "C-0") 'text-scale-adjust)
+    (keymap-global-set "C-=" #'text-scale-increase)
+    (keymap-global-set "C--" #'text-scale-decrease)
+    (keymap-global-set "C-0" #'text-scale-adjust)
 
     (defun my/open-personal-folder()
       (interactive)
@@ -436,6 +439,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
 
 ** Which-Key
 #+begin_src emacs-lisp
+  ;; which-key is built-in since Emacs 30; :ensure nil avoids re-installing it via Elpaca.
   (use-package which-key
     :ensure nil
     :init (which-key-mode)
@@ -487,8 +491,8 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
                    (car popups))))
       (when next (display-buffer next))))
 
-  (global-set-key (kbd "C-`")   #'my/popup-toggle)
-  (global-set-key (kbd "M-`")   #'my/popup-cycle)
+  (keymap-global-set "C-`" #'my/popup-toggle)
+  (keymap-global-set "M-`" #'my/popup-cycle)
 #+end_src
 
 ** Window Placement Rules (display-buffer-alist)
@@ -539,7 +543,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     :ensure nil
     :after (evil)
     :config
-    (define-key evil-insert-state-map (kbd "j") 'my/evil-escape-jk)
+    (keymap-set evil-insert-state-map "j" #'my/evil-escape-jk)
     (setq evil-emacs-state-cursor    '("#649bce" box)
           evil-normal-state-cursor   '("#ebcb8b" box)
           evil-visual-state-cursor   '("#676f7d" box)
@@ -623,17 +627,17 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     :ensure t
     :after evil
     :config
-    (define-key evil-normal-state-map "gc" 'evilnc-comment-operator)
-    (define-key evil-visual-state-map "gc" 'evilnc-comment-operator)
-    (keymap-global-set "M-;" 'evilnc-comment-or-uncomment-lines))
+    (keymap-set evil-normal-state-map "gc" #'evilnc-comment-operator)
+    (keymap-set evil-visual-state-map "gc" #'evilnc-comment-operator)
+    (keymap-global-set "M-;" #'evilnc-comment-or-uncomment-lines))
 
   (use-package avy
     :ensure t
     :config
     (setq avy-timeout-seconds 0.3)
-    (define-key evil-normal-state-map (kbd "f") 'avy-goto-char-in-line)
-    (define-key evil-visual-state-map (kbd "f") 'avy-goto-char-in-line)
-    (define-key evil-motion-state-map "gs" 'avy-goto-char-2))
+    (keymap-set evil-normal-state-map "f" #'avy-goto-char-in-line)
+    (keymap-set evil-visual-state-map "f" #'avy-goto-char-in-line)
+    (keymap-set evil-motion-state-map "gs" #'avy-goto-char-2))
 #+end_src
 
 ** Undo System
@@ -728,7 +732,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
              (flymake-show-buffer-diagnostics)
            (message "Flymake not active")))
 
-       (define-key doom-modeline-mode-map (kbd "<mode-line> <flymake> <mouse-1>") 'my/doom-modeline-flymake-click))
+       (keymap-set doom-modeline-mode-map "<mode-line> <flymake> <mouse-1>" #'my/doom-modeline-flymake-click))
 
      ;; Ansi Colors for Compilation
      (use-package ansi-color
@@ -1100,33 +1104,31 @@ A modern, polished Dired experience that can replace Treemacs.
 ** Linting (Flymake)
  Configured for Eglot and Consult integration. Replaces Flycheck for consistency.
  #+begin_src emacs-lisp
-  ;; Simple flymake configuration - avoid eval-after-load to prevent macro expansion errors
   (add-hook 'prog-mode-hook #'flymake-mode)
 
   ;; Configure flymake when loaded
-  (eval-after-load 'flymake
-    '(progn
-       (setq flymake-fringe-indicator-position 'left-fringe)
+  (with-eval-after-load 'flymake
+    (setq flymake-fringe-indicator-position 'left-fringe)
 
-        ;; 1. Window Configuration (Clean Popup at Bottom)
-       (add-to-list 'display-buffer-alist
-                    '("\*Flymake diagnostics.*"
-                      (display-buffer-reuse-window display-buffer-in-side-window)
-                      (side . bottom)
-                      (slot . 0)
-                      (window-height . 0.25)
-                      (preserve-size . (nil . t))
-                      (window-parameters . ((no-other-window . nil)
-                                            (mode-line-format . none)))))
+    ;; 1. Window Configuration (Clean Popup at Bottom)
+    (add-to-list 'display-buffer-alist
+                 '("\*Flymake diagnostics.*"
+                   (display-buffer-reuse-window display-buffer-in-side-window)
+                   (side . bottom)
+                   (slot . 0)
+                   (window-height . 0.25)
+                   (preserve-size . (nil . t))
+                   (window-parameters . ((no-other-window . nil)
+                                         (mode-line-format . none)))))
 
-        ;; 2. Diagnostics buffer visuals
-       (add-hook 'flymake-project-diagnostics-mode-hook
-                 (lambda ()
-                   (setq header-line-format nil)
-                   (setq tabulated-list-use-header-line nil)
-                   (setq tabulated-list-gui-sort-indicator-mode nil)
-                   (display-line-numbers-mode 0)
-                   (hl-line-mode 1)))))
+    ;; 2. Diagnostics buffer visuals
+    (add-hook 'flymake-project-diagnostics-mode-hook
+              (lambda ()
+                (setq header-line-format nil)
+                (setq tabulated-list-use-header-line nil)
+                (setq tabulated-list-gui-sort-indicator-mode nil)
+                (display-line-numbers-mode 0)
+                (hl-line-mode 1))))
 
    ;; 3. Search function for Consult (simplified to avoid macro expansion issues)
     (defun my/consult-flymake-project ()
