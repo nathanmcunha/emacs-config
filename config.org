@@ -1080,12 +1080,21 @@ A modern, polished Dired experience that can replace Treemacs.
            '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
      ;; Define Ruff as the primary formatter and import organizer for Python
      ;; Use a custom command to run both 'check --fix' (for imports) and 'format'
+     ;; Custom Prettier using absolute path to avoid npx issues
+     (setf (alist-get 'prettier apheleia-formatters)
+           '("/home/nathanmcunha/.local/share/mise/installs/node/24.11.1/bin/prettier"
+             "--stdin-filepath" filepath))
      (setf (alist-get 'ruff apheleia-formatters)
            '("sh" "-c" "ruff check --fix --stdin-filename \"$0\" - | ruff format --stdin-filename \"$0\" -" filepath))
      (push '(java-mode . google-java-format) apheleia-mode-alist)
      (push '(java-ts-mode . google-java-format) apheleia-mode-alist)
      (push '(python-mode . ruff) apheleia-mode-alist)
-     (push '(python-ts-mode . ruff) apheleia-mode-alist))
+     (push '(python-ts-mode . ruff) apheleia-mode-alist)
+     (push '(js-ts-mode . prettier) apheleia-mode-alist)
+     (push '(typescript-ts-mode . prettier) apheleia-mode-alist)
+     (push '(tsx-ts-mode . prettier) apheleia-mode-alist)
+     (push '(html-ts-mode . prettier) apheleia-mode-alist)
+     (push '(css-ts-mode . prettier) apheleia-mode-alist))
 #+end_src
 
 ** Linting (Flymake)
@@ -1270,8 +1279,8 @@ A modern, polished Dired experience that can replace Treemacs.
   (setq eglot-java-user-init-opts-fn 'my/eglot-java-init-opts))
   #+end_src
 
-** Python Development (Eglot + Pyright + Ruff)
-This configuration ensures that Eglot communicates with Pyright using strict type checking while pet.el handles your virtual environments and Ruff handles your linting.
+** Modern Web & Polyglot Development (Eglot)
+This configuration provides a high-performance, industry-standard LSP experience for Python, JavaScript, HTML, CSS, and more.
 
 #+begin_src emacs-lisp
     (with-eval-after-load 'project
@@ -1280,7 +1289,7 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
       (add-to-list 'project-vc-extra-root-markers "requirements.txt")
       (add-to-list 'project-vc-extra-root-markers ".venv"))
 
-      (use-package eglot
+    (use-package eglot
       :ensure nil
       :init
       ;; Ensure .yml and .yaml files trigger yaml-ts-mode
@@ -1298,33 +1307,34 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
                       (css-mode . css-ts-mode)
                       (dockerfile-mode . dockerfile-ts-mode)
                       (yaml-mode . yaml-ts-mode)))
-      :hook (((python-mode python-ts-mode) . eglot-ensure)
-             ((js-ts-mode js-mode javascript-mode) . eglot-ensure)
-             ((typescript-ts-mode typescript-mode tsx-ts-mode) . eglot-ensure)
-             ((html-ts-mode html-mode) . eglot-ensure)
-             ((css-ts-mode css-mode) . eglot-ensure)
-             ((dockerfile-ts-mode dockerfile-mode) . eglot-ensure)
-             ((yaml-ts-mode yaml-mode) . eglot-ensure))
+      :hook (((python-ts-mode
+               js-ts-mode
+               typescript-ts-mode
+               tsx-ts-mode
+               html-ts-mode
+               css-ts-mode
+               dockerfile-ts-mode
+               yaml-ts-mode) . eglot-ensure))
       :config
       (setq jsonrpc-process-connection-timeout 120)
       (setq eglot-max-file-watches 500000)
 
       ;; Community Standards for LSP Servers (Install via npm):
-      ;; npm install -g dockerfile-language-server-nodejs yaml-language-server typescript-language-server typescript vscode-langservers-extracted
+      ;; npm install -g dockerfile-language-server-nodejs yaml-language-server typescript-language-server typescript vscode-langservers-extracted prettier
 
       ;; 1. Python: basedpyright (or pyright)
       (add-to-list 'eglot-server-programs
                    '((python-mode python-ts-mode) . ("basedpyright-langserver" "--stdio")))
 
-      ;; 2. JavaScript/TypeScript: typescript-language-server
+      ;; 2. JavaScript/TypeScript: typescript-language-server (Community Industry Standard)
       (add-to-list 'eglot-server-programs
                    '((js-ts-mode js-mode javascript-mode typescript-ts-mode typescript-mode tsx-ts-mode) . ("typescript-language-server" "--stdio")))
 
-      ;; 3. HTML: vscode-html-language-server (from vscode-langservers-extracted)
+      ;; 3. HTML: vscode-html-language-server (Industry Standard from VS Code)
       (add-to-list 'eglot-server-programs
                    '((html-ts-mode html-mode) . ("vscode-html-language-server" "--stdio")))
 
-      ;; 4. CSS: vscode-css-language-server (from vscode-langservers-extracted)
+      ;; 4. CSS: vscode-css-language-server (Industry Standard from VS Code)
       (add-to-list 'eglot-server-programs
                    '((css-ts-mode css-mode) . ("vscode-css-language-server" "--stdio")))
 
@@ -1350,7 +1360,6 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
         :yaml (:schemas (:kubernetes "/*.yaml"
                          :http://json.schemastore.org/docker-compose "docker-compose.ya?ml")
                :format (:enable t)))))
-    
 #+end_src
 ** Visual Wrapping (built-in Emacs 30)
  Improves reading of long lines in code buffers, maintaining visual indentation.
@@ -1371,6 +1380,15 @@ This configuration ensures that Eglot communicates with Pyright using strict typ
         (setq electric-pair-inhibit-predicate
               `(lambda (c)
                  (if (char-equal c ?<) t (electric-pair-default-inhibit c)))))
+#+end_src
+
+** Web Development Tools
+#+begin_src emacs-lisp
+  (use-package emmet-mode
+    :ensure t
+    :hook ((html-ts-mode css-ts-mode js-ts-mode tsx-ts-mode) . emmet-mode)
+    :config
+    (setq emmet-move-cursor-between-quotes t))
 #+end_src
 
 ** AI Code Assistant (agent-shell)
