@@ -66,7 +66,6 @@
 ;; uses Elpaca version, not built-in Emacs version.
 (elpaca org
   (require 'org))
-
 ;; --- CORE PACKAGES (init.el) ---
 
 ;; 1. Diminish

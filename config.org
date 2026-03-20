@@ -442,14 +442,15 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     :config
     (setq which-key-idle-delay 0.3))
 
-  ;; Inherit shell PATH so mise shims (python, pyright, etc.) are visible in GUI Emacs.
-  (use-package exec-path-from-shell
-    :ensure t
-    :config
-    (add-to-list 'exec-path (expand-file-name "~/.local/bin") t)
-    (when (or (display-graphic-p) (daemonp))
-      (exec-path-from-shell-initialize)))
 #+end_src
+
+  # ;; Inherit shell PATH so mise shims (python, pyright, etc.) are visible in GUI Emacs.
+  # (use-package exec-path-from-shell
+  #   :ensure t
+  #   :config
+  #   (add-to-list 'exec-path (expand-file-name "~/.local/bin") t)
+  #   (when (or (display-graphic-p) (daemonp))
+  #     (exec-path-from-shell-initialize)))
 
 * Window Management (Popups & Rules)
 ** Popup Windows (built-in toggle)
@@ -843,9 +844,9 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     (setq consult-widen-key ">")
     (setq consult-preview-key 'any)
     (setq consult-project-function (lambda (_) (project-root (project-current))))
-    
+
     ;; REMOVEMOS A LINHA :bind QUE CAUSAVA O ERRO
-    
+
     :config
     (defun my/consult-project-group (cand transform)
       (if transform cand
@@ -859,7 +860,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     (consult-customize
      consult-source-buffer :group #'my/consult-project-group
      consult-source-recent-file :group #'my/consult-project-group))
-  
+
       (use-package consult-dir
         :bind (("C-x C-d" . consult-dir)
                :map minibuffer-local-completion-map
@@ -885,7 +886,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
 
     (use-package embark-consult
       :ensure t
-      :after (embark consult)) 
+      :after (embark consult))
 #+end_src
 
 * In-Buffer Completion (Corfu + Cape)
@@ -995,7 +996,7 @@ Sets up the popup, cycling, and integration with icons.
 ** Spell Checking and Dictionary (Jinx + Cape-Dict)
 #+begin_src emacs-lisp :tangle yes
   (use-package jinx
-    :ensure t
+    :ensure nil
     :hook (prog-mode . jinx-mode)
     :hook (text-mode . jinx-mode)
     :hook (org-mode . jinx-mode)
@@ -1077,13 +1078,12 @@ A modern, polished Dired experience that can replace Treemacs.
     :config
      (setq apheleia-log-only-errors nil)
      (setf (alist-get 'google-java-format apheleia-formatters)
-           '("/home/nathanmcunha/.local/bin/google-java-format" "-"))
+           '("google-java-format" "-"))
      ;; Define Ruff as the primary formatter and import organizer for Python
      ;; Use a custom command to run both 'check --fix' (for imports) and 'format'
      ;; Custom Prettier using absolute path to avoid npx issues
      (setf (alist-get 'prettier apheleia-formatters)
-           '("/home/nathanmcunha/.local/share/mise/installs/node/24.11.1/bin/prettier"
-             "--stdin-filepath" filepath))
+           '("prettier" "--stdin-filepath" filepath))
      (setf (alist-get 'ruff apheleia-formatters)
            '("sh" "-c" "ruff check --fix --stdin-filename \"$0\" - | ruff format --stdin-filename \"$0\" -" filepath))
      (push '(java-mode . google-java-format) apheleia-mode-alist)
@@ -1631,12 +1631,12 @@ This configuration provides a high-performance, industry-standard LSP experience
     (setq docker-docker-path "podman")
     (setq docker-compose-command "podman compose")
     (setq docker-container-tramp-method "podman")
-    
+
     (let ((uid (number-to-string (user-uid))))
       (setenv "DOCKER_HOST" (concat "unix:///run/user/" uid "/podman/podman.sock"))
       ;; Explicitly set the command with the socket path to avoid any environment issues
       (setq docker-compose-command (concat "DOCKER_HOST=unix:///run/user/" uid "/podman/podman.sock podman compose")))
-    
+
     :config
     ;; Podman network ls doesn't support the 'Scope' field in older versions
     (setq docker-network-columns
@@ -1649,12 +1649,14 @@ This configuration provides a high-performance, industry-standard LSP experience
     :commands kubernetes)
 #+end_src
 
-** Environment (Mise)
+** Environment (direnv)
+Per-project environment activation via direnv. Works with both Nix flakes and mise projects.
+Each project needs a ~.envrc~ file (~use flake~ for Nix, or ~mise direnv activate~ for mise).
+
 #+begin_src emacs-lisp
-  (use-package mise
+  (use-package envrc
     :ensure t
-    :hook (after-init . global-mise-mode)
-    :config (add-to-list 'exec-path (expand-file-name "~/.local/bin")))
+    :hook (after-init . envrc-global-mode))
 #+end_src
 
 ** Debugging (DAPE)
@@ -1880,7 +1882,7 @@ Module for subtle coverage visualization.
   ;; Integração com Evil-mode: garante que as teclas passem para o terminal
   (setq eat-kill-buffer-on-exit t)
   (setq eat-enable-mouse t)
-  
+
   ;; Adiciona o Eat à lista de modos que não exibem números de linha
   (add-hook 'eat-mode-hook (lambda () (display-line-numbers-mode 0))))
 #+end_src
