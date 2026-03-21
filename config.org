@@ -1422,6 +1422,8 @@ This configuration provides a high-performance, industry-standard LSP experience
   ;; Optionally define a repeat map so that "M" will cycle thru Claude auto-accept/plan/confirm modes after invoking claude-code-cycle-mode / C-c M.
   :bind
   (:repeat-map my-claude-code-map ("M" . claude-code-cycle-mode)))
+
+(elpaca-wait)
 #+end_src
 *** AI Code Assistant (agent-shell)
 #+begin_src emacs-lisp
