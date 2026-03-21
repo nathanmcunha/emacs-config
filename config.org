@@ -1392,7 +1392,38 @@ This configuration provides a high-performance, industry-standard LSP experience
     (setq emmet-move-cursor-between-quotes t))
 #+end_src
 
-** AI Code Assistant (agent-shell)
+** AI Tools
+** Claude 
+#+begin_src emacs-lisp
+;; install required inheritenv dependency:
+(use-package inheritenv
+  :vc (:url "https://github.com/purcell/inheritenv" :rev :newest))
+
+;; for eat terminal backend:
+(use-package eat :ensure t)
+
+;; for vterm terminal backend:
+(use-package vterm
+  :ensure t
+  :init
+  (setq vterm-always-compile-module t))
+
+;; install claude-code.el
+(use-package claude-code :ensure t
+  :vc (:url "https://github.com/stevemolitor/claude-code.el" :rev :newest)
+  :config
+  ;; optional IDE integration with Monet
+  (add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
+  (monet-mode 1)
+
+  (claude-code-mode)
+  :bind-keymap ("C-c c" . claude-code-command-map)
+
+  ;; Optionally define a repeat map so that "M" will cycle thru Claude auto-accept/plan/confirm modes after invoking claude-code-cycle-mode / C-c M.
+  :bind
+  (:repeat-map my-claude-code-map ("M" . claude-code-cycle-mode)))
+#+end_src
+*** AI Code Assistant (agent-shell)
 #+begin_src emacs-lisp
   (use-package shell-maker
     :ensure t
