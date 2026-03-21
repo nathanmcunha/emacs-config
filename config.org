@@ -157,7 +157,7 @@
     (message "Killed other buffers"))
 
 ;; Terminal Launchers
-(defun my/launch-alacritty (dir) (call-process-shell-command (format "alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
+(defun my/launch-alacritty (dir) (call-process-shell-command (format " /usr/local/bin/alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
 
 (defun my/open-terminal-here () (interactive) (my/launch-alacritty default-directory))
 (defun my/open-terminal-in-project ()
@@ -378,8 +378,8 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
    (use-package server
      :ensure nil
      :config
-     (unless (or (daemonp) (server-running-p))
-       (server-start)))
+     (unless (server-running-p))
+       (server-start))
 
    ;; Repeat Mode (Emacs 28+) - Repeat commands without prefix keys
    (repeat-mode 1)
@@ -994,9 +994,10 @@ Sets up the popup, cycling, and integration with icons.
 #+end_src
 
 ** Spell Checking and Dictionary (Jinx + Cape-Dict)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp :tangle no
   (use-package jinx
     :ensure nil
+    :defer t
     :hook (prog-mode . jinx-mode)
     :hook (text-mode . jinx-mode)
     :hook (org-mode . jinx-mode)
@@ -1977,9 +1978,9 @@ Module for subtle coverage visualization.
   (my/bind-leader "f E" (lambda () (interactive) (dired (expand-file-name user-emacs-directory))) "browse emacs.d")
 
   ;; --- Spell & Language (S) ---
-  (my/bind-leader "S s" 'jinx-correct "correct word")
-  (my/bind-leader "S t" 'my/spell-toggle-lang "toggle lang (EN/PT)")
-  (my/bind-leader "S l" 'jinx-languages "select languages")
+;;  (my/bind-leader "S s" 'jinx-correct "correct word")
+ ;; (my/bind-leader "S t" 'my/spell-toggle-lang "toggle lang (EN/PT)")
+  ;;(my/bind-leader "S l" 'jinx-languages "select languages")
 
   ;; --- Go to (g) ---
   (my/bind-leader "g s" 'magit-status "magit status")
