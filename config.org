@@ -1399,7 +1399,42 @@ This configuration provides a high-performance, industry-standard LSP experience
   :vc (:url "https://github.com/purcell/inheritenv" :rev :newest))
 
 ;; for eat terminal backend:
-(use-package eat :ensure t)
+(use-package eat
+  :ensure t
+  :custom
+  ;; Report as xterm-256color for better app compatibility (htop, vim, ncurses)
+  (eat-term-name "xterm-256color")
+  :config
+  ;; Solarized Light ANSI palette — mirrors ~/.config/alacritty/themes/themes/solarized_light.toml
+  ;; Normal (0-7)
+  (set-face-attribute 'eat-term-color-0  nil :foreground "#073642")  ; black
+  (set-face-attribute 'eat-term-color-1  nil :foreground "#dc322f")  ; red
+  (set-face-attribute 'eat-term-color-2  nil :foreground "#859900")  ; green
+  (set-face-attribute 'eat-term-color-3  nil :foreground "#b58900")  ; yellow
+  (set-face-attribute 'eat-term-color-4  nil :foreground "#268bd2")  ; blue
+  (set-face-attribute 'eat-term-color-5  nil :foreground "#d33682")  ; magenta
+  (set-face-attribute 'eat-term-color-6  nil :foreground "#2aa198")  ; cyan
+  (set-face-attribute 'eat-term-color-7  nil :foreground "#eee8d5")  ; white
+  ;; Bright (8-15)
+  (set-face-attribute 'eat-term-color-8  nil :foreground "#002b36")  ; bright black
+  (set-face-attribute 'eat-term-color-9  nil :foreground "#cb4b16")  ; bright red
+  (set-face-attribute 'eat-term-color-10 nil :foreground "#586e75")  ; bright green
+  (set-face-attribute 'eat-term-color-11 nil :foreground "#657b83")  ; bright yellow
+  (set-face-attribute 'eat-term-color-12 nil :foreground "#839496")  ; bright blue
+  (set-face-attribute 'eat-term-color-13 nil :foreground "#6c71c4")  ; bright magenta
+  (set-face-attribute 'eat-term-color-14 nil :foreground "#93a1a1")  ; bright cyan
+  (set-face-attribute 'eat-term-color-15 nil :foreground "#fdf6e3")  ; bright white
+  ;; Default font: FiraCode Nerd Font — matches Alacritty font config.
+  ;; No :height override — inheriting from `default` keeps box-drawing chars aligned.
+  (set-face-attribute 'eat-term-font-0 nil :family "FiraCode Nerd Font")
+  ;; Set the eat buffer background/foreground to Solarized Light's base colors.
+  ;; Without this, eat inherits the Emacs theme background (dark), which makes
+  ;; the Solarized Light ANSI palette render incorrectly.
+  (add-hook 'eat-mode-hook
+            (lambda ()
+              (face-remap-add-relative 'default
+                                       :background "#fdf6e3"
+                                       :foreground "#586e75"))))
 
 ;; for vterm terminal backend:
 (use-package vterm
