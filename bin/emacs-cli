@@ -135,8 +135,22 @@ function prune_elc() {
     log_success "Stale .elc files pruned."
 }
 
+function check_duplicates() {
+    if [ -x "$PROJECT_ROOT/bin/validate-duplicates" ]; then
+        log_info "Checking for duplicate use-package declarations..."
+        if ! "$PROJECT_ROOT/bin/validate-duplicates" "$PROJECT_ROOT/config.org"; then
+            log_error "Duplicate use-package declarations found — elpaca will fail. Fix config.org before continuing."
+            return 1
+        fi
+    else
+        echo "⚠️  validate-duplicates not found, skipping duplicate check."
+    fi
+}
+
 function cmd_check() {
     local exit_code=0
+
+    check_duplicates || exit_code=1
 
     log_info "Validating Org blocks in config.org..."
     if [ -f "$PROJECT_ROOT/bin/validate-org-blocks" ]; then
@@ -206,6 +220,8 @@ function cmd_sync() {
         cmd_args+=("--eval" "(setq elpaca-menu-disabled '(elpaca-menu-melpa elpaca-menu-elpa))")
     fi
 
+    check_duplicates || return 1
+
     stop_server
     log_info "Syncing packages with Elpaca..."
     log_info "Timeout set to ${TIMEOUT} seconds"
@@ -270,6 +286,8 @@ function cmd_update() {
         log_info "Verbose mode enabled"
         cmd_args+=("--eval" "(setq elpaca-log-events t)" "--eval" "(setq elpaca-verbose t)")
     fi
+
+    check_duplicates || return 1
 
     stop_server
     log_info "Updating packages with Elpaca..."
@@ -358,6 +376,7 @@ function cmd_doctor() {
     ls -lh "$PROJECT_ROOT/config.org" | awk '{print "config.org size: " $5}'
     echo ""
     echo "=== Validation ==="
+    check_duplicates || exit_code=1
     if [ -f "$PROJECT_ROOT/bin/validate-org-blocks" ]; then
         echo "Validating config.org blocks..."
         if ! "$PROJECT_ROOT/bin/validate-org-blocks" "$PROJECT_ROOT/config.org"; then

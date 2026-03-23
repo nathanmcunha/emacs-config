@@ -1,0 +1,66 @@
+#!/bin/bash
+# Check for duplicate use-package declarations in an org file.
+# Only scans blocks that are tangled (not :tangle no).
+
+CONFIG_FILE="$1"
+
+if [ -z "$CONFIG_FILE" ]; then
+    echo "Usage: $0 <file.org>"
+    exit 1
+fi
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Error: File $CONFIG_FILE not found."
+    exit 1
+fi
+
+duplicates=$(awk '
+  BEGIN { in_tangle_no = 0; has_error = 0 }
+
+  # Detect #+begin_src blocks - check if :tangle no
+  tolower($0) ~ /^[[:space:]]*#\+begin_src/ {
+    if (tolower($0) ~ /:tangle[[:space:]]+no/) {
+      in_tangle_no = 1
+    } else {
+      in_tangle_no = 0
+    }
+    next
+  }
+
+  # Detect end of block
+  tolower($0) ~ /^[[:space:]]*#\+end_src/ {
+    in_tangle_no = 0
+    next
+  }
+
+  # Skip blocks marked :tangle no
+  in_tangle_no { next }
+
+  # Match (use-package PACKAGE-NAME ...) at start of line
+  /^[[:space:]]*\(use-package[[:space:]]+[^[:space:]\)]+/ {
+    match($0, /\(use-package[[:space:]]+([^[:space:]\)]+)/, arr)
+    pkg = arr[1]
+    if (pkg != "") {
+      count[pkg]++
+      lines[pkg] = lines[pkg] " " NR
+    }
+  }
+
+  END {
+    for (pkg in count) {
+      if (count[pkg] > 1) {
+        print "❌ Duplicate use-package: " pkg " (lines:" lines[pkg] ")"
+        has_error = 1
+      }
+    }
+    exit has_error
+  }
+' "$CONFIG_FILE")
+
+if [ -n "$duplicates" ]; then
+    echo "$duplicates"
+    exit 1
+else
+    echo "✅ No duplicate use-package declarations found."
+    exit 0
+fi

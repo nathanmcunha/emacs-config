@@ -6,6 +6,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG_FILE="${1:-$PROJECT_ROOT/config.org}"
 ORG_BLOCK_VALIDATOR="$PROJECT_ROOT/bin/validate-org-blocks"
+DUPLICATE_VALIDATOR="$PROJECT_ROOT/bin/validate-duplicates"
 
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "❌ Error: File '$CONFIG_FILE' not found."
@@ -22,6 +23,10 @@ echo "🔍 Validating $CONFIG_FILE..."
 
 if [ -x "$ORG_BLOCK_VALIDATOR" ]; then
     "$ORG_BLOCK_VALIDATOR" "$CONFIG_FILE"
+fi
+
+if [ -x "$DUPLICATE_VALIDATOR" ]; then
+    "$DUPLICATE_VALIDATOR" "$CONFIG_FILE"
 fi
 
 # Attempt to tangle the file. 
