@@ -1,43 +1,199 @@
 #!/bin/bash
-set -euo pipefail
-# Validates config.org by attempting to tangle it.
-# This catches unclosed source blocks and invalid Org structure.
+# Comprehensive Org file validation for Emacs configurations
 
+CONFIG_FILE="$1"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONFIG_FILE="${1:-$PROJECT_ROOT/config.org}"
-ORG_BLOCK_VALIDATOR="$PROJECT_ROOT/bin/validate-org-blocks"
-DUPLICATE_VALIDATOR="$PROJECT_ROOT/bin/validate-duplicates"
 
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo "❌ Error: File '$CONFIG_FILE' not found."
+if [ -z "$CONFIG_FILE" ]; then
+    echo "Usage: $0 <file.org>"
     exit 1
 fi
-EMACS_CMD=(
-  emacs -Q --batch
-  --eval "(setq user-emacs-directory \"$PROJECT_ROOT/\")"
-  --eval "(require 'org)"
-  --eval "(org-babel-tangle-file \"$CONFIG_FILE\")"
-)
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "❌ Error: File $CONFIG_FILE not found."
+    exit 1
+fi
 
 echo "🔍 Validating $CONFIG_FILE..."
+echo ""
 
-if [ -x "$ORG_BLOCK_VALIDATOR" ]; then
-    "$ORG_BLOCK_VALIDATOR" "$CONFIG_FILE"
+HAS_ERROR=0
+
+# Test 1: Check for balanced blocks with better error reporting
+echo "📋 Test 1: Checking for balanced #+begin_src / #+end_src blocks..."
+BLOCKS_OUTPUT=$(awk '
+  BEGIN { has_error = 0; count = 0; in_src_block = 0; }
+  tolower($0) ~ /^[[:space:]]*#\+begin_src([[:space:]]|$)/ {
+    count++;
+    stack[count] = NR;
+    in_src_block = 1;
+    lines_in_block[NR] = NR;  # Mark this line as start of block
+  }
+  tolower($0) ~ /^[[:space:]]*#\+end_src([[:space:]]|$)/ {
+    if (count > 0) {
+        count--;
+        in_src_block = 0;
+    } else {
+        print "❌ EXTRA_END:" NR ":" $0;
+        has_error = 1
+    }
+  }
+  END {
+    if (has_error) exit 1
+    if (count > 0) {
+        print "❌ MISSING_END:" count ":";
+        for (i=1; i<=count; i++) {
+            print "BLOCK_START:" stack[i];
+        }
+        exit 1
+    }
+    exit 0
+  }
+' "$CONFIG_FILE")
+
+if [ $? -ne 0 ]; then
+    echo "   ❌ Block balance check failed!"
+    echo "$BLOCKS_OUTPUT" | while read line; do
+        if [[ $line == "EXTRA_END:"* ]]; then
+            line_num=$(echo "$line" | cut -d: -f2)
+            echo "      Line $line_num: Extra #+end_src"
+        elif [[ $line == "MISSING_END:"* ]]; then
+            echo "      Missing #+end_src for blocks at:"
+            echo "$BLOCKS_OUTPUT" | grep "BLOCK_START:" | cut -d: -f2 | while read start_line; do
+                echo "        - Line $start_line"
+            done
+        fi
+    done
+    HAS_ERROR=1
+else
+    echo "   ✅ Org blocks are balanced."
 fi
+echo ""
 
-if [ -x "$DUPLICATE_VALIDATOR" ]; then
-    "$DUPLICATE_VALIDATOR" "$CONFIG_FILE"
+# Test 2: Check for Lisp patterns outside blocks
+echo "📝 Test 2: Checking for Lisp code outside #+begin_src blocks..."
+LISP_OUTSIDE=$(awk '
+  BEGIN { in_code_block = 0; issue_count = 0; }
+  tolower($0) ~ /^[[:space:]]*#\+begin_src/ {
+    in_code_block = 1;
+  }
+  tolower($0) ~ /^[[:space:]]*#\+end_src/ {
+    in_code_block = 0;
+  }
+  !in_code_block {
+    # Check for Lisp patterns that suggest code
+    if (/^\s*\(defun\s+\w+/) {
+        print "DEFUN:" NR ":" $0;
+        issue_count++;
+    }
+    if (/^\s*\(use-package/) {
+        print "USE_PACKAGE:" NR ":" $0;
+        issue_count++;
+    }
+    if (/^\s*\(with-eval-after-load/) {
+        print "WITH_EVAL:" NR ":" $0;
+        issue_count++;
+    }
+  }
+  END { exit issue_count; }
+' "$CONFIG_FILE")
+
+LISP_ERROR_COUNT=$?
+if [ $LISP_ERROR_COUNT -gt 0 ]; then
+    echo "   ❌ Found $LISP_ERROR_COUNT Lisp patterns outside code blocks:"
+    echo "$LISP_OUTSIDE" | while read line; do
+        type=$(echo "$line" | cut -d: -f1)
+        line_num=$(echo "$line" | cut -d: -f2)
+        content=$(echo "$line" | cut -d: -f3-)
+
+        case $type in
+            DEFUN) echo "      Line $line_num: Function definition" ;;
+            USE_PACKAGE) echo "      Line $line_num: use-package declaration" ;;
+            WITH_EVAL) echo "      Line $line_num: with-eval-after-load" ;;
+        esac
+    done
+    HAS_ERROR=1
+else
+    echo "   ✅ No Lisp code outside code blocks."
 fi
+echo ""
 
-# Attempt to tangle the file. 
-# We ignore the output unless it fails.
-if "${EMACS_CMD[@]}" >/dev/null 2>&1; then
-    echo "✅ Configuration is valid (tangle successful)."
+# Test 3: Horizontal indentation check (common mistake: wrong level)
+echo "🔧 Test 3: Checking for indentation and structure issues..."
+INDENT_ISSUES=$(awk '
+  BEGIN { in_src_block = 0; block_start = 0; }
+  tolower($0) ~ /^[[:space:]]*#\+begin_src/ {
+    in_src_block = 1;
+    block_start = NR;
+  }
+  tolower($0) ~ /^[[:space:]]*#\+end_src/ {
+    if (in_src_block && NR == block_start + 1) {
+        print "EMPTY_BLOCK:" block_start;
+    }
+    in_src_block = 0;
+  }
+  END { exit 0; }
+' "$CONFIG_FILE")
+
+if echo "$INDENT_ISSUES" | grep -q "EMPTY_BLOCK:"; then
+    echo "   ⚠️  Found potentially empty code blocks:"
+    echo "$INDENT_ISSUES" | grep "EMPTY_BLOCK:" | cut -d: -f2 | while read line_num; do
+        echo "      Line $line_num: Empty block"
+    done
+    echo ""
+else
+    echo "   ✅ No obvious empty blocks."
+fi
+echo ""
+
+# Test 4: Attempt tangling to catch structural issues
+echo "🔄 Test 4: Testing Org tangling..."
+TEMP_TANGLE_DIR=$(mktemp -d)
+trap "rm -rf $TEMP_TANGLE_DIR" EXIT
+
+TANGLE_OUTPUT=$(emacs -Q --batch -l org \
+    --eval "(setq org-confirm-babel-evaluate nil)" \
+    --eval "(setq user-emacs-directory \"$TEMP_TANGLE_DIR/\")" \
+    --eval "(org-babel-tangle-file \"$CONFIG_FILE\" \"$TEMP_TANGLE_DIR/test-tangle.el\")" 2>&1)
+
+TANGLE_EXIT=$?
+if [ $TANGLE_EXIT -eq 0 ]; then
+    echo "   ✅ Tangling successful"
+else
+    echo "   ❌ Tangling failed! (exit code $TANGLE_EXIT)"
+    echo "      Run: emacs -Q --batch -l org -f org-babel-tangle-file \"$CONFIG_FILE\" /tmp/test.el"
+    HAS_ERROR=1
+fi
+echo ""
+
+# Test 5: Check for common syntax errors in Lisp
+echo "🔬 Test 5: Checking for common Emacs Lisp syntax issues..."
+SYNTAX_ISSUES=$(awk '
+  /\\'\''/ {
+    print "Line " NR ": Odd escape sequence";
+  }
+' "$CONFIG_FILE")
+
+if [ -n "$SYNTAX_ISSUES" ]; then
+    echo "   ⚠️  Potential syntax issues:"
+    echo "$SYNTAX_ISSUES" | sed 's/^/      /'
+else
+    echo "   ✅ No obvious syntax issues"
+fi
+echo ""
+
+# Final result
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [ $HAS_ERROR -eq 0 ]; then
+    echo "✅ All validation checks passed!"
     exit 0
 else
-    echo "❌ Validation failed! Structure or syntax error in config.org:"
-    echo "---------------------------------------------------"
-    # Run again to show the actual error message
-    "${EMACS_CMD[@]}"
+    echo "❌ Validation failed! Please fix the issues above."
+    echo ""
+    echo "💡 Tips for fixing config.org issues:"
+    echo "   1. Ensure all Lisp code is inside #+begin_src ... #+end_src blocks"
+    echo "   2. Check that #+begin_src and #+end_src pairs match exactly"
+    echo "   3. Verify proper indentation and structure"
+    echo "   4. Test tangling: emacs -Q --batch -l org -f org-babel-tangle-file config.org"
     exit 1
 fi

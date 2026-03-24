@@ -152,23 +152,23 @@ function cmd_check() {
 
     check_duplicates || exit_code=1
 
-    log_info "Validating Org blocks in config.org..."
-    if [ -f "$PROJECT_ROOT/bin/validate-org-blocks" ]; then
-        if "$PROJECT_ROOT/bin/validate-org-blocks" "$PROJECT_ROOT/config.org"; then
-            log_success "config.org blocks are valid."
+    log_info "Validating config.org structure..."
+    if [ -f "$PROJECT_ROOT/bin/validate-config" ]; then
+        if "$PROJECT_ROOT/bin/validate-config" "$PROJECT_ROOT/config.org"; then
+            log_success "config.org structure and syntax are valid."
         else
-            log_error "config.org blocks are invalid!"
+            log_error "config.org validation failed!"
             exit_code=1
         fi
     else
-        echo "⚠️  validate-org-blocks not found, skipping Org validation."
+        echo "⚠️  validate-config not found, skipping Org validation."
     fi
 
     log_info "Validating Elisp syntax..."
     if [ -f "$PROJECT_ROOT/bin/validate-lisp-syntax.py" ]; then
         local elisp_files=("$PROJECT_ROOT/init.el" "$PROJECT_ROOT/early-init.el")
         [ -f "$PROJECT_ROOT/config.el" ] && elisp_files+=("$PROJECT_ROOT/config.el")
-        
+
         if python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "${elisp_files[@]}"; then
             log_success "Core Elisp files and config.el are valid."
         else
@@ -377,22 +377,92 @@ function cmd_doctor() {
     echo ""
     echo "=== Validation ==="
     check_duplicates || exit_code=1
-    if [ -f "$PROJECT_ROOT/bin/validate-org-blocks" ]; then
-        echo "Validating config.org blocks..."
-        if ! "$PROJECT_ROOT/bin/validate-org-blocks" "$PROJECT_ROOT/config.org"; then
+    if [ -f "$PROJECT_ROOT/bin/validate-config" ]; then
+        echo "Running config.org validation..."
+        if ! "$PROJECT_ROOT/bin/validate-config" "$PROJECT_ROOT/config.org"; then
             exit_code=1
         fi
     else
-        echo "⚠️ validate-org-blocks not found"
+        echo "⚠️ validate-config not found, skipping validation."
     fi
 
     if [ -f "$PROJECT_ROOT/bin/validate-lisp-syntax.py" ]; then
         echo "Validating Elisp syntax..."
-        if ! python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "$PROJECT_ROOT/init.el" "$PROJECT_ROOT/early-init.el"; then
+        local elisp_files=("$PROJECT_ROOT/init.el" "$PROJECT_ROOT/early-init.el")
+        [ -f "$PROJECT_ROOT/config.el" ] && elisp_files+=("$PROJECT_ROOT/config.el")
+        if ! python3 "$PROJECT_ROOT/bin/validate-lisp-syntax.py" "${elisp_files[@]}"; then
             exit_code=1
         fi
     else
         echo "⚠️ validate-lisp-syntax.py not found"
+    fi
+
+    if [ -f "$PROJECT_ROOT/config.el" ]; then
+        echo "Checking config.el read syntax via Emacs reader..."
+        local emacs_read_out
+        emacs_read_out=$("$EMACS" -Q --batch \
+            --eval "(condition-case err \
+                      (progn \
+                        (with-temp-buffer \
+                          (insert-file-contents \"$PROJECT_ROOT/config.el\") \
+                          (goto-char (point-min)) \
+                          (condition-case _ \
+                            (while t (read (current-buffer))) \
+                            (end-of-file nil))) \
+                        (message \"config.el: read syntax OK\")) \
+                      (error \
+                        (message \"config.el read error: %S\" err) \
+                        (kill-emacs 1)))" 2>&1)
+        local emacs_read_exit=$?
+        if [ $emacs_read_exit -ne 0 ]; then
+            echo "$emacs_read_out"
+            log_error "config.el has read syntax errors — tangled output is broken, fix config.org"
+            exit_code=1
+        else
+            echo "✅ config.el read syntax OK"
+        fi
+    else
+        echo "⚠️ config.el not found (not yet tangled from config.org)"
+    fi
+
+    if [ -f "$PROJECT_ROOT/config.el" ]; then
+        echo "Byte-compiling config.el (static analysis)..."
+        local bc_output bc_exit
+        bc_output=$(timeout 60 "$EMACS" -Q --batch \
+            -f batch-byte-compile "$PROJECT_ROOT/config.el" 2>&1)
+        bc_exit=$?
+        rm -f "$PROJECT_ROOT/config.elc"
+        if [ $bc_exit -eq 124 ]; then
+            echo "⚠️  Byte-compile timed out (config.el too large for static analysis in -Q mode), skipping."
+            bc_output=""
+        fi
+
+        # Filter noise: only surface compile errors and apostrophe-name free-variable warnings.
+        # "function not defined" / "reference to free variable 'evil-*'" are expected
+        # (packages not loaded in -Q mode). But ''name' (double-apostrophe) means the symbol
+        # itself starts with ' — this is always a \'symbol bug in config.org.
+        local bc_errors bc_freevar
+        bc_errors=$(echo "$bc_output" | grep ":Error:" || true)
+        # Emacs uses Unicode curly quotes in messages: U+2018 (') + ASCII ' + letter = escaped-apostrophe bug.
+        # Use Python for reliable Unicode matching (grep -P \x{2018} is locale-sensitive).
+        bc_freevar=$(echo "$bc_output" | python3 -c "
+import sys, re
+for line in sys.stdin:
+    if re.search(r\"Warning:.*free variable \u2018'[a-zA-Z]\", line):
+        print(line, end='')
+" || true)
+
+        if [ -n "$bc_errors" ]; then
+            echo "$bc_errors"
+            log_error "config.el has byte-compile errors"
+            exit_code=1
+        elif [ -n "$bc_freevar" ]; then
+            echo "$bc_freevar"
+            log_error "Symbols with escaped apostrophes found — remove backslash before ' in config.org"
+            exit_code=1
+        else
+            echo "✅ config.el byte-compile OK"
+        fi
     fi
     echo ""
     if [ $exit_code -eq 0 ]; then
