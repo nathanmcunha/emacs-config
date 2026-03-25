@@ -581,12 +581,13 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
             gnus-summary-mode
             browse-kill-ring-mode
             thingatpt-mode
-            view-mode
-            adoc-mode
-            term-mode
-            vterm-mode
-            eshell-mode
-            shell-mode))
+           view-mode
+             adoc-mode
+             term-mode
+             vterm-mode
+             eat-mode
+             eshell-mode
+             shell-mode))
     (setq evil-normal-state-modes
           '(magit-mode
             magit-status-mode
@@ -1436,7 +1437,57 @@ This configuration provides a high-performance, industry-standard LSP experience
                                        :background "#fdf6e3"
                                        :foreground "#586e75"))))
 
-;; for vterm terminal backend:
+ ;; Evil Terminal Bindings (EAT)
+ ;; Configure Evil keybindings for EAT terminal to enable window navigation and Evil commands.
+  (with-eval-after-load 'eat
+    (with-eval-after-load 'evil
+
+      ;; Evil window navigation in EAT terminal
+      (evil-define-key 'emacs eat-mode-map
+        "C-w h" #'evil-window-left
+        "C-w j" #'evil-window-down
+        "C-w k" #'evil-window-up
+        "C-w l" #'evil-window-right
+        "C-w C-h" #'evil-window-left
+        "C-w C-j" #'evil-window-down
+        "C-w C-k" #'evil-window-up
+        "C-w C-l" #'evil-window-right
+        "C-w w" #'other-window
+        "C-w W" #'other-window
+        "C-w n" #'evil-window-new
+        "C-w v" #'evil-window-vsplit
+        "C-w s" #'evil-window-split
+        "C-w q" #'evil-quit
+        "C-w c" #'evil-window-delete
+        "C-w =" #'balance-windows
+        "C-w <left>" #'evil-window-left
+        "C-w <down>" #'evil-window-down
+        "C-w <up>" #'evil-window-up
+        "C-w <right>" #'evil-window-right
+        "C-h" #'evil-window-left
+        "C-j" #'evil-window-down
+        "C-k" #'evil-window-up
+        "C-l" #'evil-window-right)
+
+      ;; Leader key bindings for terminal (SPC prefix)
+      (with-eval-after-load 'evil
+        (define-key eat-mode-map (kbd "SPC") my-leader-map))
+
+      ;; Function to toggle Evil state in terminal
+      (defun my/eat-toggle-evil-state ()
+        "Toggle Evil state in EAT terminal between Emacs and Normal."
+        (interactive)
+        (if (eq evil-state 'emacs)
+            (progn
+              (evil-normal-state)
+              (message "EAT: Evil Normal mode (use C-o to execute Emacs commands)"))
+          (evil-emacs-state)
+          (message "EAT: Emacs mode (full terminal control)")))
+
+      ;; Bind toggle escape sequence for switching modes
+      (define-key eat-mode-map (kbd "C-c t") #'my/eat-toggle-evil-state)))
+
+ ;; for vterm terminal backend:
 (use-package vterm
   :ensure t
   :init
@@ -1448,7 +1499,6 @@ This configuration provides a high-performance, industry-standard LSP experience
   :config
   (claude-code-mode)
   :bind-keymap ("C-c c" . claude-code-command-map)
-
   ;; Optionally define a repeat map so that "M" will cycle thru Claude auto-accept/plan/confirm modes after invoking claude-code-cycle-mode / C-c M.
   :bind
   (:repeat-map my-claude-code-map ("M" . claude-code-cycle-mode)))
@@ -2065,10 +2115,12 @@ Module for subtle coverage visualization.
 
   ;; --- Open (o) ---
   (my/bind-leader "o p" 'popper-toggle "toggle popup")
-  (my/bind-leader "o t h" 'my/open-terminal-here "here")
-  (my/bind-leader "o t p" 'my/open-terminal-in-project "project")
-  (my/bind-leader "o d" 'docker "docker TUI")
-  (my/bind-leader "o C" 'docker-compose "docker compose")
+   (my/bind-leader "o t h" 'my/open-terminal-here "here")
+   (my/bind-leader "o t p" 'my/open-terminal-in-project "project")
+   (my/bind-leader "o t e" 'eat "eat terminal")
+   (my/bind-leader "o t t" 'my/eat-toggle-evil-state "toggle evil state")
+   (my/bind-leader "o d" 'docker "docker TUI")
+   (my/bind-leader "o C" 'docker-compose "docker compose")
   (my/bind-leader "o k" 'kubernetes "kubernetes TUI")
 
   ;; --- Project (p) ---
