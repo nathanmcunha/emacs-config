@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 set -o pipefail
 
@@ -23,6 +23,7 @@ SAFE_MODE=false
 DRY_RUN=false
 BACKGROUND=false
 SKIP_WAIT=false
+PHASED_SYNC=false
 TIMEOUT=600  # Default timeout: 10 minutes (in seconds)
 
 function print_usage() {
@@ -31,7 +32,7 @@ function print_usage() {
     echo "Commands:"
     echo "  sync, install     Install missing packages and prune orphans (Batch mode)"
     echo "  update, upgrade   Update all packages to their latest versions"
-    echo "  purge             Remove builds and caches (to fix compilation errors)"
+    echo "  purge             Remove builds, sources and caches (to fix compilation errors)"
     echo "  check, validate   Validate syntax of config.org and core Elisp files"
     echo "  doctor            Check system health and config.org integrity"
     echo "  help, --help, -h  Show this help message"
@@ -43,6 +44,7 @@ function print_usage() {
     echo "  -b, --background   Run in background (log to file)"
     echo "  -t, --timeout N    Set timeout in seconds (default: 600)"
     echo "  --skip-wait        Skip elpaca-wait (for debugging)"
+    echo "  --phased           Run sync in 3 phases: clone, build, compile"
 }
 
 function parse_options() {
@@ -80,6 +82,10 @@ function parse_options() {
                 SKIP_WAIT=true
                 shift
                 ;;
+            --phased)
+                PHASED_SYNC=true
+                shift
+                ;;
             --)
                 shift
                 break
@@ -106,6 +112,10 @@ function log_success() {
 
 function log_error() {
     echo -e "\033[1;31m❌\033[0m $1"
+}
+
+function log_warn() {
+    echo -e "\033[1;33m⚠️\033[0m $1"
 }
 
 function stop_server() {
@@ -184,6 +194,8 @@ function cmd_check() {
 
 function cmd_sync() {
     local cmd_args=()
+    local max_attempts=2
+    local attempt=1
 
     # Handle background mode
     if [ "$BACKGROUND" = true ]; then
@@ -225,24 +237,79 @@ function cmd_sync() {
     stop_server
     log_info "Syncing packages with Elpaca..."
     log_info "Timeout set to ${TIMEOUT} seconds"
-
     prune_elc
 
-    # Run Emacs in batch mode with proper config directory and timeout
-    local sync_start=$(date +%s)
+    if [ "$PHASED_SYNC" = true ]; then
+        local phase_exit=0
+        local phase_log="/tmp/emacs-sync-phased-output-$$.log"
+        local phases=("clone" "build" "compile")
+        local phase
+        local phased_failed=false
+
+        for phase in "${phases[@]}"; do
+            log_info "Running phased sync step: ${phase}"
+            local phase_args=("${cmd_args[@]}")
+            if [ "$phase" = "compile" ] || [ "$SAFE_MODE" = true ]; then
+                phase_args+=("--eval" "(setq elpaca-queue-limit 1)")
+            fi
+
+            set +e
+            ELPACA_SYNC_PHASE="$phase" timeout "$TIMEOUT" "$EMACS" -Q --batch \
+                --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
+                "${phase_args[@]}" \
+                -l "$INIT_FILE" \
+                -l "$PROJECT_ROOT/bin/elpaca-sync.el" 2>&1 | tee "$phase_log"
+            phase_exit=${PIPESTATUS[0]}
+            set -e
+
+            if [ $phase_exit -ne 0 ]; then
+                log_warn "Phased sync failed in '${phase}' step (exit ${phase_exit}); falling back to standard sync recovery."
+                phased_failed=true
+                break
+            fi
+        done
+
+        rm -f "$phase_log"
+        if [ "$phased_failed" = false ]; then
+            start_server
+            return 0
+        fi
+    fi
+
+    # Run Emacs in batch mode with timeout. On non-timeout failures, retry once
+    # after a full Elpaca purge in "safe" queue mode for a more deterministic rebuild.
+    local exit_code=0
+    local elapsed=0
     local log_file="/tmp/emacs-sync-output-$$.log"
+    while [ $attempt -le $max_attempts ]; do
+        local run_args=("${cmd_args[@]}")
+        if [ $attempt -gt 1 ]; then
+            log_info "Retrying sync (${attempt}/${max_attempts}) with recovery mode..."
+            cmd_purge
+            prune_elc
+            run_args+=("--eval" "(setq elpaca-queue-limit 1)")
+        fi
 
-    # Use timeout command to enforce the timeout
-    # Capture output to log file and also display it
-    timeout "$TIMEOUT" "$EMACS" -Q --batch \
-           --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
-           "${cmd_args[@]}" \
-           -l "$INIT_FILE" \
-           -l "$PROJECT_ROOT/bin/elpaca-sync.el" 2>&1 | tee "$log_file"
-    local exit_code=${PIPESTATUS[0]}
+        local sync_start=$(date +%s)
+        set +e
+        timeout "$TIMEOUT" "$EMACS" -Q --batch \
+               --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
+               "${run_args[@]}" \
+               -l "$INIT_FILE" \
+               -l "$PROJECT_ROOT/bin/elpaca-sync.el" 2>&1 | tee "$log_file"
+        exit_code=${PIPESTATUS[0]}
+        set -e
+        local sync_end=$(date +%s)
+        elapsed=$((sync_end - sync_start))
 
-    local sync_end=$(date +%s)
-    local elapsed=$((sync_end - sync_start))
+        if [ $exit_code -eq 0 ]; then
+            break
+        fi
+        if [ $exit_code -eq 124 ]; then
+            break
+        fi
+        attempt=$((attempt + 1))
+    done
 
     if [ $exit_code -eq 124 ]; then
         log_error "Sync timed out after ${elapsed} seconds"
@@ -331,13 +398,17 @@ function cmd_update() {
 }
 
 function cmd_purge() {
-    log_info "Purging Elpaca build directories..."
-    # Targets the custom local package directory
-    if [ -d "$PROJECT_ROOT/.local/packages/elpaca/builds/" ]; then
-        rm -rf "$PROJECT_ROOT/.local/packages/elpaca/builds/"
+    log_info "Purging Elpaca builds, sources and caches..."
+    # Remove the local Elpaca workspace so broken checkouts are rebuilt cleanly.
+    if [ -d "$PROJECT_ROOT/.local/packages/elpaca" ]; then
+        rm -rf \
+            "$PROJECT_ROOT/.local/packages/elpaca/builds/" \
+            "$PROJECT_ROOT/.local/packages/elpaca/sources/" \
+            "$PROJECT_ROOT/.local/packages/elpaca/cache/" \
+            "$PROJECT_ROOT/.local/packages/elpaca/queues/"
         log_info "Purge complete. Run 'sync' to rebuild."
     else
-        log_info "No build directory found to purge."
+        log_info "No Elpaca workspace found to purge."
     fi
 }
 

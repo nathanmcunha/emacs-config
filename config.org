@@ -380,8 +380,9 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
    (use-package server
      :ensure nil
      :config
-     (unless (server-running-p))
-       (server-start))
+     ;; Avoid server clashes during batch runs (e.g. emacs-cli sync) and daemon sessions.
+     (unless (or noninteractive (daemonp) (server-running-p))
+       (server-start)))
 
    ;; Repeat Mode (Emacs 28+) - Repeat commands without prefix keys
    (repeat-mode 1)
@@ -1141,7 +1142,10 @@ comint, eat, vterm, and agent-shell buffers.
                ("C-x C-j" . consult-dir-jump-file)))
 
       ;; Wgrep enables editing the results of grep/ripgrep
-      (use-package wgrep :ensure t)
+      ;; Wgrep's byte-compilation can trip over Emacs 30 batch settings during Elpaca sync.
+      ;; Keep the package installed, but skip compiling it as part of the build.
+      (use-package wgrep
+        :ensure (:build (:not elpaca-build-compile)))
 
     (use-package embark
       :ensure t
@@ -2000,8 +2004,8 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
                                              ((string-match-p "node" (or lang "")) "javascript")
                                              (t "bash")))
                             (lang-mode (intern (format "%s-ts-mode" lang-name))))
-                  (when (functionp lang-mode)
-                    (treesit-fontify-region code-start code-end lang-name)))))))))))
+                (when (functionp lang-mode)
+                  (treesit-fontify-region code-start code-end lang-name))))))))))
 
   ;; Indirect buffer method for full LSP support on embedded code
   (defun my/mise-edit-run-command ()
@@ -2184,8 +2188,24 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
  ;; for vterm terminal backend:
 (use-package vterm
   :ensure t
+  :if (let ((has-vterm-toolchain (and (executable-find "cmake")
+                                      (executable-find "make")
+                                      (or (executable-find "cc")
+                                          (executable-find "gcc")
+                                          (executable-find "clang")))))
+        (or has-vterm-toolchain (locate-library "vterm-module")))
+  :commands (vterm vterm-other-window)
   :init
-  (setq vterm-always-compile-module t))
+  (let ((has-vterm-toolchain (and (executable-find "cmake")
+                                  (executable-find "make")
+                                  (or (executable-find "cc")
+                                      (executable-find "gcc")
+                                      (executable-find "clang")))))
+    ;; Avoid hard failures on systems without build tools (e.g. minimal Nix profiles).
+    (setq vterm-always-compile-module has-vterm-toolchain))
+  :config
+  (unless (bound-and-true-p vterm-module-loaded)
+    (message "vterm module not available; install cmake/make/cc to enable native vterm.")))
 
 ;; install claude-code.el
 (use-package claude-code :ensure t
@@ -2412,8 +2432,10 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
         :ensure t
         :init
         (setq org-roam-v2-ack t)
+        (setq org-roam-directory (expand-file-name "~/org"))
+        (unless (file-directory-p org-roam-directory)
+          (make-directory org-roam-directory t))
         :custom
-        (org-roam-directory (file-truename "~/org"))
         (org-roam-completion-everywhere nil)
         :config (org-roam-db-autosync-mode))
 #+end_src
@@ -2814,4 +2836,3 @@ Module for subtle coverage visualization.
     (my/bind-leader ";"   'embark-act "act (embark)")
     (my/bind-leader "A"   'embark-act "actions (embark)")
 #+end_src
-
