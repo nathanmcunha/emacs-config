@@ -157,7 +157,7 @@
     (message "Killed other buffers"))
 
 ;; Terminal Launchers
-(defun my/launch-alacritty (dir) (call-process-shell-command (format " /usr/local/bin/alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
+(defun my/launch-alacritty (dir) (call-process-shell-command (format "alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
 
 (defun my/open-terminal-here () (interactive) (my/launch-alacritty default-directory))
 (defun my/open-terminal-in-project ()

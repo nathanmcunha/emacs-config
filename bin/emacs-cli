@@ -138,11 +138,11 @@ function start_server() {
 }
 
 function prune_elc() {
-    log_info "Pruning stale .elc files (init.elc, early-init.elc)..."
+    log_info "Pruning stale .elc files and tangled config.el..."
     rm -f "$PROJECT_ROOT/init.elc" "$PROJECT_ROOT/early-init.elc"
-    # Also clean any other .elc in the root to be safe
+    rm -f "$PROJECT_ROOT/config.el"
     find "$PROJECT_ROOT" -maxdepth 1 -name "*.elc" -delete
-    log_success "Stale .elc files pruned."
+    log_success "Stale .elc and config.el pruned (will retangle from config.org)."
 }
 
 function check_duplicates() {
