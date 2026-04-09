@@ -111,7 +111,8 @@
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(safe-local-variable-values
-   '((pyvenv-workon . ".venv")
+   '((python-shell-interpreter . ".venv/bin/python")
+     (pyvenv-workon . ".venv")
      (eval setq-local lsp-java-java-path
            (string-trim (shell-command-to-string "mise which java"))))))
 (custom-set-faces

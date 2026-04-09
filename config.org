@@ -49,7 +49,7 @@
   "Lookup documentation for the thing at point.
    1. Elisp: describe-symbol
    2. Org Src Block (Elisp): describe-symbol
-   3. Eglot: eglot-help-at-point
+   3. LSP / lsp-mode: lsp-describe-thing-at-point
    4. Fallback: evil-lookup"
   (interactive)
   (cond
@@ -67,9 +67,9 @@
           (describe-symbol (intern sym))
         (call-interactively #'evil-lookup))))
 
-   ;; 3. LSP / Eglot
-   ((bound-and-true-p eglot--managed-mode)
-    (eglot-help-at-point))
+   ;; 3. LSP / lsp-mode
+   ((bound-and-true-p lsp-mode)
+    (lsp-describe-thing-at-point))
 
    ;; 4. Fallback
    (t
@@ -157,7 +157,7 @@
     (message "Killed other buffers"))
 
 ;; Terminal Launchers
-(defun my/launch-alacritty (dir) (call-process-shell-command (format " /usr/local/bin/alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
+(defun my/launch-alacritty (dir) (call-process-shell-command (format "alacritty --working-directory %s" (shell-quote-argument dir)) nil 0))
 
 (defun my/open-terminal-here () (interactive) (my/launch-alacritty default-directory))
 (defun my/open-terminal-in-project ()
@@ -202,7 +202,9 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (tooltip-mode -1)           ; Disable tooltips
     (set-fringe-mode 25)        ; Give some breathing room
     (menu-bar-mode -1)          ; Disable the menu bar
-
+(global-auto-revert-mode 1)
+(setq auto-revert-use-notify t)   ; use inotify/kqueue when available
+(setq auto-revert-verbose nil)    ; suppress per-buffer messages
     ;; Fix frame gap and maximize for emacsclient (GNOME behavior)
     (setq frame-resize-pixelwise t)
     (add-to-list 'default-frame-alist '(fullscreen . maximized))
@@ -378,8 +380,9 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
    (use-package server
      :ensure nil
      :config
-     (unless (server-running-p))
-       (server-start))
+     ;; Avoid server clashes during batch runs (e.g. emacs-cli sync) and daemon sessions.
+     (unless (or noninteractive (daemonp) (server-running-p))
+       (server-start)))
 
    ;; Repeat Mode (Emacs 28+) - Repeat commands without prefix keys
    (repeat-mode 1)
@@ -414,7 +417,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
       "h"   "help/config"
       "b"   "buffer"
       "c"   "code"
-      "c j" "java project"
+      "c j" "java/create"
       "c C" "coverage"
       "d"   "debug"
       "e"   "errors"
@@ -422,6 +425,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
       "f"   "file"
       "g"   "git"
       "g l" "log"
+      "r"   "run"
       "j"   "jump"
       "n"   "notes"
       "n d" "dailies"
@@ -452,6 +456,275 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
   #   (when (or (display-graphic-p) (daemonp))
   #     (exec-path-from-shell-initialize)))
 
+* Async Command Runner
+A general-purpose async command runner with smart completion.
+Detects mise tasks, npm scripts, Makefile targets, Gradle tasks, and Docker Compose commands
+from the current project, and feeds them into the Corfu/Cape completion stack.
+** Command Collectors
+#+begin_src emacs-lisp
+  (defvar my/run-history nil
+    "History of shell commands run via my/run.")
+
+  (defvar my/run-favorites
+    '("mise run" "docker compose up -d" "docker compose down"
+      "podman compose up -d" "podman compose down"
+      "npm start" "npm test" "npm run build"
+      "pytest" "python -m pytest"
+      "cargo build" "cargo run" "cargo test"
+      "make" "make test" "make clean")
+    "Global favorite commands always shown in completion.")
+
+  (defun my/run--mise-tasks ()
+    "Return list of 'mise run TASK' strings from current project."
+    (let ((default-directory (or (and (project-current)
+                                      (project-root (project-current)))
+                                 default-directory)))
+      (condition-case nil
+          (let ((output (shell-command-to-string "mise tasks --json 2>/dev/null")))
+            (unless (string-empty-p output)
+              (let* ((json-array-type 'list)
+                     (json-object-type 'alist)
+                     (parsed (json-read-from-string output)))
+                (mapcar (lambda (task)
+                          (let ((name (alist-get 'name task))
+                                (desc (or (alist-get 'description task) "")))
+                            (propertize (format "mise run %s" name)
+                                       'my/annotation desc)))
+                        parsed))))
+        (error nil))))
+
+  (defun my/run--package-json-scripts ()
+    "Return list of 'npm run SCRIPT' strings from package.json."
+    (let* ((root (or (and (project-current) (project-root (project-current)))
+                     default-directory))
+           (pkg (expand-file-name "package.json" root)))
+      (when (file-exists-p pkg)
+        (condition-case nil
+            (let* ((json-object-type 'alist)
+                   (json-array-type 'list)
+                   (data (json-read-file pkg))
+                   (scripts (alist-get 'scripts data)))
+              (mapcar (lambda (s)
+                        (propertize (format "npm run %s" (car s))
+                                    'my/annotation (cdr s)))
+                      scripts))
+          (error nil)))))
+
+  (defun my/run--makefile-targets ()
+    "Return list of 'make TARGET' strings from Makefile."
+    (let* ((root (or (and (project-current) (project-root (project-current)))
+                     default-directory))
+           (makefile (expand-file-name "Makefile" root)))
+      (when (file-exists-p makefile)
+        (condition-case nil
+            (let ((output (shell-command-to-string
+                           (format "make -pRrq -f %s : 2>/dev/null | awk -F: '/^[a-zA-Z0-9][^$#\\/\\t=]*:([^=]|$)/ {split($1,A,/ /);print A[1]}' | sort -u"
+                                   (shell-quote-argument makefile)))))
+              (mapcar (lambda (target) (format "make %s" target))
+                      (split-string output "\n" t)))
+          (error nil)))))
+
+  (defun my/run--gradle-tasks ()
+    "Return common Gradle tasks if gradlew exists."
+    (let* ((root (or (and (project-current) (project-root (project-current)))
+                     default-directory))
+           (gradlew (expand-file-name "gradlew" root)))
+      (when (file-exists-p gradlew)
+        (mapcar (lambda (task) (format "./gradlew %s" task))
+                '("build" "test" "run" "clean" "bootRun"
+                  "assemble" "check" "classes" "jar")))))
+
+  (defun my/run--docker-compose-services ()
+    "Return docker compose commands if a compose file exists."
+    (let* ((root (or (and (project-current) (project-root (project-current)))
+                     default-directory))
+           (compose-cmd (if (executable-find "podman") "podman compose" "docker compose")))
+      (when (or (file-exists-p (expand-file-name "docker-compose.yml" root))
+                (file-exists-p (expand-file-name "docker-compose.yaml" root))
+                (file-exists-p (expand-file-name "compose.yml" root))
+                (file-exists-p (expand-file-name "compose.yaml" root))
+                (seq-some (lambda (f) (string-match-p "docker-compose" f))
+                          (directory-files root nil "\\.ya?ml$")))
+        (mapcar (lambda (sub) (format "%s %s" compose-cmd sub))
+                '("up -d" "down" "logs -f" "ps" "build" "restart" "pull")))))
+
+  (defun my/run--collect-candidates ()
+    "Collect all command candidates for the current project."
+    (let ((all (append (my/run--mise-tasks)
+                       (my/run--package-json-scripts)
+                       (my/run--makefile-targets)
+                       (my/run--gradle-tasks)
+                       (my/run--docker-compose-services)
+                       my/run-favorites
+                       my/run-history)))
+      (cl-remove-duplicates (seq-filter #'stringp all)
+                            :test (lambda (a b) (string= a b))
+                            :from-end t)))
+
+  (defun my/run--annotate (cand)
+    "Annotation function for run candidates."
+    (if-let ((ann (get-text-property 0 'my/annotation cand)))
+        (format "  %s" (propertize ann 'face 'marginalia-documentation))
+      ""))
+#+end_src
+
+** Runner Commands
+#+begin_src emacs-lisp
+  (defun my/run (cmd)
+    "Run CMD asynchronously from project root, with smart completion."
+    (interactive
+     (let ((minibuffer-completing-file-name nil))
+       (list (completing-read
+              "Run: "
+              (lambda (str pred action)
+                (if (eq action 'metadata)
+                    '(metadata (annotation-function . my/run--annotate)
+                               (category . my/run-command))
+                  (complete-with-action action (my/run--collect-candidates) str pred)))
+              nil nil nil 'my/run-history))))
+    (let* ((default-directory (or (and (project-current)
+                                       (project-root (project-current)))
+                                  default-directory))
+           (short (car (split-string cmd)))
+           (buf-name (format "*run:%s*" short)))
+      (async-shell-command cmd buf-name)
+      (message "Started: %s" cmd)))
+
+  (defun my/run-compile (cmd)
+    "Run CMD in a compilation buffer with smart completion."
+    (interactive
+     (list (completing-read
+            "Compile: "
+            (lambda (str pred action)
+              (if (eq action 'metadata)
+                  '(metadata (annotation-function . my/run--annotate)
+                             (category . my/run-command))
+                (complete-with-action action (my/run--collect-candidates) str pred)))
+            nil nil nil 'my/run-history)))
+    (let ((default-directory (or (and (project-current)
+                                       (project-root (project-current)))
+                                  default-directory)))
+      (compile cmd)))
+
+  (defun my/run-stop ()
+    "Stop a running async command."
+    (interactive)
+    (let* ((bufs (seq-filter (lambda (b)
+                               (and (string-prefix-p "*run:" (buffer-name b))
+                                    (get-buffer-process b)))
+                             (buffer-list)))
+           (names (mapcar #'buffer-name bufs)))
+      (if (null names)
+          (message "No running commands")
+        (let* ((choice (completing-read "Stop: " names nil t))
+               (proc (get-buffer-process (get-buffer choice))))
+          (when proc
+            (interrupt-process proc)
+            (sit-for 0.3)
+            (when (process-live-p proc) (kill-process proc)))
+          (message "Stopped %s" choice)))))
+
+  (defun my/run-show ()
+    "Switch to a running command buffer."
+    (interactive)
+    (let* ((bufs (seq-filter (lambda (b)
+                               (string-prefix-p "*run:" (buffer-name b)))
+                             (buffer-list)))
+           (names (mapcar #'buffer-name bufs)))
+      (if (null names)
+          (message "No command buffers")
+        (switch-to-buffer (completing-read "Show: " names nil t)))))
+
+  (defun my/run-restart ()
+    "Restart the last command from history."
+    (interactive)
+    (if my/run-history
+        (my/run (car my/run-history))
+      (call-interactively #'my/run)))
+#+end_src
+
+** Cape Integration (In-Buffer Completion)
+Provides Corfu popup suggestions for shell commands in eshell, shell-mode,
+comint, eat, vterm, and agent-shell buffers.
+
+#+begin_src emacs-lisp
+  (defvar my/cape-run-cache nil
+    "Cached candidates as (PROJECT-ROOT . CANDIDATES).")
+
+  (defun my/cape-run--invalidate-cache ()
+    "Clear cache when switching projects."
+    (setq my/cape-run-cache nil))
+
+  (advice-add 'project-switch-project :after
+              (lambda (&rest _) (my/cape-run--invalidate-cache)))
+
+  (defun my/cape-run--candidates ()
+    "Return cached or fresh command candidates for the current project."
+    (let ((root (or (and (project-current) (project-root (project-current)))
+                    default-directory)))
+      (if (and my/cape-run-cache (string= (car my/cape-run-cache) root))
+          (cdr my/cape-run-cache)
+        (let ((cands (my/run--collect-candidates)))
+          (setq my/cape-run-cache (cons root cands))
+          cands))))
+
+  (defun my/cape-run-capf ()
+    "Completion-at-point function for shell commands.
+  Completes from BOL or after &&, ||, |, ; separators."
+    (let* ((line-start (line-beginning-position))
+           (pt (point))
+           (text (buffer-substring-no-properties line-start pt))
+           ;; Find where the current command starts (after pipe, &&, ;, etc.)
+           (cmd-start (if (string-match ".*\\(?:[;&|][ \t]*\\)" text)
+                          (+ line-start (match-end 0))
+                        line-start))
+           (prefix (buffer-substring-no-properties cmd-start pt)))
+      (when (>= (length prefix) 1)
+        (list cmd-start pt
+              (completion-table-dynamic
+               (lambda (_) (my/cape-run--candidates)))
+              :annotation-function #'my/run--annotate
+              :exclusive 'no))))
+
+  ;; Hook into shell/terminal modes (low priority so LSP/native CAPFs win)
+  (dolist (hook '(eshell-mode-hook
+                  shell-mode-hook
+                  comint-mode-hook
+                  eat-mode-hook
+                  vterm-mode-hook
+                  agent-shell-mode-hook))
+    (add-hook hook
+              (lambda ()
+                (add-hook 'completion-at-point-functions
+                          #'my/cape-run-capf -50 t))))
+
+  ;; Also provide completion in M-x shell-command, compile, and my/run prompts
+  (add-hook 'minibuffer-setup-hook
+            (lambda ()
+              (when (memq this-command
+                          '(async-shell-command shell-command compile
+                            my/run my/run-compile))
+                (add-hook 'completion-at-point-functions
+                          #'my/cape-run-capf -50 t))))
+
+  ;; Merged shell super-CAPF: project commands + files + history + dabbrev
+  ;; This replaces the default CAPFs in shell buffers with a combined source.
+  (defun my/cape-shell-super-capf ()
+    "Combined CAPF: project commands + file paths + history + dabbrev."
+    (cape-wrap-super
+     #'my/cape-run-capf
+     #'cape-file
+     #'cape-history
+     #'cape-dabbrev))
+
+  (dolist (hook '(eshell-mode-hook
+                  shell-mode-hook
+                  comint-mode-hook))
+    (add-hook hook
+              (lambda ()
+                (setq-local completion-at-point-functions
+                            (list #'my/cape-shell-super-capf)))))
+#+end_src
 * Window Management (Popups & Rules)
 ** Popup Windows (built-in toggle)
 #+begin_src emacs-lisp
@@ -581,12 +854,13 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
             gnus-summary-mode
             browse-kill-ring-mode
             thingatpt-mode
-            view-mode
-            adoc-mode
-            term-mode
-            vterm-mode
-            eshell-mode
-            shell-mode))
+           view-mode
+             adoc-mode
+             term-mode
+             vterm-mode
+             eat-mode
+             eshell-mode
+             shell-mode))
     (setq evil-normal-state-modes
           '(magit-mode
             magit-status-mode
@@ -843,7 +1117,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     (setq consult-narrow-key "<")
     (setq consult-widen-key ">")
     (setq consult-preview-key 'any)
-    (setq consult-project-function (lambda (_) (project-root (project-current))))
+    (setq consult-project-function (lambda (_) (when-let (p (project-current)) (project-root p))))
 
     ;; REMOVEMOS A LINHA :bind QUE CAUSAVA O ERRO
 
@@ -868,7 +1142,10 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
                ("C-x C-j" . consult-dir-jump-file)))
 
       ;; Wgrep enables editing the results of grep/ripgrep
-      (use-package wgrep :ensure t)
+      ;; Wgrep's byte-compilation can trip over Emacs 30 batch settings during Elpaca sync.
+      ;; Keep the package installed, but skip compiling it as part of the build.
+      (use-package wgrep
+        :ensure (:build (:not elpaca-build-compile)))
 
     (use-package embark
       :ensure t
@@ -882,7 +1159,111 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
       (add-to-list 'display-buffer-alist
                    '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
                      nil
-                     (window-parameters (mode-line-format . none)))))
+                     (window-parameters (mode-line-format . none))))
+
+      ;; --- 1. Enhanced Identifier Map with LSP/Eglot Actions ---
+      (defvar my/embark-identifier-map
+        (let ((map (copy-keymap embark-identifier-map)))
+          (define-key map (kbd "R") #'lsp-rename)
+          (define-key map (kbd "A") #'my/smart-code-actions)
+          (define-key map (kbd "O") #'lsp-java-organize-imports)
+          (define-key map (kbd "F") #'lsp-format-buffer)
+          (define-key map (kbd "H") #'lsp-describe-thing-at-point)
+          (define-key map (kbd "L") #'flymake-show-diagnostics-at-point)
+          (define-key map (kbd "E") #'xref-find-definitions-other-window)
+          map)
+        "Enhanced identifier map with LSP actions.")
+
+      (setq embark-identifier-map my/embark-identifier-map)
+
+      ;; --- 2. Smart Path Guessing Improvements ---
+      (require 'ffap)
+      ;; Recognize more file-like patterns for ffap
+      (dolist (pair '((git-truename "\\([-[:alnum:]_.$=/:]+\\)")
+                      (yaml-key . "\\(?1:[[:alnum:]_-]+[[:space:]]*:\\)")
+                      (docker-image . "\\(?:[a-z0-9._-]+/\\)?[a-z0-9._-]+:[a-z0-9._-]+")))
+        (add-to-list 'ffap-string-at-point-mode-alist pair))
+
+      ;; Make embark guess file paths more aggressively
+      (defvar my/embark-extra-file-actions
+        '(("P" . (lambda (f) (with-current-buffer (find-file-noselect f) (pop-to-buffer))))
+          ("D" . dired)
+          ("X" . executable-make-absolute-file-local-name))
+        "Additional file actions for embark.")
+
+      ;; Enhance the file map with extra actions
+      (dolist (action my/embark-extra-file-actions)
+        (define-key embark-file-map (car action) (cdr action)))
+
+      ;; --- 3. Org-Specific Targets (Links, Timestamps, Dates) ---
+      (defun my/embark-target-org-link ()
+        "Detect Org mode links."
+        (when (and (eq major-mode 'org-mode)
+                   (org-in-regexp org-link-any-re 1))
+          (let* ((start (match-beginning 1))
+                 (end (match-end 1))
+                 (link (org-link-unescape (match-string 1))))
+            (when link
+              (cons 'org-link link)))))
+
+      (defun my/embark-target-org-timestamp ()
+        "Detect Org timestamps."
+        (when (and (eq major-mode 'org-mode)
+                   (org-in-regexp org-ts-regexp-both 1))
+          (let ((start (match-beginning 1))
+                (end (match-end 1)))
+            (cons 'org-timestamp (match-string 1)))))
+
+      (defun my/embark-target-org-deadline ()
+        "Detect Org deadline timestamps."
+        (when (and (eq major-mode 'org-mode)
+                   (org-in-regexp org-deadline-re 1))
+          (let ((start (match-beginning 1))
+                (end (match-end 1)))
+            (cons 'org-deadline (match-string 1)))))
+
+      (defun my/embark-target-org-schedule ()
+        "Detect Org scheduled timestamps."
+        (when (and (eq major-mode 'org-mode)
+                   (org-in-regexp org-scheduled-re 1))
+          (let ((start (match-beginning 1))
+                (end (match-end 1)))
+            (cons 'org-schedule (match-string 1)))))
+
+      ;; Add Org target finders
+      (add-to-list 'embark-target-finders #'my/embark-target-org-link)
+      (add-to-list 'embark-target-finders #'my/embark-target-org-timestamp)
+      (add-to-list 'embark-target-finders #'my/embark-target-org-deadline)
+      (add-to-list 'embark-target-finders #'my/embark-target-org-schedule)
+
+      ;; Define Org-specific action keymaps
+      (defvar-keymap my/embark-org-link-map
+        :doc "Keymap for Org link actions."
+        :parent embark-general-map
+        "RET" #'org-open-at-point
+        "o" #'org-open-at-point
+        "f" #'org-link-open-if-in-browser
+        "c" #'org-copy-link
+        "k" #'org-kill-link
+        "e" #'org-edit-link)
+
+      (defvar-keymap my/embark-org-timestamp-map
+        :doc "Keymap for Org timestamp actions."
+        :parent embark-general-map
+        "RET" #'org-time-stamp
+        "c" #'org-clone-subtree-with-time-shift
+        "+" #'org-timestamp-up
+        "-" #'org-timestamp-down
+        "s" #'org-schedule)
+
+      ;; Register Org action maps
+      (setq embark-keymap-alist
+            (append
+             '((org-link . my/embark-org-link-map)
+               (org-timestamp . my/embark-org-timestamp-map)
+               (org-deadline . my/embark-org-timestamp-map)
+               (org-schedule . my/embark-org-timestamp-map))
+             embark-keymap-alist)))
 
     (use-package embark-consult
       :ensure t
@@ -929,11 +1310,9 @@ Sets up the popup, cycling, and integration with icons.
     (corfu-history-mode 1)
     (keymap-global-set "C-SPC" #'completion-at-point)
 
-    ;; Orderless for Eglot/LSP completions
+    ;; Orderless for LSP completions
     (setq completion-category-overrides
-          '((eglot (styles orderless))
-            (eglot-capf (styles orderless))
-            (lsp-capf (styles orderless))))
+          '((lsp-capf (styles orderless))))
 
     (with-eval-after-load 'savehist
       (add-to-list 'savehist-additional-variables 'corfu-history)))
@@ -964,11 +1343,6 @@ Sets up the popup, cycling, and integration with icons.
   (use-package cape
     :ensure t
     :init
-    ;; Wrap Eglot completion globally (Doom-style)
-    ;; This prevents the "invalid-function" error with Company-specific properties
-    (advice-add #'eglot-completion-at-point :around #'cape-wrap-noninterruptible)
-    (advice-add #'eglot-completion-at-point :around #'cape-wrap-nonexclusive)
-
     ;; Wrap comint and pcomplete for better shell/REPL completion
     (advice-add #'comint-completion-at-point :around #'cape-wrap-nonexclusive)
     (advice-add #'pcomplete-completions-at-point :around #'cape-wrap-nonexclusive)
@@ -1051,23 +1425,352 @@ Sets up the popup, cycling, and integration with icons.
   (use-package git-timemachine :ensure t)
 #+end_src
 
-** Dirvish (Modern Dired)
-A modern, polished Dired experience that can replace Treemacs.
+** LSP Mode Core
+Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Docker, SQL, Nix, and QML.
 
 #+begin_src emacs-lisp
-  (use-package dirvish
-    :ensure t
-    :init
-    (dirvish-override-dired-mode)
-    :config
-    (dirvish-peek-mode)
-    :bind (:map dirvish-mode-map
-                ("h" . dirvish-up-directory-single)
-                ("l" . dired-find-file)
-                ("j" . dired-next-line)
-                ("k" . dired-previous-line)
-                ("TAB" . dirvish-subtree-toggle)))
+  ;; Extra language mode packages
+  (use-package nix-mode :ensure t)
+  (use-package qml-mode :ensure t)
 
+  ;; File associations — keep here so they apply regardless of LSP state
+  (add-to-list 'auto-mode-alist '("\\.ya?ml\\'" . yaml-ts-mode))
+  (add-to-list 'auto-mode-alist '("Dockerfile\\'" . dockerfile-ts-mode))
+  (add-to-list 'auto-mode-alist '("\\.nix\\'" . nix-mode))
+  (add-to-list 'auto-mode-alist '("\\.qml\\'" . qml-mode))
+
+  ;; Prefer Tree-sitter variants when available
+  (setq-default major-mode-remap-alist
+                '((python-mode     . python-ts-mode)
+                  (js-mode         . js-ts-mode)
+                  (javascript-mode . js-ts-mode)
+                  (typescript-mode . typescript-ts-mode)
+                  (tsx-mode        . tsx-ts-mode)
+                  (html-mode       . html-ts-mode)
+                  (css-mode        . css-ts-mode)
+                  (dockerfile-mode . dockerfile-ts-mode)
+                  (yaml-mode       . yaml-ts-mode)))
+
+  (with-eval-after-load 'project
+    (add-to-list 'project-vc-extra-root-markers "pyproject.toml")
+    (add-to-list 'project-vc-extra-root-markers "requirements.txt")
+    (add-to-list 'project-vc-extra-root-markers ".venv"))
+
+  (use-package lsp-mode
+    :ensure t
+    :hook (((python-ts-mode
+             js-ts-mode typescript-ts-mode tsx-ts-mode
+             html-ts-mode css-ts-mode
+             dockerfile-ts-mode yaml-ts-mode
+             sql-mode
+             nix-mode qml-mode) . lsp-deferred)
+           (lsp-mode . lsp-enable-which-key-integration))
+    :commands (lsp lsp-deferred)
+    :init
+    ;; Performance
+    (setq lsp-idle-delay 0.5)
+    (setq lsp-log-io nil)
+    (setq lsp-completion-provider :none)
+    (setq lsp-headerline-breadcrumb-enable t)
+    (setq lsp-modeline-diagnostics-enable nil)
+    (setq lsp-diagnostics-provider :flymake)
+    (setq lsp-enable-snippet nil)
+    (setq lsp-enable-symbol-highlighting t)
+    (setq lsp-enable-on-type-formatting nil)
+    (setq lsp-enable-indentation nil)
+    (setq lsp-enable-text-document-color t)
+    (setq lsp-keep-workspace-alive nil)
+    (setq lsp-file-watch-threshold 500000)
+
+    ;; Directories
+    (setq lsp-server-install-dir (expand-file-name "lsp/" my-local-pkg-dir))
+    (setq lsp-session-file (expand-file-name "state/lsp-session" my-local-dir))
+    (setq lsp-keymap-prefix nil)
+
+    :config
+    ;; Python: basedpyright
+    (lsp-register-client
+     (make-lsp-client
+      :new-connection (lsp-stdio-connection '("basedpyright-langserver" "--stdio"))
+      :major-modes '(python-mode python-ts-mode)
+      :server-id 'basedpyright))
+
+    ;; Nix: nixd (install via home.packages in emacs.nix)
+    (lsp-register-client
+     (make-lsp-client
+      :new-connection (lsp-stdio-connection '("nixd"))
+      :major-modes '(nix-mode)
+      :server-id 'nixd))
+
+    ;; QML: qmlls (install qtbase.dev via home.packages)
+    (lsp-register-client
+     (make-lsp-client
+      :new-connection (lsp-stdio-connection '("qmlls"))
+      :major-modes '(qml-mode)
+      :server-id 'qmlls))
+
+    ;; Workspace config
+    (setq lsp-pylsp-plugins-ruff-enabled t)
+    (setq lsp-yaml-schemas '((kubernetes . "/*.yaml")
+                              (http://json.schemastore.org/docker-compose . "docker-compose.ya?ml")))
+
+    ;; Reconnect LSP when envrc activates a new environment (picks up direnv venv/PATH)
+    (add-hook 'envrc-after-update-hook
+              (lambda ()
+                (when-let (ws (car (lsp-workspaces)))
+                  (lsp-workspace-restart ws))))
+
+    ;; evil normal-state bindings (evil-collection has no lsp-mode module;
+    ;; replaces what evil-collection-eglot provided for eglot-mode-map)
+    (with-eval-after-load 'evil
+      (evil-define-key 'normal lsp-mode-map
+        "gd" #'lsp-find-definition
+        "gD" #'lsp-find-declaration
+        "gr" #'lsp-find-references
+        "gi" #'lsp-find-implementation
+        "K"  #'lsp-describe-thing-at-point)))
+
+  (use-package lsp-ui
+    :ensure t
+    :after lsp-mode
+    :config
+    (setq lsp-ui-doc-enable t)
+    (setq lsp-ui-doc-show-with-cursor nil)
+    (setq lsp-ui-doc-show-with-mouse t)
+    (setq lsp-ui-doc-position 'at-point)
+    (setq lsp-ui-sideline-enable t)
+    (setq lsp-ui-sideline-show-diagnostics nil)
+    (setq lsp-ui-sideline-show-code-actions t)
+    (setq lsp-ui-peek-enable t))
+
+  ;; Corfu integration: lsp-completion-provider :none means lsp-mode adds to
+  ;; completion-at-point-functions which Corfu already consumes natively.
+#+end_src
+
+** Java Development (lsp-java)
+Java language server using Eclipse JDT.LS via lsp-java.
+
+#+begin_src emacs-lisp
+  (use-package lsp-java
+    :ensure t
+    :after lsp-mode
+    :hook ((java-mode java-ts-mode) . (lambda ()
+                                       (require 'lsp-java)
+                                       (lsp-deferred)))
+    :config
+    (setq lsp-java-server-install-dir (expand-file-name "lsp/eclipse.jdt.ls/" my-local-pkg-dir))
+    (setq lsp-java-workspace-dir (expand-file-name "state/java-workspace/" my-local-dir))
+    (setq lsp-java-import-gradle-enabled t)
+    (setq lsp-java-vmargs
+          '("-XX:+UseG1GC" "-XX:+UseStringDeduplication"
+            "-Xmx2G" "-Xms512m"))
+    (setq lsp-java-debug-plugin t)
+    (setq lsp-java-generate-to-string-code-style "STRING_BUILDER")
+    (setq lsp-java-generate-equals-and-hash-code t))
+
+  (use-package dap-mode
+    :ensure t
+    :after lsp-java
+    :config
+    (require 'dap-java)
+    (setq dap-java-test-runner (expand-file-name "lsp/eclipse.jdt.ls/test-runner/test-runner" my-local-pkg-dir))
+    (my/bind-leader "d t"  'dap-java-run-test-method "Debug Test")
+    (my/bind-leader "d b"  'dap-breakpoint-toggle "Toggle Breakpoint")
+    (my/bind-leader "d c"  'dap-continue "Continue")
+    (my/bind-leader "d n"  'dap-next "Next (Step Over)")
+    (my/bind-leader "d i"  'dap-step-in "Step In")
+    (my/bind-leader "d o"  'dap-step-out "Step Out")
+    (my/bind-leader "d r"  'dap-debug-restart "Restart")
+    (my/bind-leader "d l"  'dap-ui-locals "Show Layout")
+    (my/bind-leader "d Q"  'dap-disconnect "Quit Debugger"))
+
+  (defun my/java-code-actions ()
+    "Unified IntelliJ-style code actions for Java."
+    (interactive)
+    (let* ((custom-actions
+            '(("Generate toString"           . lsp-java-generate-to-string)
+              ("Generate hashCode/equals"    . lsp-java-generate-equals-and-hash-code)
+              ("Generate overrides"          . lsp-java-generate-overrides)
+              ("Generate getters/setters"    . lsp-java-add-getter-setter)
+              ("Add unimplemented methods"   . lsp-java-add-unimplemented-methods)
+              ("Organize imports"            . lsp-java-organize-imports)
+              ("Extract variable"            . lsp-java-extract-to-local-variable)
+              ("Extract method"              . lsp-java-extract-method)
+              ("Extract constant"            . lsp-java-extract-to-constant)
+              ("Inline variable"             . lsp-java-inline)
+              ("Convert to static import"    . lsp-java-convert-to-static-import)
+              ("Type hierarchy"             . lsp-java-type-hierarchy)
+              ("Find implementations"        . lsp-find-implementation)))
+           (choice (completing-read "Action: " (mapcar #'car custom-actions) nil t))
+           (cmd (cdr (assoc choice custom-actions))))
+      (call-interactively cmd)))
+
+  (defun my/smart-code-actions ()
+    "Context-aware code actions."
+    (interactive)
+    (if (derived-mode-p 'java-mode 'java-ts-mode)
+        (my/java-code-actions)
+      (call-interactively #'lsp-execute-code-action)))
+#+end_src
+
+#+begin_src emacs-lisp
+  ;; === Java File & Class Creation (IntelliJ-style) ===
+
+  (defun my/java-source-root ()
+    "Find the Java source root (src/main/java or src/test/java)."
+    (let* ((file (or (buffer-file-name) default-directory))
+           (root (project-root (project-current t))))
+      (catch 'found
+        (dolist (dir '("src/main/java/" "src/test/java/" "src/"))
+          (let ((full (expand-file-name dir root)))
+            (when (and (file-directory-p full)
+                       (string-prefix-p full file))
+              (throw 'found full))))
+        (expand-file-name "src/main/java/" root))))
+
+  (defun my/java-current-package ()
+    "Infer package from current file or directory relative to source root."
+    (let* ((src-root (my/java-source-root))
+           (current (or (and (buffer-file-name) (file-name-directory (buffer-file-name)))
+                        default-directory))
+           (relative (file-relative-name current src-root)))
+      (if (or (string= relative "./") (string= relative "."))
+          ""
+        (replace-regexp-in-string "/" "." (directory-file-name relative)))))
+
+  (defun my/java-create-class (fqcn kind)
+    "Create a Java file for FQCN (e.g. com.foo.MyClass) of KIND."
+    (let* ((parts (split-string fqcn "\\."))
+           (class-name (car (last parts)))
+           (package (mapconcat #'identity (butlast parts) "."))
+           (src-root (my/java-source-root))
+           (dir (expand-file-name (replace-regexp-in-string "\\." "/" (if (string-empty-p package) "" package)) src-root))
+           (file (expand-file-name (concat class-name ".java") dir))
+           (body (pcase kind
+                   ('class      (format "public class %s {\n\n}" class-name))
+                   ('interface  (format "public interface %s {\n\n}" class-name))
+                   ('enum       (format "public enum %s {\n    ;\n}" class-name))
+                   ('record     (format "public record %s() {\n}" class-name))
+                   ('annotation (format "public @interface %s {\n\n}" class-name))
+                   (_           (format "public class %s {\n\n}" class-name))))
+           (content (if (string-empty-p package)
+                        (concat body "\n")
+                      (concat (format "package %s;\n\n%s\n" package body)))))
+      (when (file-exists-p file)
+        (user-error "File already exists: %s" file))
+      (make-directory dir t)
+      (find-file file)
+      (insert content)
+      (save-buffer)
+      (goto-char (point-min))
+      (search-forward "{" nil t)
+      (forward-line 0)
+      (open-line 1)
+      (indent-for-tab-command)
+      (message "Created %s %s" kind fqcn)))
+
+  (defun my/java-new-class ()
+    "Create a new Java class."
+    (interactive)
+    (let* ((pkg (my/java-current-package))
+           (default (if (string-empty-p pkg) "" (concat pkg ".")))
+           (fqcn (read-string "Class (e.g. com.foo.MyClass): " default)))
+      (my/java-create-class fqcn 'class)))
+
+  (defun my/java-new-interface ()
+    "Create a new Java interface."
+    (interactive)
+    (let* ((pkg (my/java-current-package))
+           (default (if (string-empty-p pkg) "" (concat pkg ".")))
+           (fqcn (read-string "Interface: " default)))
+      (my/java-create-class fqcn 'interface)))
+
+  (defun my/java-new-enum ()
+    "Create a new Java enum."
+    (interactive)
+    (let* ((pkg (my/java-current-package))
+           (default (if (string-empty-p pkg) "" (concat pkg ".")))
+           (fqcn (read-string "Enum: " default)))
+      (my/java-create-class fqcn 'enum)))
+
+  (defun my/java-new-record ()
+    "Create a new Java record."
+    (interactive)
+    (let* ((pkg (my/java-current-package))
+           (default (if (string-empty-p pkg) "" (concat pkg ".")))
+           (fqcn (read-string "Record: " default)))
+      (my/java-create-class fqcn 'record)))
+
+  (defun my/java-new-file ()
+    "Create a new Java file, choosing the kind interactively (IntelliJ-style)."
+    (interactive)
+    (let* ((kind (intern (completing-read "Kind: " '("class" "interface" "enum" "record" "annotation") nil t)))
+           (pkg (my/java-current-package))
+           (default (if (string-empty-p pkg) "" (concat pkg ".")))
+           (fqcn (read-string (format "New %s: " kind) default)))
+      (my/java-create-class fqcn kind)))
+
+  (defun my/java-go-to-test ()
+    "Jump between source and test file (convention-based)."
+    (interactive)
+    (unless (buffer-file-name)
+      (user-error "Not visiting a file"))
+    (let* ((file (buffer-file-name))
+           (root (project-root (project-current t)))
+           (is-test (string-match-p "/src/test/" file)))
+      (let ((target (if is-test
+                        (replace-regexp-in-string "/src/test/" "/src/main/"
+                          (replace-regexp-in-string "Test\\.java$" ".java" file))
+                      (replace-regexp-in-string "/src/main/" "/src/test/"
+                        (replace-regexp-in-string "\\.java$" "Test.java" file)))))
+        (if (file-exists-p target)
+            (find-file target)
+          (when (y-or-n-p (format "Create %s?" (file-name-nondirectory target)))
+            (make-directory (file-name-directory target) t)
+            (find-file target)
+            (let* ((rel (file-relative-name target (if is-test
+                                                       (expand-file-name "src/main/java/" root)
+                                                     (expand-file-name "src/test/java/" root))))
+                   (parts (split-string (file-name-sans-extension rel) "/"))
+                   (class-name (car (last parts)))
+                   (pkg (mapconcat #'identity (butlast parts) ".")))
+              (insert (format "package %s;\n\nimport org.junit.jupiter.api.Test;\n\nclass %s {\n\n    @Test\n    void shouldWork() {\n    }\n}\n" pkg class-name))
+              (save-buffer)))))))
+#+end_src
+
+** Treemacs (Project Explorer)
+A sidebar file explorer and project navigator, replacing Dirvish for project file browsing.
+
+#+begin_src emacs-lisp
+  (use-package treemacs
+    :ensure t
+    :defer t
+    :config
+    (setq treemacs-width 35)
+    (setq treemacs-is-never-other-window t)
+    (setq treemacs-show-hidden-files t)
+    (setq treemacs-follow-after-init t)
+    (setq treemacs-project-follow-mode t)
+    (setq treemacs-filewatch-mode t)
+    (setq treemacs-fringe-indicator-mode 'always)
+    (treemacs-follow-mode t)
+    (treemacs-project-follow-mode t)
+    (treemacs-filewatch-mode t))
+
+  (use-package treemacs-evil
+    :ensure t
+    :after (treemacs evil))
+
+  (use-package treemacs-nerd-icons
+    :ensure t
+    :after treemacs
+    :config (treemacs-load-theme "nerd-icons"))
+
+  (use-package lsp-treemacs
+    :ensure t
+    :after (lsp-mode treemacs)
+    :config
+    (lsp-treemacs-sync-mode 1))
 #+end_src
 
 ** Formatting (Apheleia)
@@ -1211,11 +1914,9 @@ A modern, polished Dired experience that can replace Treemacs.
     ;; 6. LSP support for SQL files via sqls
     ;; Install: go install github.com/sqls-server/sqls@latest
     ;; Config: ~/.config/sqls/config.yml with connection info
-    (with-eval-after-load 'eglot
-      (add-to-list 'eglot-server-programs
-                   '(sql-mode . ("sqls"))))
-
-    (add-hook 'sql-mode-hook #'eglot-ensure)
+    ;; lsp-sqls is bundled with lsp-mode; requiring it registers the client automatically.
+    (with-eval-after-load 'lsp-mode
+      (require 'lsp-sqls))
 
     ;; 7. EXTRA COMPLETION (when not connected): Keywords and Snippets
     (add-hook 'sql-mode-hook
@@ -1247,121 +1948,119 @@ A modern, polished Dired experience that can replace Treemacs.
             (html "https://github.com/tree-sitter/tree-sitter-html")
             (css "https://github.com/tree-sitter/tree-sitter-css")))
 
-    (defun my/install-all-treesit-grammars ()
+(defun my/install-all-treesit-grammars ()
       "Install all configured Tree-sitter grammars."
       (interactive)
       (dolist (grammar treesit-language-source-alist)
         (treesit-install-language-grammar (car grammar)))
       (message "All Tree-sitter grammars installed! Restart Emacs or reload modes.")))
- #+end_src
-
-** Java Development (Eglot + JDTLS)
- Lightweight configuration using Eglot, replacing the heavy lsp-java.
-
- #+begin_src emacs-lisp
-(use-package eglot-java
-  :ensure t
-  :hook (((java-mode java-ts-mode) . eglot-java-mode))
-   :config
-   ;; Increase eglot timeout to give JDTLS time to start up (common in Java)
-   (setq eglot-connect-timeout 120)
-   (setq eglot-request-timeout 60)
-
-  (defun my/eglot-java-init-opts (server jdt)
-    (let ((debug-jar "/home/nathanmcunha/.config/emacs/java-debug/debug-plugin.jar"))
-      `(:bundles [,debug-jar]
-        :extendedClientCapabilities (:classFileContentsSupport t
-                                     :generateToStringPromptSupport t
-                                     :supportsDebugger t)
-        :settings (:java (:import (:gradle (:enabled t))
-                          :configuration (:runtimes []))))))
-
-  (setq eglot-java-user-init-opts-fn 'my/eglot-java-init-opts))
   #+end_src
 
-** Modern Web & Polyglot Development (Eglot)
-This configuration provides a high-performance, industry-standard LSP experience for Python, JavaScript, HTML, CSS, and more.
+** Mise TOML with Embedded Language Support
+  Enables syntax highlighting and LSP for embedded languages (bash, python, etc.) in mise `run` commands.
 
-#+begin_src emacs-lisp
-    (with-eval-after-load 'project
-      ;; Add these markers so Emacs finds the TRUE project root where the venv is
-      (add-to-list 'project-vc-extra-root-markers "pyproject.toml")
-      (add-to-list 'project-vc-extra-root-markers "requirements.txt")
-      (add-to-list 'project-vc-extra-root-markers ".venv"))
+  #+begin_src emacs-lisp
+  ;; Add TOML and Bash grammars for mise file support
+  (with-eval-after-load 'treesit
+    (add-to-list 'treesit-language-source-alist
+                 '(toml "https://github.com/ikatyang/tree-sitter-toml"))
+    (add-to-list 'treesit-language-source-alist
+                 '(bash "https://github.com/tree-sitter/tree-sitter-bash")))
 
-    (use-package eglot
-      :ensure nil
-      :init
-      ;; Ensure .yml and .yaml files trigger yaml-ts-mode
-      (add-to-list 'auto-mode-alist '("\\.ya?ml\\'" . yaml-ts-mode))
-      (add-to-list 'auto-mode-alist '("Dockerfile\\'" . dockerfile-ts-mode))
+  ;; Use toml-ts-mode for TOML files
+  (add-to-list 'auto-mode-alist '("\\.toml\\'" . toml-ts-mode))
+  (add-to-list 'auto-mode-alist ' ("\\.mise\\.toml\\'" . toml-ts-mode))
+  (add-to-list 'auto-mode-alist '("\\.config/mise/.*\\.toml\\'" . toml-ts-mode))
 
-      ;; Remap standard modes to Tree-sitter variants
-      (setq-default major-mode-remap-alist
-                    '((python-mode . python-ts-mode)
-                      (js-mode . js-ts-mode)
-                      (javascript-mode . js-ts-mode)
-                      (typescript-mode . typescript-ts-mode)
-                      (tsx-mode . tsx-ts-mode)
-                      (html-mode . html-ts-mode)
-                      (css-mode . css-ts-mode)
-                      (dockerfile-mode . dockerfile-ts-mode)
-                      (yaml-mode . yaml-ts-mode)))
-      :hook (((python-ts-mode
-               js-ts-mode
-               typescript-ts-mode
-               tsx-ts-mode
-               html-ts-mode
-               css-ts-mode
-               dockerfile-ts-mode
-               yaml-ts-mode) . eglot-ensure))
-      :config
-      (setq jsonrpc-process-connection-timeout 120)
-      (setq eglot-max-file-watches 500000)
+  ;; Injection queries for embedded languages in TOML run commands
+  ;; This enables syntax highlighting inside multi-line strings for run commands
+  (defun my/setup-toml-injections ()
+    "Set up treesit injection queries for embedded languages in TOML."
+    (when (and (treesit-ready-p 'toml) (treesit-ready-p 'bash))
+      (let ((query "(pair
+  (bare_key) @key (#eq? @key \"run\")
+  (string) @injection.content
+  (#match? @injection.content \"^['\\\"]{3}.*\")
+  (#offset! @injection.content 0 3 0 -3)
+  (#set! injection.language \"bash\"))"))
+        (treesit-query-set 'toml 'embedded query))))
 
-      ;; Community Standards for LSP Servers (Install via npm):
-      ;; npm install -g dockerfile-language-server-nodejs yaml-language-server typescript-language-server typescript vscode-langservers-extracted prettier
+  ;; Alternative: Manual injection via font-lock for run commands
+  (defun my/mise-run-fontify (beg end)
+    "Fontify embedded code in mise run commands between BEG and END."
+    (when (and (treesit-ready-p 'bash)
+               (string-match-p "mise.*\\.toml\\'" (or buffer-file-name "")))
+      (save-excursion
+        (goto-char beg)
+        (while (re-search-forward "^run\\s-*=\\s-*\"\"\"\\(?:#!\\([^\"\n]+\\)\\)?" end t)
+          (let ((lang-start (match-beginning 0))
+                (lang (match-string 1))
+                (code-start (match-end 0)))
+            (goto-char code-start)
+            (when (re-search-forward "\"\"\"" nil t)
+              (let ((code-end (match-beginning 0)))
+                (when-let* ((lang-name (cond ((string-match-p "python" (or lang "")) "python")
+                                             ((string-match-p "bash\\|sh" (or lang "")) "bash")
+                                             ((string-match-p "node" (or lang "")) "javascript")
+                                             (t "bash")))
+                            (lang-mode (intern (format "%s-ts-mode" lang-name))))
+                (when (functionp lang-mode)
+                  (treesit-fontify-region code-start code-end lang-name))))))))))
 
-      ;; 1. Python: basedpyright (or pyright)
-      (add-to-list 'eglot-server-programs
-                   '((python-mode python-ts-mode) . ("basedpyright-langserver" "--stdio")))
+  ;; Indirect buffer method for full LSP support on embedded code
+  (defun my/mise-edit-run-command ()
+    "Edit the run command at point in an indirect buffer with proper LSP.
+  Opens an indirect buffer with the embedded code, enabling full LSP features."
+    (interactive)
+    (let* ((line-content (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+           (in-string (and (string-match "^run\\s-*=\\s-*\"\"\"\\(?:#!\\([^\"\n]+\\)\\)?" line-content)
+                           (or (match-string 1 line-content) "/bin/bash"))))
+      (goto-char (line-beginning-position))
+      (if (re-search-forward "^run\\s-*=\\s-*\"\"\"\\(?:#!\\([^\"\n]+\\)\\)?" (line-end-position) t)
+          (let* ((shebang (or (match-string 1) "/bin/bash"))
+                 (lang (cond ((string-match-p "python" shebang) "python")
+                             ((string-match-p "bash\\|sh" shebang) "bash")
+                             ((string-match-p "node" shebang) "javascript")
+                             (t "bash")))
+                 (code-start (match-end 0))
+                 (code-end (save-excursion
+                             (goto-char code-start)
+                             (if (re-search-forward "\"\"\"" nil t)
+                                 (match-beginning 0)
+                               (point-max))))
+                 (code (buffer-substring-no-properties code-start code-end))
+                 (buf-name (format "*mise-run:%s*" (file-name-nondirectory (buffer-file-name))))
+                 (mode (intern (format "%s-ts-mode" lang))))
+            (with-current-buffer (get-buffer-create buf-name)
+              (erase-buffer)
+              (insert code)
+              (when (functionp mode) (funcall mode))
+              (setq-local my/mise-source-buffer (current-buffer))
+              (setq-local my/mise-source-start code-start)
+              (setq-local my/mise-source-end code-end)
+              (goto-char (point-min)))
+            (pop-to-buffer buf-name)
+            (message "Edit the command, then C-c C-c to save back to source"))
+        (user-error "Not on a run command with multi-line string"))))
 
-      ;; 2. JavaScript/TypeScript: typescript-language-server (Community Industry Standard)
-      (add-to-list 'eglot-server-programs
-                   '((js-ts-mode js-mode javascript-mode typescript-ts-mode typescript-mode tsx-ts-mode) . ("typescript-language-server" "--stdio")))
+  (defun my/mise-save-back ()
+    "Save edited content back to the source mise file."
+    (interactive)
+    (if (and (boundp 'my/mise-source-buffer)
+             (buffer-live-p my/mise-source-buffer))
+        (let ((content (buffer-string)))
+          (with-current-buffer my/mise-source-buffer
+            (goto-char my/mise-source-start)
+            (delete-region my/mise-source-start my/mise-source-end)
+            (insert content))
+          (kill-buffer))
+      (user-error "Not in a mise edit buffer")))
 
-      ;; 3. HTML: vscode-html-language-server (Industry Standard from VS Code)
-      (add-to-list 'eglot-server-programs
-                   '((html-ts-mode html-mode) . ("vscode-html-language-server" "--stdio")))
+  (with-eval-after-load 'toml-ts-mode
+    (define-key toml-ts-mode-map (kbd "C-c C-e") #'my/mise-edit-run-command))
+  #+end_src
 
-      ;; 4. CSS: vscode-css-language-server (Industry Standard from VS Code)
-      (add-to-list 'eglot-server-programs
-                   '((css-ts-mode css-mode) . ("vscode-css-language-server" "--stdio")))
-
-      ;; 5. Docker: docker-langserver (from dockerfile-language-server-nodejs)
-      (add-to-list 'eglot-server-programs
-                   '((dockerfile-ts-mode dockerfile-mode) . ("docker-langserver" "--stdio")))
-
-      ;; 6. YAML: yaml-language-server
-      (add-to-list 'eglot-server-programs
-                   '((yaml-ts-mode yaml-mode) . ("yaml-language-server" "--stdio")))
-
-      ;; Optimized for "PyCharm" balance: Deep analysis without "Strict" noise
-      (setq-default eglot-workspace-configuration
-      '(:python (:analysis (:typeCheckingMode "basic"
-                :autoSearchPaths t
-                :useLibraryCodeForTypes t
-                :diagnosticMode "openFilesOnly"
-                :indexing t
-                :autoImportCompletions t))
-        :ruff (:line-length 88
-               :lint (:enable t)
-               :format (:enable t))
-        :yaml (:schemas (:kubernetes "/*.yaml"
-                         :http://json.schemastore.org/docker-compose "docker-compose.ya?ml")
-               :format (:enable t)))))
-#+end_src
-** Visual Wrapping (built-in Emacs 30)
+  ** Visual Wrapping (built-in Emacs 30)
  Improves reading of long lines in code buffers, maintaining visual indentation.
 
  #+begin_src emacs-lisp
@@ -1436,11 +2135,77 @@ This configuration provides a high-performance, industry-standard LSP experience
                                        :background "#fdf6e3"
                                        :foreground "#586e75"))))
 
-;; for vterm terminal backend:
+ ;; Evil Terminal Bindings (EAT)
+ ;; Configure Evil keybindings for EAT terminal to enable window navigation and Evil commands.
+  (with-eval-after-load 'eat
+    (with-eval-after-load 'evil
+
+      ;; Evil window navigation in EAT terminal
+      (evil-define-key 'emacs eat-mode-map
+        "C-w h" #'evil-window-left
+        "C-w j" #'evil-window-down
+        "C-w k" #'evil-window-up
+        "C-w l" #'evil-window-right
+        "C-w C-h" #'evil-window-left
+        "C-w C-j" #'evil-window-down
+        "C-w C-k" #'evil-window-up
+        "C-w C-l" #'evil-window-right
+        "C-w w" #'other-window
+        "C-w W" #'other-window
+        "C-w n" #'evil-window-new
+        "C-w v" #'evil-window-vsplit
+        "C-w s" #'evil-window-split
+        "C-w q" #'evil-quit
+        "C-w c" #'evil-window-delete
+        "C-w =" #'balance-windows
+        "C-w <left>" #'evil-window-left
+        "C-w <down>" #'evil-window-down
+        "C-w <up>" #'evil-window-up
+        "C-w <right>" #'evil-window-right
+        "C-h" #'evil-window-left
+        "C-j" #'evil-window-down
+        "C-k" #'evil-window-up
+        "C-l" #'evil-window-right)
+
+      ;; Leader key bindings for terminal (SPC prefix)
+      (with-eval-after-load 'evil
+        (define-key eat-mode-map (kbd "SPC") my-leader-map))
+
+      ;; Function to toggle Evil state in terminal
+      (defun my/eat-toggle-evil-state ()
+        "Toggle Evil state in EAT terminal between Emacs and Normal."
+        (interactive)
+        (if (eq evil-state 'emacs)
+            (progn
+              (evil-normal-state)
+              (message "EAT: Evil Normal mode (use C-o to execute Emacs commands)"))
+          (evil-emacs-state)
+          (message "EAT: Emacs mode (full terminal control)")))
+
+      ;; Bind toggle escape sequence for switching modes
+      (define-key eat-mode-map (kbd "C-c t") #'my/eat-toggle-evil-state)))
+
+ ;; for vterm terminal backend:
 (use-package vterm
   :ensure t
+  :if (let ((has-vterm-toolchain (and (executable-find "cmake")
+                                      (executable-find "make")
+                                      (or (executable-find "cc")
+                                          (executable-find "gcc")
+                                          (executable-find "clang")))))
+        (or has-vterm-toolchain (locate-library "vterm-module")))
+  :commands (vterm vterm-other-window)
   :init
-  (setq vterm-always-compile-module t))
+  (let ((has-vterm-toolchain (and (executable-find "cmake")
+                                  (executable-find "make")
+                                  (or (executable-find "cc")
+                                      (executable-find "gcc")
+                                      (executable-find "clang")))))
+    ;; Avoid hard failures on systems without build tools (e.g. minimal Nix profiles).
+    (setq vterm-always-compile-module has-vterm-toolchain))
+  :config
+  (unless (bound-and-true-p vterm-module-loaded)
+    (message "vterm module not available; install cmake/make/cc to enable native vterm.")))
 
 ;; install claude-code.el
 (use-package claude-code :ensure t
@@ -1448,7 +2213,6 @@ This configuration provides a high-performance, industry-standard LSP experience
   :config
   (claude-code-mode)
   :bind-keymap ("C-c c" . claude-code-command-map)
-
   ;; Optionally define a repeat map so that "M" will cycle thru Claude auto-accept/plan/confirm modes after invoking claude-code-cycle-mode / C-c M.
   :bind
   (:repeat-map my-claude-code-map ("M" . claude-code-cycle-mode)))
@@ -1668,8 +2432,10 @@ This configuration provides a high-performance, industry-standard LSP experience
         :ensure t
         :init
         (setq org-roam-v2-ack t)
+        (setq org-roam-directory (expand-file-name "~/org"))
+        (unless (file-directory-p org-roam-directory)
+          (make-directory org-roam-directory t))
         :custom
-        (org-roam-directory (file-truename "~/org"))
         (org-roam-completion-everywhere nil)
         :config (org-roam-db-autosync-mode))
 #+end_src
@@ -1721,95 +2487,12 @@ Each project needs a ~.envrc~ file (~use flake~ for Nix, or ~mise direnv activat
     :hook (after-init . envrc-global-mode))
 #+end_src
 
-** Debugging (DAPE)
-Modern debug configuration without dap-mode.
+** Debugging (dap-mode)
+Java debugging via dap-mode with JDTLS support.
 
 #+begin_src emacs-lisp
   (require 'which-func)
   (which-function-mode 1)
-
-  (defun my/get-java-full-test-target (is-gradle)
-    "Return the test target with the full package (e.g., com.foo.Bar.test)."
-    (let* ((package-name (save-excursion
-                           (goto-char (point-min))
-                           (when (re-search-forward "^package \\(.+\\);" nil t)
-                             (match-string 1))))
-           (class-name (file-name-base (buffer-file-name)))
-           (method-name (which-function))
-           (clean-method (when (stringp method-name)
-                           (car (last (split-string method-name "\\.")))))
-           ;; Build the FQN (Fully Qualified Name)
-           (full-class (if package-name (concat package-name "." class-name) class-name)))
-      (cond
-       ((not clean-method) full-class)
-       (is-gradle (format "*%s.%s" class-name clean-method))
-       (t (format "%s#%s" full-class clean-method)))))
-
-  (defun my/java-debug-test-at-point ()
-    "Initialize JVM in debug mode only for the method or class under cursor."
-    (interactive)
-    (unless (project-current)
-      (user-error "Not in a project"))
-
-    (let* ((project-root (project-root (project-current)))
-           (is-gradle (file-exists-p (expand-file-name "gradlew" project-root)))
-           (test-target (my/get-java-full-test-target is-gradle))
-           (buf-name " *java-test-debug-process*")
-           ;; Build the specific command
-           (cmd (if is-gradle
-                    (format "./gradlew test --tests \"%s\" --rerun-tasks --debug-jvm" test-target)
-                  (format "mvn -Dmaven.surefire.debug test -Dtest=\"%s\"" test-target))))
-
-      ;; Clean up previous processes
-      (when (get-buffer buf-name)
-        (ignore-errors (delete-process (get-buffer-process buf-name)))
-        (kill-buffer buf-name))
-
-      (message "Launching JVM for: %s..." test-target)
-
-      (let* ((default-directory project-root)
-             (proc (start-process-shell-command "java-debug-proc" buf-name cmd)))
-
-        (set-process-filter
-         proc
-         (lambda (process output)
-           (when (buffer-live-p (process-buffer process))
-             (with-current-buffer (process-buffer process)
-               (save-excursion
-                 (goto-char (point-max))
-                 (insert output))))
-
-           (when (string-match-p "Listening for transport dt_socket" output)
-             (message "JVM ready for [%s]! Use Dape to attach." test-target)))))))
-
-  (defun my/show-java-debug-log ()
-    "Show the log buffer of the current debug process."
-    (interactive)
-    (if (get-buffer " *java-test-debug-process*")
-        (display-buffer " *java-test-debug-process*")
-      (message "No active debug log.")))
-
-  (use-package dape
-    :ensure t
-    :config
-    (setq dape-buffer-window-arrangement 'right)
-
-    (add-to-list 'dape-configs
-                 `(java-attach
-                   modes (java-mode java-ts-mode)
-                   ensure (lambda (&rest _) (eglot-current-server))
-                   ;; Increase port resilience
-                   port (lambda ()
-                          (let ((port (eglot-execute-command
-                                       (eglot-current-server)
-                                       "vscode.java.startDebugSession" nil)))
-                            ;; A brief pause to prevent the Eglot Sentinel from getting lost
-                            (sit-for 0.2)
-                            port))
-                   :type "java"
-                   :request "attach"
-                   :hostName "127.0.0.1"
-                   :port 5005)))
 #+end_src
 
 ** Java Test Coverage (JaCoCo)
@@ -1938,198 +2621,218 @@ Module for subtle coverage visualization.
 * Keybindings Configuration
 ** Centralized Leader Bindings
 #+begin_src emacs-lisp
-  (my/bind-leader "SPC" 'project-find-file "find file in project")
-  (my/bind-leader ":"   'execute-extended-command "M-x")
+    (my/bind-leader "SPC" 'project-find-file "find file in project")
+    (my/bind-leader ":"   'execute-extended-command "M-x")
 
-  ;; --- Help & Config (h) ---
-  (my/bind-leader "h b i" 'my/emacs-build-info "Emacs build info")
-  (my/bind-leader "h r r" (lambda () (interactive) (load-file user-init-file)) "reload config")
+    ;; --- Help & Config (h) ---
+    (my/bind-leader "h b i" 'my/emacs-build-info "Emacs build info")
+    (my/bind-leader "h r r" (lambda () (interactive) (load-file user-init-file)) "reload config")
 
-  ;; --- Buffer (b) ---
-  (my/bind-leader "."   'find-file "browse files")
-  (my/bind-leader ","   'switch-to-buffer "switch buffer")
-  (my/bind-leader "`"   'evil-switch-to-windows-last-buffer "last buffer")
+    ;; --- Buffer (b) ---
+    (my/bind-leader "."   'find-file "browse files")
+    (my/bind-leader ","   'switch-to-buffer "switch buffer")
+    (my/bind-leader "`"   'evil-switch-to-windows-last-buffer "last buffer")
 
-  (my/bind-leader "b b" 'consult-buffer "switch buffer")
-  (my/bind-leader "b B" 'switch-to-buffer "switch buffer (all)")
-  (my/bind-leader "b i" 'ibuffer "ibuffer")
-  (my/bind-leader "b n" 'next-buffer "next buffer")
-  (my/bind-leader "b p" 'previous-buffer "previous buffer")
-  (my/bind-leader "b s" 'save-buffer "save buffer")
-  (my/bind-leader "b S" 'evil-write-all "save all buffers")
-  (my/bind-leader "b r" 'revert-buffer "revert buffer")
-  (my/bind-leader "b k" 'kill-current-buffer "kill buffer")
-  (my/bind-leader "b K" 'my/kill-all-buffers "kill all buffers")
-  (my/bind-leader "b O" 'my/kill-other-buffers "kill other buffers")
-  (my/bind-leader "b N" 'evil-buffer "new buffer")
-  (my/bind-leader "b y" 'my/copy-this-file "copy file contents")
-  (my/bind-leader "b R" 'rename-buffer "rename buffer")
-  (my/bind-leader "b Y" 'bury-buffer "bury buffer")
+    (my/bind-leader "b b" 'consult-buffer "switch buffer")
+    (my/bind-leader "b B" 'switch-to-buffer "switch buffer (all)")
+    (my/bind-leader "b i" 'ibuffer "ibuffer")
+    (my/bind-leader "b n" 'next-buffer "next buffer")
+    (my/bind-leader "b p" 'previous-buffer "previous buffer")
+    (my/bind-leader "b s" 'save-buffer "save buffer")
+    (my/bind-leader "b S" 'evil-write-all "save all buffers")
+    (my/bind-leader "b r" 'revert-buffer "revert buffer")
+    (my/bind-leader "b k" 'kill-current-buffer "kill buffer")
+    (my/bind-leader "b K" 'my/kill-all-buffers "kill all buffers")
+    (my/bind-leader "b O" 'my/kill-other-buffers "kill other buffers")
+    (my/bind-leader "b N" 'evil-buffer "new buffer")
+    (my/bind-leader "b y" 'my/copy-this-file "copy file contents")
+    (my/bind-leader "b R" 'rename-buffer "rename buffer")
+    (my/bind-leader "b Y" 'bury-buffer "bury buffer")
 
-  ;; --- Code & LSP (c) ---
-  (my/bind-leader "c a" 'eglot-code-actions "code action")
-  (my/bind-leader "c r" 'eglot-rename "rename")
-  (my/bind-leader "c f" 'apheleia-format-buffer "format")
-  (my/bind-leader "c d" 'xref-find-definitions "definition")
-  (my/bind-leader "c D" 'xref-find-references "references")
+    ;; --- Code & LSP (c) ---
+    (my/bind-leader "c a" 'my/smart-code-actions "code action")
+    (my/bind-leader "c r" 'lsp-rename "rename")
+    (my/bind-leader "c f" 'apheleia-format-buffer "format")
+    (my/bind-leader "c d" 'xref-find-definitions "definition")
+    (my/bind-leader "c D" 'xref-find-references "references")
 
-  ;; Java Specific
-  (my/bind-leader "c j n" 'eglot-java-create-project "new project")
-  (my/bind-leader "c j i" 'eglot-java-organize-imports "organize imports")
-  (my/bind-leader "c j r" (lambda () (interactive) (call-interactively #'eglot-shutdown) (eglot-ensure)) "restart eglot")
-  (my/bind-leader "c j t" #'java-ts-mode "switch to java-ts-mode")
-  (my/bind-leader "c i t" 'my/install-all-treesit-grammars "install all ts grammars")
+    ;; Java Specific
+    (my/bind-leader "c j i" 'lsp-java-organize-imports "organize imports")
+    (my/bind-leader "c j r" 'lsp-workspace-restart "restart LSP")
+    (my/bind-leader "c j t" #'java-ts-mode "switch to java-ts-mode")
+    (my/bind-leader "c i t" 'my/install-all-treesit-grammars "install all ts grammars")
+    ;; Java creation (under c j)
+    (my/bind-leader "c j c" 'my/java-new-class "new class")
+    (my/bind-leader "c j C" 'my/java-new-file "new file (choose kind)")
+    (my/bind-leader "c j e" 'my/java-new-enum "new enum")
+    (my/bind-leader "c j I" 'my/java-new-interface "new interface")
+    (my/bind-leader "c j R" 'my/java-new-record "new record")
 
-  ;; Java Coverage
-  (my/bind-leader "c C t" 'my/java-coverage-toggle "toggle coverage lenses")
-  (my/bind-leader "c C h" 'my/java-coverage-browse-report "open html report")
+  ;; Generate (IntelliJ Alt+Insert equivalent)
+  (my/bind-leader "c j g t" 'lsp-java-generate-to-string "generate toString")
+  (my/bind-leader "c j g h" 'lsp-java-generate-equals-and-hash-code "generate hashCode/equals")
+  (my/bind-leader "c j g c" 'lsp-java-generate-overrides "generate overrides")
+  (my/bind-leader "c j g a" 'lsp-java-add-getter-setter "generate accessors")
 
-  ;; --- Debug (d) ---
-  (my/bind-leader "d t"  'my/java-debug-test-at-point "Debug Test")
-  (my/bind-leader "d b"  'dape-breakpoint-toggle "Toggle Breakpoint")
-  (my/bind-leader "d c"  'dape-continue "Continue")
-  (my/bind-leader "d n"  'dape-next "Next (Step Over)")
-  (my/bind-leader "d i"  'dape-step-in "Step In")
-  (my/bind-leader "d o"  'dape-step-out "Step Out")
-  (my/bind-leader "d r"  'dape-restart "Restart")
-  (my/bind-leader "d l"  'dape-info-setup "Show Layout")
-  (my/bind-leader "d Q"  'dape-kill "Quit Debugger")
+  ;; Refactor (IntelliJ Ctrl+Alt+V/M style)
+  (my/bind-leader "c j x v" 'lsp-java-extract-to-local-variable "extract variable")
+  (my/bind-leader "c j x m" 'lsp-java-extract-method "extract method")
+  (my/bind-leader "c j x c" 'lsp-java-extract-to-constant "extract constant")
 
-  ;; --- Errors/Flymake (e) ---
-  (my/bind-leader "e p" 'flymake-show-project-diagnostics "panel (project)")
-  (my/bind-leader "e b" 'flymake-show-buffer-diagnostics "panel (buffer)")
-  (my/bind-leader "e l" 'consult-flymake "search buffer")
-  (my/bind-leader "e L" 'my/consult-flymake-project "search project")
-  (my/bind-leader "e n" 'flymake-goto-next-error "next")
-  (my/bind-leader "e N" 'flymake-goto-prev-error "prev")
+  ;; Navigation
+  (my/bind-leader "c j T" 'my/java-go-to-test "toggle test/source")
+  
+    ;; Java Coverage
+    (my/bind-leader "c C t" 'my/java-coverage-toggle "toggle coverage lenses")
+    (my/bind-leader "c C h" 'my/java-coverage-browse-report "open html report")
 
   ;; --- Explorer (E) ---
-  (my/bind-leader "E e" (lambda () (interactive) (dirvish (project-root (project-current t)))) "project root")
-  (my/bind-leader "E f" 'dirvish-fd "find files (fd)")
-  (my/bind-leader "E ." 'dirvish "current dir")
+  (my/bind-leader "E e" 'treemacs "project explorer")
+  (my/bind-leader "E ." 'treemacs-find-file "locate current file")
+  (my/bind-leader "E f" 'treemacs-find-tag "find tag")
 
-  ;; --- File (f) ---
-  (my/bind-leader "f f" 'find-file "find file")
-  (my/bind-leader "f F" 'find-file "find file anywhere")
-  (my/bind-leader "f n" 'my/create-file "new file")
-  (my/bind-leader "f c" 'my/copy-this-file "copy file")
-  (my/bind-leader "f r" 'consult-recent-file "recent files")
-  (my/bind-leader "f s" 'dirvish-side "sidebar")
-  (my/bind-leader "f S" 'write-file "save as...")
-  (my/bind-leader "f R" 'my/move-this-file "rename/move file")
-  (my/bind-leader "f d" 'my/delete-this-file "delete file")
-  (my/bind-leader "f D" 'my/delete-this-file "delete file")
-  (my/bind-leader "f y" 'my/copy-file-path "copy file path")
-  (my/bind-leader "f Y" 'my/copy-file-path-relative-to-project "copy relative path")
-  (my/bind-leader "f p" (lambda () (interactive) (find-file (expand-file-name "config.org" user-emacs-directory))) "open config")
-  (my/bind-leader "f e" (lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) "open early-init")
-  (my/bind-leader "f E" (lambda () (interactive) (dired (expand-file-name user-emacs-directory))) "browse emacs.d")
+  ;; lsp-treemacs views
+  (my/bind-leader "c s" 'lsp-treemacs-symbols "symbols tree")
+  (my/bind-leader "c e" 'lsp-treemacs-errors-list "errors tree")
+  (my/bind-leader "c h" 'lsp-treemacs-call-hierarchy "call hierarchy")
+  (my/bind-leader "c t" 'lsp-treemacs-type-hierarchy "type hierarchy")
 
-  ;; --- Spell & Language (S) ---
-;;  (my/bind-leader "S s" 'jinx-correct "correct word")
- ;; (my/bind-leader "S t" 'my/spell-toggle-lang "toggle lang (EN/PT)")
-  ;;(my/bind-leader "S l" 'jinx-languages "select languages")
+    ;; --- Errors/Flymake (e) ---
+    (my/bind-leader "e p" 'flymake-show-project-diagnostics "panel (project)")
+    (my/bind-leader "e b" 'flymake-show-buffer-diagnostics "panel (buffer)")
+    (my/bind-leader "e l" 'consult-flymake "search buffer")
+    (my/bind-leader "e L" 'my/consult-flymake-project "search project")
+    (my/bind-leader "e n" 'flymake-goto-next-error "next")
+    (my/bind-leader "e N" 'flymake-goto-prev-error "prev")
 
-  ;; --- Go to (g) ---
-  (my/bind-leader "g s" 'magit-status "magit status")
-  (my/bind-leader "g S" 'magit-status-here "magit status here")
-  (my/bind-leader "g /" 'magit-dispatch "Magit dispatch")
-  (my/bind-leader "g ." 'magit-file-dispatch "Magit file dispatch")
-  (my/bind-leader "g f" 'magit-find-file "Find file")
-  (my/bind-leader "g b" 'magit-blame-addition "Blame")
-  (my/bind-leader "g t" 'git-timemachine-toggle "Time machine")
-  (my/bind-leader "g i" 'magit-init "Initialize repo")
-  (my/bind-leader "g M" 'consult-global-mark "jump to global mark")
+    ;; --- File (f) ---
+    (my/bind-leader "f f" 'find-file "find file")
+    (my/bind-leader "f F" 'find-file "find file anywhere")
+    (my/bind-leader "f n" 'my/create-file "new file")
+    (my/bind-leader "f c" 'my/copy-this-file "copy file")
+    (my/bind-leader "f r" 'consult-recent-file "recent files")
+    (my/bind-leader "f s" 'treemacs "sidebar")
+    (my/bind-leader "f S" 'write-file "save as...")
+    (my/bind-leader "f R" 'my/move-this-file "rename/move file")
+    (my/bind-leader "f d" 'my/delete-this-file "delete file")
+    (my/bind-leader "f D" 'my/delete-this-file "delete file")
+    (my/bind-leader "f y" 'my/copy-file-path "copy file path")
+    (my/bind-leader "f Y" 'my/copy-file-path-relative-to-project "copy relative path")
+    (my/bind-leader "f p" (lambda () (interactive) (find-file (expand-file-name "config.org" user-emacs-directory))) "open config")
+    (my/bind-leader "f e" (lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) "open early-init")
+    (my/bind-leader "f E" (lambda () (interactive) (dired (expand-file-name user-emacs-directory))) "browse emacs.d")
 
-  (my/bind-leader "g l c" 'magit-log-current "Log current branch")
-  (my/bind-leader "g l f" 'magit-log-buffer-file "Log current file")
-  (my/bind-leader "g l g" 'magit-log-all "Log all branches")
+    ;; --- Spell & Language (S) ---
+  ;;  (my/bind-leader "S s" 'jinx-correct "correct word")
+   ;; (my/bind-leader "S t" 'my/spell-toggle-lang "toggle lang (EN/PT)")
+    ;;(my/bind-leader "S l" 'jinx-languages "select languages")
 
-  (my/bind-leader "g m" 'magit-file-dispatch "Git selection menu")
-  (my/bind-leader "g r" (lambda () (interactive) (call-interactively 'magit-discard)) "Git discard selection")
+    ;; --- Go to (g) ---
+    (my/bind-leader "g s" 'magit-status "magit status")
+    (my/bind-leader "g S" 'magit-status-here "magit status here")
+    (my/bind-leader "g /" 'magit-dispatch "Magit dispatch")
+    (my/bind-leader "g ." 'magit-file-dispatch "Magit file dispatch")
+    (my/bind-leader "g f" 'magit-find-file "Find file")
+    (my/bind-leader "g b" 'magit-blame-addition "Blame")
+    (my/bind-leader "g t" 'git-timemachine-toggle "Time machine")
+    (my/bind-leader "g i" 'magit-init "Initialize repo")
+    (my/bind-leader "g M" 'consult-global-mark "jump to global mark")
 
-  ;; --- Jump (j) ---
-  (my/bind-leader "i s" 'tempel-insert "insert snippet")
-  (my/bind-leader "i S" 'tempel-complete "complete snippet")
+    (my/bind-leader "g l c" 'magit-log-current "Log current branch")
+    (my/bind-leader "g l f" 'magit-log-buffer-file "Log current file")
+    (my/bind-leader "g l g" 'magit-log-all "Log all branches")
 
-  (my/bind-leader "j j" 'avy-goto-char-2 "jump 2 chars")
-  (my/bind-leader "j l" 'avy-goto-line "jump line")
-  (my/bind-leader "j w" 'avy-goto-word-1 "jump word")
-  (my/bind-leader "j c" 'avy-goto-char "jump char")
+    (my/bind-leader "g m" 'magit-file-dispatch "Git selection menu")
+    (my/bind-leader "g r" (lambda () (interactive) (call-interactively 'magit-discard)) "Git discard selection")
 
-  ;; --- Notes (n) ---
-  (my/bind-leader "n r" 'org-roam-buffer-toggle "roam toggle")
-  (my/bind-leader "n f" 'org-roam-node-find "find node")
-  (my/bind-leader "n i" 'org-roam-node-insert "insert node")
-  (my/bind-leader "n d t" 'org-roam-dailies-capture-today "capture today")
+    ;; --- Jump (j) ---
+    (my/bind-leader "i s" 'tempel-insert "insert snippet")
+    (my/bind-leader "i S" 'tempel-complete "complete snippet")
 
-  ;; --- Open (o) ---
-  (my/bind-leader "o p" 'popper-toggle "toggle popup")
-  (my/bind-leader "o t h" 'my/open-terminal-here "here")
-  (my/bind-leader "o t p" 'my/open-terminal-in-project "project")
-  (my/bind-leader "o d" 'docker "docker TUI")
-  (my/bind-leader "o C" 'docker-compose "docker compose")
-  (my/bind-leader "o k" 'kubernetes "kubernetes TUI")
+    (my/bind-leader "j j" 'avy-goto-char-2 "jump 2 chars")
+    (my/bind-leader "j l" 'avy-goto-line "jump line")
+    (my/bind-leader "j w" 'avy-goto-word-1 "jump word")
+    (my/bind-leader "j c" 'avy-goto-char "jump char")
 
-  ;; --- Project (p) ---
-  (my/bind-leader "p p" 'project-switch-project "switch project")
-  (my/bind-leader "p b" 'project-switch-to-buffer "switch buffer")
-  (my/bind-leader "p f" 'project-find-file "find file")
-  (my/bind-leader "p r" 'my/project-recent-files "recent files")
-  (my/bind-leader "p c" 'my/project-compile "compile")
-  (my/bind-leader "p t" 'my/project-test "run tests")
-  (my/bind-leader "p x" 'my/project-run "run project")
-  (my/bind-leader "p k" 'project-kill-buffers "kill buffers")
-  (my/bind-leader "p d" 'project-dired "dired")
-  (my/bind-leader "p v" 'project-vc-dir "vc dir")
-  (my/bind-leader "p s" 'project-search "search (native)")
-  (my/bind-leader "p /" 'consult-ripgrep "search (ripgrep)")
-  (my/bind-leader "p !" 'project-shell-command "shell command")
-  (my/bind-leader "p &" 'project-async-shell-command "async shell command")
-  (my/bind-leader "p R" 'project-query-replace-regexp "query replace")
+    ;; --- Notes (n) ---
+    (my/bind-leader "n r" 'org-roam-buffer-toggle "roam toggle")
+    (my/bind-leader "n f" 'org-roam-node-find "find node")
+    (my/bind-leader "n i" 'org-roam-node-insert "insert node")
+    (my/bind-leader "n d t" 'org-roam-dailies-capture-today "capture today")
 
-  ;; --- Search (s) ---
-  (my/bind-leader "s s" 'consult-line "search buffer")
-  (my/bind-leader "s S" 'consult-line-multi "search all buffers")
-  (my/bind-leader "s g" 'consult-goto-line "goto line")
-  (my/bind-leader "s i" 'consult-imenu "jump to symbol")
-  (my/bind-leader "s h" 'consult-outline "jump to heading")
-  (my/bind-leader "s f" 'consult-find "find file (live)")
-  (my/bind-leader "s k" 'consult-yank-pop "yank pop")
+    ;; --- Open (o) ---
+    (my/bind-leader "o p" 'popper-toggle "toggle popup")
+     (my/bind-leader "o t h" 'my/open-terminal-here "here")
+     (my/bind-leader "o t p" 'my/open-terminal-in-project "project")
+     (my/bind-leader "o t e" 'eat "eat terminal")
+     (my/bind-leader "o t t" 'my/eat-toggle-evil-state "toggle evil state")
+     (my/bind-leader "o d" 'docker "docker TUI")
+     (my/bind-leader "o C" 'docker-compose "docker compose")
+    (my/bind-leader "o k" 'kubernetes "kubernetes TUI")
 
-  ;; --- Undo (u) ---
-  (my/bind-leader "u" 'vundo "undo tree (visual)")
+    ;; --- Project (p) ---
+    (my/bind-leader "p p" 'project-switch-project "switch project")
+    (my/bind-leader "p b" 'project-switch-to-buffer "switch buffer")
+    (my/bind-leader "p f" 'project-find-file "find file")
+    (my/bind-leader "p r" 'my/project-recent-files "recent files")
+    (my/bind-leader "p c" 'my/project-compile "compile")
+    (my/bind-leader "p t" 'my/project-test "run tests")
+    (my/bind-leader "p x" 'my/project-run "run project")
+    (my/bind-leader "p k" 'project-kill-buffers "kill buffers")
+    (my/bind-leader "p d" 'project-dired "dired")
+    (my/bind-leader "p v" 'project-vc-dir "vc dir")
+    (my/bind-leader "p s" 'project-search "search (native)")
+    (my/bind-leader "p /" 'consult-ripgrep "search (ripgrep)")
+    (my/bind-leader "p !" 'project-shell-command "shell command")
+    (my/bind-leader "p &" 'project-async-shell-command "async shell command")
+    (my/bind-leader "p R" 'project-query-replace-regexp "query replace")
 
-  ;; --- Window (w) ---
-  (my/bind-leader "w h"  'evil-window-left "left")
-  (my/bind-leader "w j"  'evil-window-down "down")
-  (my/bind-leader "w k"  'evil-window-up "up")
-  (my/bind-leader "w l"  'evil-window-right "right")
-  (my/bind-leader "w w"  'evil-window-next "next window")
-  (my/bind-leader "w H"  'evil-window-move-far-left "move left")
-  (my/bind-leader "w J"  'evil-window-move-very-bottom "move down")
-  (my/bind-leader "w K"  'evil-window-move-very-top "move up")
-  (my/bind-leader "w L"  'evil-window-move-far-right "move right")
-  (my/bind-leader "w s"  'evil-window-split "split horizontal")
-  (my/bind-leader "w v"  'evil-window-vsplit "split vertical")
-  (my/bind-leader "w c"  'evil-window-delete "close window")
-  (my/bind-leader "w o"  'delete-other-windows "close others")
-  (my/bind-leader "w ="  'balance-windows "balance")
+    ;; --- Search (s) ---
+    (my/bind-leader "s s" 'consult-line "search buffer")
+    (my/bind-leader "s S" 'consult-line-multi "search all buffers")
+    (my/bind-leader "s g" 'consult-goto-line "goto line")
+    (my/bind-leader "s i" 'consult-imenu "jump to symbol")
+    (my/bind-leader "s h" 'consult-outline "jump to heading")
+    (my/bind-leader "s f" 'consult-find "find file (live)")
+    (my/bind-leader "s k" 'consult-yank-pop "yank pop")
 
-  ;; --- Workspace (l) ---
-  (my/bind-leader "l l" 'tab-bar-switch-to-tab "switch tab")
-  (my/bind-leader "l n" 'tab-new "new tab")
-  (my/bind-leader "l c" 'tab-close "close tab")
-  (my/bind-leader "l r" 'tab-rename "rename tab")
+    ;; --- Undo (u) ---
+    (my/bind-leader "u" 'vundo "undo tree (visual)")
 
-  ;; --- AI Assistant (a) ---
-  (my/bind-leader "a g" 'agent-shell-google-start-gemini "Gemini CLI")
-  (my/bind-leader "a o" 'agent-shell-opencode-start-agent "Opencode")
-  (my/bind-leader "a s" 'agent-shell "Agent Shell Menu")
-  (my/bind-leader "a q" 'gptel-send "Gptel Send")
+    ;; --- Window (w) ---
+    (my/bind-leader "w h"  'evil-window-left "left")
+    (my/bind-leader "w j"  'evil-window-down "down")
+    (my/bind-leader "w k"  'evil-window-up "up")
+    (my/bind-leader "w l"  'evil-window-right "right")
+    (my/bind-leader "w w"  'evil-window-next "next window")
+    (my/bind-leader "w H"  'evil-window-move-far-left "move left")
+    (my/bind-leader "w J"  'evil-window-move-very-bottom "move down")
+    (my/bind-leader "w K"  'evil-window-move-very-top "move up")
+    (my/bind-leader "w L"  'evil-window-move-far-right "move right")
+    (my/bind-leader "w s"  'evil-window-split "split horizontal")
+    (my/bind-leader "w v"  'evil-window-vsplit "split vertical")
+    (my/bind-leader "w c"  'evil-window-delete "close window")
+    (my/bind-leader "w o"  'delete-other-windows "close others")
+    (my/bind-leader "w ="  'balance-windows "balance")
 
-  ;; --- Other ---
-  (my/bind-leader ";"   'embark-act "act (embark)")
-  (my/bind-leader "A"   'embark-act "actions (embark)")
+    ;; --- Workspace (l) ---
+    (my/bind-leader "l l" 'tab-bar-switch-to-tab "switch tab")
+    (my/bind-leader "l n" 'tab-new "new tab")
+    (my/bind-leader "l c" 'tab-close "close tab")
+    (my/bind-leader "l r" 'tab-rename "rename tab")
+
+    ;; --- AI Assistant (a) ---
+    (my/bind-leader "a g" 'agent-shell-google-start-gemini "Gemini CLI")
+    (my/bind-leader "a o" 'agent-shell-opencode-start-agent "Opencode")
+    (my/bind-leader "a s" 'agent-shell "Agent Shell Menu")
+    (my/bind-leader "a q" 'gptel-send "Gptel Send")
+  ;; --- Run (r) ---
+    (my/bind-leader "r r" 'my/run "run (async)")
+    (my/bind-leader "r c" 'my/run-compile "run (compile)")
+    (my/bind-leader "r s" 'my/run-stop "stop")
+    (my/bind-leader "r l" 'my/run-show "show output")
+    (my/bind-leader "r R" 'my/run-restart "restart last")
+    ;; --- Other ---
+    (my/bind-leader ";"   'embark-act "act (embark)")
+    (my/bind-leader "A"   'embark-act "actions (embark)")
 #+end_src
-

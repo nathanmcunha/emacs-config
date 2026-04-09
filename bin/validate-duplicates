@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Check for duplicate use-package declarations in an org file.
 # Only scans blocks that are tangled (not :tangle no).
 
