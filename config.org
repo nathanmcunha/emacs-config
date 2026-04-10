@@ -1168,7 +1168,7 @@ comint, eat, vterm, and agent-shell buffers.
       ;; Wgrep's byte-compilation can trip over Emacs 30 batch settings during Elpaca sync.
       ;; Keep the package installed, but skip compiling it as part of the build.
       (use-package wgrep
-        :ensure (if (featurep 'elpaca) '(:build (:not elpaca-build-compile)) t))
+        :ensure t)
 
     (use-package embark
       :ensure t

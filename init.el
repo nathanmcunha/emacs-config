@@ -26,10 +26,18 @@
       ;; Nix provides all packages — disable runtime package installation
       (setq use-package-always-ensure nil)
 
+      ;; Activate autoloads for all Nix-provided packages
+      (package-activate-all)
+
+      ;; Set evil variables before loading (required by evil-collection)
+      (setq evil-want-integration t)
+      (setq evil-want-keybinding nil)
+
       ;; Core packages — already in the Nix closure
       (require 'diminish)
       (require 'transient)
       (require 'evil)
+      (evil-mode 1)
       (require 'org)
 
       ;; Load literate configuration directly
