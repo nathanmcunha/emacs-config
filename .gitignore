@@ -9,6 +9,23 @@ config.el
 # Local storage (Generated files, packages, cache)
 /.local/
 
+# ELPA packages and native compilation cache
+/elpa/
+/eln-cache/
+
+# Emacs auto-generated files
+/history
+/places
+/recentf
+/projects/
+/undo-fu-session/
+
+# Org-roam database
+/org-roam.db
+
+# Snapshots directory
+/snapshots/
+
 # Legacy/Root clutter (should be moved to .local over time)
 /.cache/
 /.dap-breakpoints
