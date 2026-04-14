@@ -1025,6 +1025,29 @@ comint, eat, vterm, and agent-shell buffers.
        (add-hook 'after-make-frame-functions #'my/setup-frame-visuals)
      (my/setup-frame-visuals (selected-frame))))
 
+   (defun my/set-font (family &rest props)
+     (when (member family (font-family-list))
+       (set-face-attribute 'default nil :family family :foundry "outline")))
+
+   (defun my/safe-set-font (families &rest props)
+     (cl-loop for family in families
+              when (member family (font-family-list))
+              return (progn
+                      (set-face-attribute 'default nil :family family)
+                      (cl-loop for (prop val) on props by 'cddr
+                               do (set-face-attribute 'default nil prop val))))
+     (unless (member (car families) (font-family-list))
+       (message "Warning: None of the specified font families are available: %s" families)))
+
+(when (display-graphic-p)
+      (my/safe-set-font '("JetBrainsMono Nerd Font" "FiraCode Nerd Font" "Hack" "DejaVu Sans Mono")
+                         :height 110)
+
+      (dolist (charset '((symbol . "Symbols Nerd Font")
+                         (emoji . "Noto Color Emoji")))
+        (when (member (cdr charset) (font-family-list))
+          (set-fontset-font t (car charset) (cdr charset)))))
+
      (use-package nerd-icons
        :ensure t
        :demand t
@@ -1209,7 +1232,7 @@ comint, eat, vterm, and agent-shell buffers.
       ;; Wgrep's byte-compilation can trip over Emacs 30 batch settings during Elpaca sync.
       ;; Keep the package installed, but skip compiling it as part of the build.
       (use-package wgrep
-        :ensure (:build (:not elpaca-build-compile)))
+        :ensure t)
 
     (use-package embark
       :ensure t
@@ -1976,7 +1999,6 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
                   (add-hook 'completion-at-point-functions #'sql-comint-completion-at-point 10 t))))
 
     ;; 6. LSP support for SQL files via sqls
-    ;; Install: go install github.com/sqls-server/sqls@latest
     ;; Config: ~/.config/sqls/config.yml with connection info
     ;; lsp-sqls is bundled with lsp-mode; requiring it registers the client automatically.
     (with-eval-after-load 'lsp-mode

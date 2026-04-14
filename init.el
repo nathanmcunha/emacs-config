@@ -9,115 +9,130 @@
 (defconst my-local-dir (expand-file-name ".local/" user-emacs-directory))
 (defconst my-local-pkg-dir (expand-file-name "packages/" my-local-dir))
 
-;; 3. Elpaca Bootstrap (Official Installer v0.12 Adapted)
-(defvar elpaca-installer-version 0.12)
-;; ADAPTATION: Using custom directory here
-(defvar elpaca-directory (expand-file-name "elpaca/" my-local-pkg-dir))
-(defvar elpaca-builds-directory (expand-file-name "builds/" elpaca-directory))
-(defvar elpaca-sources-directory (expand-file-name "sources/" elpaca-directory))
+;; 3. Auto-detect package management mode
+;;    On NixOS, packages are in the closure — no Elpaca directory exists.
+;;    On other systems, Elpaca manages packages in .local/packages/elpaca/.
+(defconst my-nix-mode-p
+  (not (file-directory-p (expand-file-name "elpaca/repos" my-local-pkg-dir)))
+  "Non-nil when packages are provided by Nix (no Elpaca checkout).")
 
-(defvar elpaca-order '(elpaca :repo "https://github.com/progfolio/elpaca.git"
-                              :ref nil :depth 1 :inherit ignore
-                              :files (:defaults "elpaca-test.el" (:exclude "extensions"))
-                              :build (:not elpaca-activate)))
+;; ──────────────────────────────────────────────────────────
+;; NIX MODE: Packages provided by Nix closure, skip Elpaca
+;; ──────────────────────────────────────────────────────────
+(if my-nix-mode-p
+    (progn
+      (message "Detected Nix-managed Emacs — skipping Elpaca bootstrap.")
 
-(let* ((repo  (expand-file-name "elpaca/" elpaca-sources-directory))
-       (build (expand-file-name "elpaca/" elpaca-builds-directory))
-       (order (cdr elpaca-order))
-       (default-directory repo))
-  (add-to-list 'load-path (if (file-exists-p build) build repo))
-  (unless (file-exists-p repo)
-    (make-directory repo t)
-    (when (<= emacs-major-version 28) (require 'subr-x))
-    (condition-case-unless-debug err
-        (if-let* ((buffer (pop-to-buffer-same-window "*elpaca-bootstrap*"))
-                  ((zerop (apply #'call-process `("git" nil ,buffer t "clone"
-                                                  ,@(when-let* ((depth (plist-get order :depth)))
-                                                      (list (format "--depth=%d" depth) "--no-single-branch"))
-                                                  ,(plist-get order :repo) ,repo))))
-                  ((zerop (call-process "git" nil buffer t "checkout"
-                                        (or (plist-get order :ref) "--"))))
-                  (emacs (concat invocation-directory invocation-name))
-                  ((zerop (call-process emacs nil buffer nil "-Q" "-L" "." "--batch"
-                                        "--eval" "(byte-recompile-directory \".\" 0 'force)")))
-                  ((require 'elpaca))
-                  ((elpaca-generate-autoloads "elpaca" repo)))
-            (progn (message "%s" (buffer-string)) (kill-buffer buffer))
-          (error "%s" (with-current-buffer buffer (buffer-string))))
-      ((error) (warn "%s" err) (delete-directory repo 'recursive))))
-  (unless (require 'elpaca-autoloads nil t)
-    (require 'elpaca)
-    (elpaca-generate-autoloads "elpaca" repo)
-    (let ((load-source-file-function nil)) (load "./elpaca-autoloads"))))
+      ;; Nix provides all packages — disable runtime package installation
+      (setq use-package-always-ensure nil)
 
-(add-hook 'after-init-hook #'elpaca-process-queues)
-(elpaca `(,@elpaca-order))
+      ;; Activate autoloads for all Nix-provided packages
+      (package-activate-all)
 
-;; 4. Use-package Integration
-;; Install use-package support
-(elpaca elpaca-use-package
-  ;; Enable :elpaca use-package keyword.
-  (elpaca-use-package-mode)
-  ;; Assume :elpaca t unless otherwise specified.
-  (setq use-package-always-ensure t))
+      ;; Set evil variables before loading (required by evil-collection)
+      (setq evil-want-integration t)
+      (setq evil-want-keybinding nil)
 
-;; 5.Install Org-mode BEFORE loading configuration
-;; This prevents "Org version mismatch" by ensuring org-babel
-;; uses Elpaca version, not built-in Emacs version.
-(elpaca org
-  (require 'org))
-;; --- CORE PACKAGES (init.el) ---
+      ;; Core packages — already in the Nix closure
+      (require 'diminish)
+      (require 'transient)
+      (require 'evil)
+      (evil-mode 1)
+      (require 'org)
 
-;; 1. Diminish
-(use-package diminish :ensure t :demand t)
+      ;; Load literate configuration directly
+      (org-babel-load-file (expand-file-name "config.org" user-emacs-directory)))
 
-;; 2. Transient (Magit dependency)
-(use-package transient :ensure t :demand t)
+  ;; ──────────────────────────────────────────────────────────
+  ;; ELPACA MODE: Bootstrap and manage packages at runtime
+  ;; ──────────────────────────────────────────────────────────
+  (progn
+    (message "Detected Elpaca-managed Emacs — bootstrapping package manager.")
 
-;; 4. Evil Mode (Your migrated configuration)
-(use-package evil
-  :ensure t
-  :demand t
-  :init
-  ;; Essential pre-loading settings
-  (setq evil-want-integration t)
-  (setq evil-want-keybinding nil) ;; Required for evil-collection
-  (setq evil-want-C-u-scroll t)
-  (setq evil-undo-system 'undo-fu)
-  :config
-  (evil-mode 1)
-  (setq evil-select-enable-clipboard t))
+    ;; Elpaca Bootstrap (Official Installer v0.12 Adapted)
+    (defvar elpaca-installer-version 0.12)
+    (defvar elpaca-directory (expand-file-name "elpaca/" my-local-pkg-dir))
+    (defvar elpaca-builds-directory (expand-file-name "builds/" elpaca-directory))
+    (defvar elpaca-sources-directory (expand-file-name "sources/" elpaca-directory))
 
+    (defvar elpaca-order '(elpaca :repo "https://github.com/progfolio/elpaca.git"
+                                   :ref nil :depth 1 :inherit ignore
+                                   :files (:defaults "elpaca-test.el" (:exclude "extensions"))
+                                   :build (:not elpaca-activate)))
 
-;; --- FIM CORE ---
+    (let* ((repo  (expand-file-name "elpaca/" elpaca-sources-directory))
+           (build (expand-file-name "elpaca/" elpaca-builds-directory))
+           (order (cdr elpaca-order))
+           (default-directory repo))
+      (add-to-list 'load-path (if (file-exists-p build) build repo))
+      (unless (file-exists-p repo)
+        (make-directory repo t)
+        (when (<= emacs-major-version 28) (require 'subr-x))
+        (condition-case-unless-debug err
+            (if-let* ((buffer (pop-to-buffer-same-window "*elpaca-bootstrap*"))
+                      ((zerop (apply #'call-process `("git" nil ,buffer t "clone"
+                                                      ,@(when-let* ((depth (plist-get order :depth)))
+                                                          (list (format "--depth=%d" depth) "--no-single-branch"))
+                                                      ,(plist-get order :repo) ,repo))))
+                      ((zerop (call-process "git" nil buffer t "checkout"
+                                            (or (plist-get order :ref) "--"))))
+                      (emacs (concat invocation-directory invocation-name))
+                      ((zerop (call-process emacs nil buffer nil "-Q" "-L" "." "--batch"
+                                            "--eval" "(byte-recompile-directory \".\" 0 'force)")))
+                      ((require 'elpaca))
+                      ((elpaca-generate-autoloads "elpaca" repo)))
+                (progn (message "%s" (buffer-string)) (kill-buffer buffer))
+              (error "%s" (with-current-buffer buffer (buffer-string))))
+          ((error) (warn "%s" err) (delete-directory repo 'recursive))))
+      (unless (require 'elpaca-autoloads nil t)
+        (require 'elpaca)
+        (elpaca-generate-autoloads "elpaca" repo)
+        (let ((load-source-file-function nil)) (load "./elpaca-autoloads"))))
 
-;; 5. Wait for Elpaca to be ready (Critical for config.org)
-(elpaca-wait)
+    (add-hook 'after-init-hook #'elpaca-process-queues)
+    (elpaca `(,@elpaca-order))
 
-;; 6. Load Literate Configuration
-(org-babel-load-file (expand-file-name "config.org" user-emacs-directory))
+    ;; Use-package Integration
+    (elpaca elpaca-use-package
+      (elpaca-use-package-mode)
+      (setq use-package-always-ensure t))
 
-(elpaca-wait)
+    ;; Install Org-mode BEFORE loading configuration
+    (elpaca org
+      (require 'org))
 
-;; 7. Post-startup GC
+    ;; Core packages (Elpaca)
+    (use-package diminish :ensure t :demand t)
+    (use-package transient :ensure t :demand t)
+
+    ;; Evil Mode
+    (use-package evil
+      :ensure t
+      :demand t
+      :init
+      (setq evil-want-integration t)
+      (setq evil-want-keybinding nil)
+      (setq evil-want-C-u-scroll t)
+      (setq evil-undo-system 'undo-fu)
+      :config
+      (evil-mode 1)
+      (setq evil-select-enable-clipboard t))
+
+    ;; Wait for Elpaca to finish before loading config
+    (elpaca-wait)
+    (org-babel-load-file (expand-file-name "config.org" user-emacs-directory))
+    (elpaca-wait)))
+
+;; 4. Post-startup GC
 (setq gc-cons-threshold (* 16 1024 1024))
 (add-function :after after-focus-change-function
               (lambda ()
                 (unless (frame-focus-state)
                   (garbage-collect))))
 (custom-set-variables
- ;; custom-set-variables was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
  '(safe-local-variable-values
    '((python-shell-interpreter . ".venv/bin/python")
      (pyvenv-workon . ".venv")
      (eval setq-local lsp-java-java-path
            (string-trim (shell-command-to-string "mise which java"))))))
-(custom-set-faces
- ;; custom-set-faces was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- )
+(custom-set-faces)
