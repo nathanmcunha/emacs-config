@@ -4,7 +4,7 @@
 
 * File Header
 #+begin_src emacs-lisp
-;;; config.el --- Tangled Configuration -*- lexical-binding: t -*-
+ ;;; config.el --- Tangled Configuration -*- lexical-binding: t -*-
 #+end_src
 
 * Core Configuration
@@ -231,6 +231,25 @@
     (if project
         (my/launch-alacritty (project-root project))
       (message "Not in a project"))))
+
+;; --- C++ Single-File Compile & Run (HackerRank Style) ---
+(defun my/compile-and-run-cpp-file ()
+  "Compile the current C++ file with C++23 and run the resulting binary."
+  (interactive)
+  (let* ((file (buffer-file-name))
+         (out (file-name-sans-extension file)))
+    (unless file
+      (user-error "Buffer is not visiting a file"))
+    (unless (or (derived-mode-p 'c++-mode)
+                (derived-mode-p 'c++-ts-mode)
+                (derived-mode-p 'c-mode)
+                (derived-mode-p 'c-ts-mode))
+      (user-error "Not in a C/C++ buffer"))
+    (let ((cmd (format "g++ -std=c++23 -Wall -Wextra -O2 -o %s %s && %s"
+                       (shell-quote-argument out)
+                       (shell-quote-argument file)
+                       (shell-quote-argument out))))
+      (compile cmd))))
 #+end_src
 ** Defaults and UI
 We start by cleaning up the UI to make it look modern and minimal, similar to Doom's defaults.
@@ -338,7 +357,7 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (setq project-list-file (expand-file-name "projects" user-emacs-directory))
     (setq project-vc-extra-root-markers '(".project" ".git"))
 
-    ;; Project type detection (gradle/maven/npm/rust/python)
+    ;; Project type detection (gradle/maven/npm/rust/python/cpp)
     (defun my/project-type (dir)
       "Return the project type symbol for DIR."
       (cond
@@ -350,6 +369,10 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
        ((or (file-exists-p (expand-file-name "pyproject.toml" dir))
             (file-exists-p (expand-file-name "setup.py" dir))
             (file-exists-p (expand-file-name "requirements.txt" dir))) 'python)
+       ((and (file-exists-p (expand-file-name "CMakeLists.txt" dir))
+             (directory-files dir nil "\\.cpp\\'")) 'cpp-cmake)
+       ((and (file-exists-p (expand-file-name "Makefile" dir))
+             (directory-files dir nil "\\.cpp\\'")) 'cpp-make)
        (t nil)))
 
     ;; Fallback marker detection (appended so git backend runs first)
@@ -396,6 +419,8 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
                     ('npm    "npm run build")
                     ('rust   "cargo build")
                     ('python "black .")
+                    ('cpp-cmake "cmake --build build")
+                    ('cpp-make "make -k")
                     (_       (read-string "Compile command: " "make -k ")))))
         (let ((default-directory root)) (compile cmd))))
 
@@ -409,6 +434,8 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
                     ('npm    "npm test")
                     ('rust   "cargo test")
                     ('python "pytest")
+                    ('cpp-cmake "ctest --test-dir build")
+                    ('cpp-make "make test")
                     (_       (read-string "Test command: " "make test ")))))
         (let ((default-directory root)) (compile cmd))))
 
@@ -421,6 +448,8 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
                     ('maven  "mvn exec:java")
                     ('npm    "npm start")
                     ('rust   "cargo run")
+                    ('cpp-cmake "cmake --build build")
+                    ('cpp-make (read-string "Run command: "))
                     (_       (read-string "Run command: ")))))
         (let ((default-directory root)) (compile cmd)))))
 #+end_src
@@ -1536,65 +1565,78 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
                   (html-mode       . html-ts-mode)
                   (css-mode        . css-ts-mode)
                   (dockerfile-mode . dockerfile-ts-mode)
-                  (yaml-mode       . yaml-ts-mode)))
+                  (yaml-mode       . yaml-ts-mode)
+                  (c++-mode        . c++-ts-mode)
+                  (c-mode          . c-ts-mode)))
 
   (with-eval-after-load 'project
     (add-to-list 'project-vc-extra-root-markers "pyproject.toml")
     (add-to-list 'project-vc-extra-root-markers "requirements.txt")
     (add-to-list 'project-vc-extra-root-markers ".venv"))
 
-  (use-package lsp-mode
-    :ensure t
-    :hook (((python-ts-mode
-             js-ts-mode typescript-ts-mode tsx-ts-mode
-             html-ts-mode css-ts-mode
-             dockerfile-ts-mode yaml-ts-mode
-             sql-mode
-             nix-mode qml-mode) . lsp-deferred)
-           (lsp-mode . lsp-enable-which-key-integration))
-    :commands (lsp lsp-deferred)
-    :init
-    ;; Performance
-    (setq lsp-idle-delay 0.5)
-    (setq lsp-log-io nil)
-    (setq lsp-completion-provider :none)
-    (setq lsp-headerline-breadcrumb-enable t)
-    (setq lsp-modeline-diagnostics-enable nil)
-    (setq lsp-diagnostics-provider :flymake)
-    (setq lsp-enable-snippet nil)
-    (setq lsp-enable-symbol-highlighting t)
-    (setq lsp-enable-on-type-formatting nil)
-    (setq lsp-enable-indentation nil)
-    (setq lsp-enable-text-document-color t)
-    (setq lsp-keep-workspace-alive nil)
-    (setq lsp-file-watch-threshold 500000)
+   (use-package lsp-mode
+     :ensure t
+     :hook (((python-ts-mode
+              js-ts-mode typescript-ts-mode tsx-ts-mode
+              html-ts-mode css-ts-mode
+              dockerfile-ts-mode yaml-ts-mode
+              sql-mode
+              nix-mode qml-mode
+              c++-mode c++-ts-mode c-mode c-ts-mode) . lsp-deferred)
+            (lsp-mode . lsp-enable-which-key-integration))
+     :commands (lsp lsp-deferred)
+     :init
+     ;; Performance
+     (setq lsp-idle-delay 0.5)
+     (setq lsp-log-io nil)
+     (setq lsp-completion-provider :none)
+     (setq lsp-headerline-breadcrumb-enable t)
+     (setq lsp-modeline-diagnostics-enable nil)
+     (setq lsp-diagnostics-provider :flymake)
+     (setq lsp-enable-snippet nil)
+     (setq lsp-enable-symbol-highlighting t)
+     (setq lsp-enable-on-type-formatting nil)
+     (setq lsp-enable-indentation nil)
+     (setq lsp-enable-text-document-color t)
+     (setq lsp-keep-workspace-alive nil)
+     (setq lsp-file-watch-threshold 500000)
 
-    ;; Directories
-    (setq lsp-server-install-dir (expand-file-name "lsp/" my-local-pkg-dir))
-    (setq lsp-session-file (expand-file-name "state/lsp-session" my-local-dir))
-    (setq lsp-keymap-prefix nil)
+     ;; Disable auto-install — all servers managed by Nix
+     (setq lsp-auto-install nil)
 
-    :config
-    ;; Python: basedpyright
-    (lsp-register-client
-     (make-lsp-client
-      :new-connection (lsp-stdio-connection '("basedpyright-langserver" "--stdio"))
-      :major-modes '(python-mode python-ts-mode)
-      :server-id 'basedpyright))
+     ;; Directories
+     (setq lsp-server-install-dir (expand-file-name "lsp/" my-local-pkg-dir))
+     (setq lsp-session-file (expand-file-name "state/lsp-session" my-local-dir))
+     (setq lsp-keymap-prefix nil)
 
-    ;; Nix: nixd (install via home.packages in emacs.nix)
-    (lsp-register-client
-     (make-lsp-client
-      :new-connection (lsp-stdio-connection '("nixd"))
-      :major-modes '(nix-mode)
-      :server-id 'nixd))
+     :config
+     ;; Disable built-in Nix clients — we register our own nixd below
+     (with-eval-after-load 'lsp-nix
+       (setq lsp-nix-nixd-server-id nil)
+       (setq lsp-nix-nixd-lsp-server-id nil)
+       (setq lsp-nix-nil-server-id nil)
+       (setq lsp-nix-rnix-lsp-server-id nil))
 
-    ;; QML: qmlls (install qtbase.dev via home.packages)
-    (lsp-register-client
-     (make-lsp-client
-      :new-connection (lsp-stdio-connection '("qmlls"))
-      :major-modes '(qml-mode)
-      :server-id 'qmlls))
+     ;; Python: basedpyright
+     (lsp-register-client
+      (make-lsp-client
+       :new-connection (lsp-stdio-connection '("basedpyright-langserver" "--stdio"))
+       :major-modes '(python-mode python-ts-mode)
+       :server-id 'basedpyright))
+
+     ;; Nix: nixd
+     (lsp-register-client
+      (make-lsp-client
+       :new-connection (lsp-stdio-connection '("nixd"))
+       :major-modes '(nix-mode)
+       :server-id 'nixd))
+
+     ;; QML: qmlls
+     (lsp-register-client
+      (make-lsp-client
+       :new-connection (lsp-stdio-connection '("qmlls"))
+       :major-modes '(qml-mode)
+       :server-id 'qmlls))
 
     ;; Workspace config
     ;; (setq lsp-pylsp-plugins-ruff-enabled t)
@@ -1884,7 +1926,11 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
      (push '(typescript-ts-mode . prettier) apheleia-mode-alist)
      (push '(tsx-ts-mode . prettier) apheleia-mode-alist)
      (push '(html-ts-mode . prettier) apheleia-mode-alist)
-     (push '(css-ts-mode . prettier) apheleia-mode-alist))
+     (push '(css-ts-mode . prettier) apheleia-mode-alist)
+     (push '(c++-mode . clang-format) apheleia-mode-alist)
+     (push '(c++-ts-mode . clang-format) apheleia-mode-alist)
+     (push '(c-mode . clang-format) apheleia-mode-alist)
+     (push '(c-ts-mode . clang-format) apheleia-mode-alist))
 #+end_src
 
 ** Linting (Flymake)
@@ -2032,7 +2078,9 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
             (dockerfile "https://github.com/camdencheek/tree-sitter-dockerfile")
             (yaml "https://github.com/ikatyang/tree-sitter-yaml")
             (html "https://github.com/tree-sitter/tree-sitter-html")
-            (css "https://github.com/tree-sitter/tree-sitter-css")))
+            (css "https://github.com/tree-sitter/tree-sitter-css")
+            (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
+            (c "https://github.com/tree-sitter/tree-sitter-c")))
 
 (defun my/install-all-treesit-grammars ()
       "Install all configured Tree-sitter grammars."
@@ -2741,6 +2789,9 @@ Module for subtle coverage visualization.
     (my/bind-leader "c f" 'apheleia-format-buffer "format")
     (my/bind-leader "c d" 'xref-find-definitions "definition")
     (my/bind-leader "c D" 'xref-find-references "references")
+
+    ;; C++ Specific
+    (my/bind-leader "c c" 'my/compile-and-run-cpp-file "compile & run cpp")
 
     ;; Java Specific
     (my/bind-leader "c j i" 'lsp-java-organize-imports "organize imports")
