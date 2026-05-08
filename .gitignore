@@ -40,3 +40,4 @@ config.el
 .gemini/
 gha-creds-*.json
 sql-connections.el
+/.agent-shell/
