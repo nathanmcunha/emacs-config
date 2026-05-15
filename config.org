@@ -17,6 +17,12 @@ Load =custom.el= for local overrides and safe customizations that shouldn't be v
   (load custom-file 'noerror))
 #+end_src
 
+** Package Management
+#+begin_src emacs-lisp
+;; Prevent use-package from attempting to install packages (Nix manages packages).
+(setq use-package-always-ensure nil)
+#+end_src
+
 ** Custom Functions
 #+begin_src emacs-lisp
  ;; 1. Define the function in a utilities section or at the top of the file
@@ -318,7 +324,7 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (add-hook 'prog-mode-hook #'display-fill-column-indicator-mode)
     ;; (set-face-attribute 'fill-column-indicator nil :foreground "grey90" :background "transparent")
 
-    ;; Disable line numbers in specific modes
+     ;; Disable line numbers in specific modes
     (dolist (mode '(org-mode-hook
                     term-mode-hook
                     shell-mode-hook
@@ -329,6 +335,15 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
                     dirvish-mode-hook
                     dirvish-side-mode-hook))
       (add-hook mode (lambda () (display-line-numbers-mode 0))))
+
+    ;; Avoid line numbers / auto-revert in special/read-only popup-like buffers
+    (add-hook 'special-mode-hook
+              (lambda ()
+                (display-line-numbers-mode 0)
+                (auto-revert-mode -1)))
+    ;; Also disable in ephemeral minibuffer-like modes
+    (dolist (hook '(completion-list-mode-hook help-mode-hook compilation-mode-hook))
+      (add-hook hook (lambda () (display-line-numbers-mode 0) (auto-revert-mode -1))))
 
     ;; Zoom shortcuts
     (global-set-key (kbd "C-=") 'text-scale-increase)
@@ -359,6 +374,14 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (auto-save-visited-mode +1)
     (dolist (cmd '(evil-window-next evil-window-prev balance-windows other-window))
       (advice-add cmd :before (lambda (&rest _) (save-some-buffers t))))
+#+end_src
+
+** GC Magic
+#+begin_src emacs-lisp
+;; GC Magic - lightweight automatic GC tuning
+(use-package gcmh
+  :ensure nil
+  :init (gcmh-mode 1))
 #+end_src
 
 ** Project.el
@@ -653,18 +676,54 @@ from the current project, and feeds them into the Corfu/Cape completion stack.
         (mapcar (lambda (sub) (format "%s %s" compose-cmd sub))
                 '("up -d" "down" "logs -f" "ps" "build" "restart" "pull")))))
 
+  (defvar my/run--cache nil
+    "Alist of (PROJECT-ROOT TIMESTAMP CANDIDATES).")
+
+  (defun my/run--project-key ()
+    "Return project root or default-directory as key for caching."
+    (or (and (project-current) (project-root (project-current))) default-directory))
+
+  (defun my/run--project-markers-timestamp (root)
+    "Return a stable timestamp (integer) computed from marker files in ROOT.
+Checks common project files (package.json, Makefile, docker-compose.yml,
+docker-compose.yaml, pom.xml, build.gradle), whose mtimes signal project
+structure/config changes."
+    (let* ((markers '("package.json" "Makefile" "docker-compose.yml" "docker-compose.yaml" "pom.xml" "build.gradle"))
+           (times
+            (cl-loop for f in markers
+                     for path = (expand-file-name f root)
+                     when (file-exists-p path)
+                     collect (let* ((attrs (file-attributes path))
+                                    (mtime (file-attribute-modification-time attrs)))
+                               (truncate (float-time mtime))))))
+      (if times (apply #'max times) 0)))
+
   (defun my/run--collect-candidates ()
-    "Collect all command candidates for the current project."
-    (let ((all (append (my/run--mise-tasks)
-                       (my/run--package-json-scripts)
-                       (my/run--makefile-targets)
-                       (my/run--gradle-tasks)
-                       (my/run--docker-compose-services)
-                       my/run-favorites
-                       my/run-history)))
-      (cl-remove-duplicates (seq-filter #'stringp all)
-                            :test (lambda (a b) (string= a b))
-                            :from-end t)))
+    "Collect all command candidates for the current project with caching."
+    (let* ((root (my/run--project-key))
+           (stamp (when root (my/run--project-markers-timestamp root)))
+           (entry (assoc root my/run--cache)))
+      (if (and entry (equal (cadr entry) stamp))
+          ;; cache hit: return cached candidates
+          (caddr entry)
+        ;; cache miss: compute and store
+        (let ((cands (cl-remove-duplicates
+                      (seq-filter #'stringp
+                                  (append (my/run--mise-tasks)
+                                          (my/run--package-json-scripts)
+                                          (my/run--makefile-targets)
+                                          (my/run--gradle-tasks)
+                                          (my/run--docker-compose-services)
+                                          my/run-favorites
+                                          my/run-history))
+                      :test #'string= :from-end t)))
+          (setq my/run--cache (cl-delete root my/run--cache :key #'car :test #'equal))
+          (push (list root stamp cands) my/run--cache)
+          cands))))
+
+  ;; Invalidate cache on common actions
+  (advice-add 'project-switch-project :after (lambda (&rest _) (setq my/run--cache nil)))
+  (advice-add 'save-buffer :after (lambda (&rest _) (setq my/run--cache nil)))
 
   (defun my/run--annotate (cand)
     "Annotation function for run candidates."
@@ -1244,7 +1303,8 @@ comint, eat, vterm, and agent-shell buffers.
           xref-show-definitions-function #'consult-xref)
     (setq consult-narrow-key "<")
     (setq consult-widen-key ">")
-    (setq consult-preview-key 'any)
+    ;; Only preview on explicit key, reduces IO on large repositories
+    (setq consult-preview-key (kbd "M-."))
     (setq consult-project-function (lambda (_) (when-let (p (project-current)) (project-root p))))
 
     ;; REMOVEMOS A LINHA :bind QUE CAUSAVA O ERRO
@@ -2898,4 +2958,3 @@ Module for subtle coverage visualization.
     (my/bind-leader ";"   'embark-act "act (embark)")
     (my/bind-leader "A"   'embark-act "actions (embark)")
 #+end_src
-
