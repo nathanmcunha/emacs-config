@@ -686,12 +686,16 @@ from the current project, and feeds them into the Corfu/Cape completion stack.
   (defun my/run--project-markers-timestamp (root)
     "Return a stable timestamp (integer) computed from marker files in ROOT.
 Checks common project files (package.json, Makefile, docker-compose.yml,
-docker-compose.yaml, pom.xml, build.gradle)."
+docker-compose.yaml, pom.xml, build.gradle), whose mtimes signal project
+structure/config changes."
     (let* ((markers '("package.json" "Makefile" "docker-compose.yml" "docker-compose.yaml" "pom.xml" "build.gradle"))
            (times
             (cl-loop for f in markers
                      for path = (expand-file-name f root)
-                     when (file-exists-p path) collect (truncate (float-time (file-attribute-modification-time (file-attributes path)))))))
+                     when (file-exists-p path)
+                     collect (let* ((attrs (file-attributes path))
+                                    (mtime (file-attribute-modification-time attrs)))
+                               (truncate (float-time mtime))))))
       (if times (apply #'max times) 0)))
 
   (defun my/run--collect-candidates ()
@@ -699,9 +703,9 @@ docker-compose.yaml, pom.xml, build.gradle)."
     (let* ((root (my/run--project-key))
            (stamp (when root (my/run--project-markers-timestamp root)))
            (entry (assoc root my/run--cache)))
-      (if (and entry (equal (car (cdr entry)) stamp))
+      (if (and entry (equal (cadr entry) stamp))
           ;; cache hit: return cached candidates
-          (cdr (cdr entry))
+          (caddr entry)
         ;; cache miss: compute and store
         (let ((cands (cl-remove-duplicates
                       (seq-filter #'stringp
