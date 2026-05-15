@@ -1,0 +1,222 @@
+* Keybindings Configuration
+** Centralized Leader Bindings
+#+begin_src emacs-lisp
+    (my/bind-leader "SPC" 'project-find-file "find file in project")
+    (my/bind-leader ":"   'execute-extended-command "M-x")
+
+    ;; --- Help & Config (h) ---
+    (my/bind-leader "h b i" 'my/emacs-build-info "Emacs build info")
+    (my/bind-leader "h r r" (lambda () (interactive) (load-file user-init-file)) "reload config")
+
+    ;; --- Buffer (b) ---
+    (my/bind-leader "."   'find-file "browse files")
+    (my/bind-leader ","   'switch-to-buffer "switch buffer")
+    (my/bind-leader "`"   'evil-switch-to-windows-last-buffer "last buffer")
+
+    (my/bind-leader "b b" 'consult-buffer "switch buffer")
+    (my/bind-leader "b B" 'switch-to-buffer "switch buffer (all)")
+    (my/bind-leader "b i" 'ibuffer "ibuffer")
+    (my/bind-leader "b n" 'next-buffer "next buffer")
+    (my/bind-leader "b p" 'previous-buffer "previous buffer")
+    (my/bind-leader "b s" 'save-buffer "save buffer")
+    (my/bind-leader "b S" 'evil-write-all "save all buffers")
+    (my/bind-leader "b r" 'revert-buffer "revert buffer")
+    (my/bind-leader "b k" 'kill-current-buffer "kill buffer")
+    (my/bind-leader "b K" 'my/kill-all-buffers "kill all buffers")
+    (my/bind-leader "b O" 'my/kill-other-buffers "kill other buffers")
+    (my/bind-leader "b N" 'evil-buffer "new buffer")
+    (my/bind-leader "b y" 'my/copy-this-file "copy file contents")
+    (my/bind-leader "b R" 'rename-buffer "rename buffer")
+    (my/bind-leader "b Y" 'bury-buffer "bury buffer")
+
+    ;; --- Code & LSP (c) ---
+    (my/bind-leader "c a" 'my/smart-code-actions "code action")
+    (my/bind-leader "c r" 'lsp-rename "rename")
+    (my/bind-leader "c f" 'apheleia-format-buffer "format")
+    (my/bind-leader "c d" 'xref-find-definitions "definition")
+    (my/bind-leader "c D" 'xref-find-references "references")
+
+    ;; C++ Specific
+    (my/bind-leader "c c" 'my/compile-and-run-cpp-file "compile & run cpp")
+
+    ;; Java Specific
+    (my/bind-leader "c j i" 'lsp-java-organize-imports "organize imports")
+    (my/bind-leader "c j r" 'lsp-workspace-restart "restart LSP")
+    (my/bind-leader "c j t" #'java-ts-mode "switch to java-ts-mode")
+    (my/bind-leader "c i t" 'my/install-all-treesit-grammars "install all ts grammars")
+    ;; Java creation (under c j)
+    (my/bind-leader "c j c" 'my/java-new-class "new class")
+    (my/bind-leader "c j C" 'my/java-new-file "new file (choose kind)")
+    (my/bind-leader "c j e" 'my/java-new-enum "new enum")
+    (my/bind-leader "c j I" 'my/java-new-interface "new interface")
+    (my/bind-leader "c j R" 'my/java-new-record "new record")
+
+  ;; Generate (IntelliJ Alt+Insert equivalent)
+  (my/bind-leader "c j g t" 'lsp-java-generate-to-string "generate toString")
+  (my/bind-leader "c j g h" 'lsp-java-generate-equals-and-hash-code "generate hashCode/equals")
+  (my/bind-leader "c j g c" 'lsp-java-generate-overrides "generate overrides")
+  (my/bind-leader "c j g a" 'lsp-java-add-getter-setter "generate accessors")
+
+  ;; Refactor (IntelliJ Ctrl+Alt+V/M style)
+  (my/bind-leader "c j x v" 'lsp-java-extract-to-local-variable "extract variable")
+  (my/bind-leader "c j x m" 'lsp-java-extract-method "extract method")
+  (my/bind-leader "c j x c" 'lsp-java-extract-to-constant "extract constant")
+
+  ;; Navigation
+  (my/bind-leader "c j T" 'my/java-go-to-test "toggle test/source")
+  
+    ;; Java Coverage
+    (my/bind-leader "c C t" 'my/java-coverage-toggle "toggle coverage lenses")
+    (my/bind-leader "c C h" 'my/java-coverage-browse-report "open html report")
+
+  ;; --- Explorer (E) ---
+  (my/bind-leader "E e" 'treemacs "project explorer")
+  (my/bind-leader "E ." 'treemacs-find-file "locate current file")
+  (my/bind-leader "E f" 'treemacs-find-tag "find tag")
+
+  ;; lsp-treemacs views
+  (my/bind-leader "c s" 'lsp-treemacs-symbols "symbols tree")
+  (my/bind-leader "c e" 'lsp-treemacs-errors-list "errors tree")
+  (my/bind-leader "c h" 'lsp-treemacs-call-hierarchy "call hierarchy")
+  (my/bind-leader "c t" 'lsp-treemacs-type-hierarchy "type hierarchy")
+
+    ;; --- Errors/Flymake (e) ---
+    (my/bind-leader "e p" 'flymake-show-project-diagnostics "panel (project)")
+    (my/bind-leader "e b" 'flymake-show-buffer-diagnostics "panel (buffer)")
+    (my/bind-leader "e l" 'consult-flymake "search buffer")
+    (my/bind-leader "e L" 'my/consult-flymake-project "search project")
+    (my/bind-leader "e n" 'flymake-goto-next-error "next")
+    (my/bind-leader "e N" 'flymake-goto-prev-error "prev")
+
+    ;; --- File (f) ---
+    (my/bind-leader "f f" 'find-file "find file")
+    (my/bind-leader "f F" 'find-file "find file anywhere")
+    (my/bind-leader "f n" 'my/create-file "new file")
+    (my/bind-leader "f c" 'my/copy-this-file "copy file")
+    (my/bind-leader "f r" 'consult-recent-file "recent files")
+    (my/bind-leader "f s" 'treemacs "sidebar")
+    (my/bind-leader "f S" 'write-file "save as...")
+    (my/bind-leader "f R" 'my/move-this-file "rename/move file")
+    (my/bind-leader "f d" 'my/delete-this-file "delete file")
+    (my/bind-leader "f D" 'my/delete-this-file "delete file")
+    (my/bind-leader "f y" 'my/copy-file-path "copy file path")
+    (my/bind-leader "f Y" 'my/copy-file-path-relative-to-project "copy relative path")
+    (my/bind-leader "f p" (lambda () (interactive) (find-file (expand-file-name "config.org" user-emacs-directory))) "open config")
+    (my/bind-leader "f e" (lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) "open early-init")
+    (my/bind-leader "f E" (lambda () (interactive) (dired (expand-file-name user-emacs-directory))) "browse emacs.d")
+
+    ;; --- Spell & Language (S) ---
+  ;;  (my/bind-leader "S s" 'jinx-correct "correct word")
+   ;; (my/bind-leader "S t" 'my/spell-toggle-lang "toggle lang (EN/PT)")
+    ;;(my/bind-leader "S l" 'jinx-languages "select languages")
+
+    ;; --- Go to (g) ---
+    (my/bind-leader "g s" 'magit-status "magit status")
+    (my/bind-leader "g S" 'magit-status-here "magit status here")
+    (my/bind-leader "g /" 'magit-dispatch "Magit dispatch")
+    (my/bind-leader "g ." 'magit-file-dispatch "Magit file dispatch")
+    (my/bind-leader "g f" 'magit-find-file "Find file")
+    (my/bind-leader "g b" 'magit-blame-addition "Blame")
+    (my/bind-leader "g t" 'git-timemachine-toggle "Time machine")
+    (my/bind-leader "g i" 'magit-init "Initialize repo")
+    (my/bind-leader "g M" 'consult-global-mark "jump to global mark")
+
+    (my/bind-leader "g l c" 'magit-log-current "Log current branch")
+    (my/bind-leader "g l f" 'magit-log-buffer-file "Log current file")
+    (my/bind-leader "g l g" 'magit-log-all "Log all branches")
+
+    (my/bind-leader "g m" 'magit-file-dispatch "Git selection menu")
+    (my/bind-leader "g r" (lambda () (interactive) (call-interactively 'magit-discard)) "Git discard selection")
+
+    ;; --- Jump (j) ---
+    (my/bind-leader "i s" 'tempel-insert "insert snippet")
+    (my/bind-leader "i S" 'tempel-complete "complete snippet")
+
+    (my/bind-leader "j j" 'avy-goto-char-2 "jump 2 chars")
+    (my/bind-leader "j l" 'avy-goto-line "jump line")
+    (my/bind-leader "j w" 'avy-goto-word-1 "jump word")
+    (my/bind-leader "j c" 'avy-goto-char "jump char")
+
+    ;; --- Notes (n) ---
+    (my/bind-leader "n r" 'org-roam-buffer-toggle "roam toggle")
+    (my/bind-leader "n f" 'org-roam-node-find "find node")
+    (my/bind-leader "n i" 'org-roam-node-insert "insert node")
+    (my/bind-leader "n d t" 'org-roam-dailies-capture-today "capture today")
+
+    ;; --- Open (o) ---
+    (my/bind-leader "o p" 'popper-toggle "toggle popup")
+     (my/bind-leader "o t h" 'my/open-terminal-here "here")
+     (my/bind-leader "o t p" 'my/open-terminal-in-project "project")
+     (my/bind-leader "o t e" 'eat "eat terminal")
+     (my/bind-leader "o t t" 'my/eat-toggle-evil-state "toggle evil state")
+     (my/bind-leader "o d" 'docker "docker TUI")
+     (my/bind-leader "o C" 'docker-compose "docker compose")
+    (my/bind-leader "o k" 'kubernetes "kubernetes TUI")
+
+    ;; --- Project (p) ---
+    (my/bind-leader "p p" 'project-switch-project "switch project")
+    (my/bind-leader "p b" 'project-switch-to-buffer "switch buffer")
+    (my/bind-leader "p f" 'project-find-file "find file")
+    (my/bind-leader "p r" 'my/project-recent-files "recent files")
+    (my/bind-leader "p c" 'my/project-compile "compile")
+    (my/bind-leader "p t" 'my/project-test "run tests")
+    (my/bind-leader "p x" 'my/project-run "run project")
+    (my/bind-leader "p k" 'project-kill-buffers "kill buffers")
+    (my/bind-leader "p d" 'project-dired "dired")
+    (my/bind-leader "p v" 'project-vc-dir "vc dir")
+    (my/bind-leader "p s" 'project-search "search (native)")
+    (my/bind-leader "p /" 'consult-ripgrep "search (ripgrep)")
+    (my/bind-leader "p !" 'project-shell-command "shell command")
+    (my/bind-leader "p &" 'project-async-shell-command "async shell command")
+    (my/bind-leader "p R" 'project-query-replace-regexp "query replace")
+
+    ;; --- Search (s) ---
+    (my/bind-leader "s s" 'consult-line "search buffer")
+    (my/bind-leader "s S" 'consult-line-multi "search all buffers")
+    (my/bind-leader "s g" 'consult-goto-line "goto line")
+    (my/bind-leader "s i" 'consult-imenu "jump to symbol")
+    (my/bind-leader "s h" 'consult-outline "jump to heading")
+    (my/bind-leader "s f" 'consult-find "find file (live)")
+    (my/bind-leader "s k" 'consult-yank-pop "yank pop")
+
+    ;; --- Undo (u) ---
+    (my/bind-leader "u" 'vundo "undo tree (visual)")
+
+    ;; --- Window (w) ---
+    (my/bind-leader "w h"  'evil-window-left "left")
+    (my/bind-leader "w j"  'evil-window-down "down")
+    (my/bind-leader "w k"  'evil-window-up "up")
+    (my/bind-leader "w l"  'evil-window-right "right")
+    (my/bind-leader "w w"  'evil-window-next "next window")
+    (my/bind-leader "w H"  'evil-window-move-far-left "move left")
+    (my/bind-leader "w J"  'evil-window-move-very-bottom "move down")
+    (my/bind-leader "w K"  'evil-window-move-very-top "move up")
+    (my/bind-leader "w L"  'evil-window-move-far-right "move right")
+    (my/bind-leader "w s"  'evil-window-split "split horizontal")
+    (my/bind-leader "w v"  'evil-window-vsplit "split vertical")
+    (my/bind-leader "w c"  'evil-window-delete "close window")
+    (my/bind-leader "w o"  'delete-other-windows "close others")
+    (my/bind-leader "w ="  'balance-windows "balance")
+
+    ;; --- Workspace (l) ---
+    (my/bind-leader "l l" 'tab-bar-switch-to-tab "switch tab")
+    (my/bind-leader "l n" 'tab-new "new tab")
+    (my/bind-leader "l c" 'tab-close "close tab")
+    (my/bind-leader "l r" 'tab-rename "rename tab")
+
+    ;; --- AI Assistant (a) ---
+    (my/bind-leader "a g" 'agent-shell-google-start-gemini "Gemini CLI")
+    (my/bind-leader "a o" 'agent-shell-opencode-start-agent "Opencode")
+    (my/bind-leader "a s" 'agent-shell "Agent Shell Menu")
+    (my/bind-leader "a S" 'agent-shell-sidebar-toggle "OpenCode Sidebar")
+    (my/bind-leader "a q" 'gptel-send "Gptel Send")
+  ;; --- Run (r) ---
+    (my/bind-leader "r r" 'my/run "run (async)")
+    (my/bind-leader "r c" 'my/run-compile "run (compile)")
+    (my/bind-leader "r s" 'my/run-stop "stop")
+    (my/bind-leader "r l" 'my/run-show "show output")
+    (my/bind-leader "r R" 'my/run-restart "restart last")
+    ;; --- Other ---
+    (my/bind-leader ";"   'embark-act "act (embark)")
+    (my/bind-leader "A"   'embark-act "actions (embark)")
+#+end_src

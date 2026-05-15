@@ -1,0 +1,623 @@
+* Async Command Runner
+A general-purpose async command runner with smart completion.
+Detects mise tasks, npm scripts, Makefile targets, Gradle tasks, and Docker Compose commands
+from the current project, and feeds them into the Corfu/Cape completion stack.
+** Command Collectors
+#+begin_src emacs-lisp
+  (defvar my/run-history nil
+    "History of shell commands run via my/run.")
+
+  (defvar my/run-favorites
+    '("mise run" "docker compose up -d" "docker compose down"
+      "podman compose up -d" "podman compose down"
+      "npm start" "npm test" "npm run build"
+      "pytest" "python -m pytest"
+      "cargo build" "cargo run" "cargo test"
+      "make" "make test" "make clean")
+    "Global favorite commands always shown in completion.")
+
+  (defun my/run--mise-tasks ()
+    "Return list of 'mise run TASK' strings from current project."
+    (let ((default-directory (or (and (project-current)
+                                      (project-root (project-current)))
+                                 default-directory)))
+      (condition-case nil
+          (let ((output (shell-command-to-string "mise tasks --json 2>/dev/null")))
+            (unless (string-empty-p output)
+              (let* ((json-array-type 'list)
+                     (json-object-type 'alist)
+                     (parsed (json-read-from-string output)))
+                (mapcar (lambda (task)
+                          (let ((name (alist-get 'name task))
+                                (desc (or (alist-get 'description task) "")))
+                            (propertize (format "mise run %s" name)
+                                       'my/annotation desc)))
+                        parsed))))
+        (error nil))))
+
+  (defun my/run--package-json-scripts ()
+    "Return list of 'npm run SCRIPT' strings from package.json."
+    (let* ((root (or (and (project-current) (project-root (project-current)))
+                     default-directory))
+           (pkg (expand-file-name "package.json" root)))
+      (when (file-exists-p pkg)
+        (condition-case nil
+            (let* ((json-object-type 'alist)
+                   (json-array-type 'list)
+                   (data (json-read-file pkg))
+                   (scripts (alist-get 'scripts data)))
+              (mapcar (lambda (s)
+                        (propertize (format "npm run %s" (car s))
+                                    'my/annotation (cdr s)))
+                      scripts))
+          (error nil)))))
+
+  (defun my/run--makefile-targets ()
+    "Return list of 'make TARGET' strings from Makefile."
+    (let* ((root (or (and (project-current) (project-root (project-current)))
+                     default-directory))
+           (makefile (expand-file-name "Makefile" root)))
+      (when (file-exists-p makefile)
+        (condition-case nil
+            (let ((output (shell-command-to-string
+                           (format "make -pRrq -f %s : 2>/dev/null | awk -F: '/^[a-zA-Z0-9][^$#\\/\\t=]*:([^=]|$)/ {split($1,A,/ /);print A[1]}' | sort -u"
+                                   (shell-quote-argument makefile)))))
+              (mapcar (lambda (target) (format "make %s" target))
+                      (split-string output "\n" t)))
+          (error nil)))))
+
+  (defun my/run--gradle-tasks ()
+    "Return common Gradle tasks if gradlew exists."
+    (let* ((root (or (and (project-current) (project-root (project-current)))
+                     default-directory))
+           (gradlew (expand-file-name "gradlew" root)))
+      (when (file-exists-p gradlew)
+        (mapcar (lambda (task) (format "./gradlew %s" task))
+                '("build" "test" "run" "clean" "bootRun"
+                  "assemble" "check" "classes" "jar")))))
+
+  (defun my/run--docker-compose-services ()
+    "Return docker compose commands if a compose file exists."
+    (let* ((root (or (and (project-current) (project-root (project-current)))
+                     default-directory))
+           (compose-cmd (if (executable-find "podman") "podman compose" "docker compose")))
+      (when (or (file-exists-p (expand-file-name "docker-compose.yml" root))
+                (file-exists-p (expand-file-name "docker-compose.yaml" root))
+                (file-exists-p (expand-file-name "compose.yml" root))
+                (file-exists-p (expand-file-name "compose.yaml" root))
+                (seq-some (lambda (f) (string-match-p "docker-compose" f))
+                          (directory-files root nil "\\.ya?ml$")))
+        (mapcar (lambda (sub) (format "%s %s" compose-cmd sub))
+                '("up -d" "down" "logs -f" "ps" "build" "restart" "pull")))))
+
+  (defvar my/run--cache nil
+    "Alist of (PROJECT-ROOT TIMESTAMP CANDIDATES).")
+
+  (defun my/run--project-key ()
+    "Return project root or default-directory as key for caching."
+    (or (and (project-current) (project-root (project-current))) default-directory))
+
+  (defun my/run--project-markers-timestamp (root)
+    "Return a stable timestamp (integer) computed from marker files in ROOT.
+Checks common project files (package.json, Makefile, docker-compose.yml,
+docker-compose.yaml, pom.xml, build.gradle), whose mtimes signal project
+structure/config changes."
+    (let* ((markers '("package.json" "Makefile" "docker-compose.yml" "docker-compose.yaml" "pom.xml" "build.gradle"))
+           (times
+            (cl-loop for f in markers
+                     for path = (expand-file-name f root)
+                     when (file-exists-p path)
+                     collect (let* ((attrs (file-attributes path))
+                                    (mtime (file-attribute-modification-time attrs)))
+                               (truncate (float-time mtime))))))
+      (if times (apply #'max times) 0)))
+
+  (defun my/run--collect-candidates ()
+    "Collect all command candidates for the current project with caching."
+    (let* ((root (my/run--project-key))
+           (stamp (when root (my/run--project-markers-timestamp root)))
+           (entry (assoc root my/run--cache)))
+      (if (and entry (equal (cadr entry) stamp))
+          ;; cache hit: return cached candidates
+          (caddr entry)
+        ;; cache miss: compute and store
+        (let ((cands (cl-remove-duplicates
+                      (seq-filter #'stringp
+                                  (append (my/run--mise-tasks)
+                                          (my/run--package-json-scripts)
+                                          (my/run--makefile-targets)
+                                          (my/run--gradle-tasks)
+                                          (my/run--docker-compose-services)
+                                          my/run-favorites
+                                          my/run-history))
+                      :test #'string= :from-end t)))
+          (setq my/run--cache (cl-delete root my/run--cache :key #'car :test #'equal))
+          (push (list root stamp cands) my/run--cache)
+          cands))))
+
+  ;; Invalidate cache on common actions
+  (advice-add 'project-switch-project :after (lambda (&rest _) (setq my/run--cache nil)))
+  (advice-add 'save-buffer :after (lambda (&rest _) (setq my/run--cache nil)))
+
+  (defun my/run--annotate (cand)
+    "Annotation function for run candidates."
+    (if-let ((ann (get-text-property 0 'my/annotation cand)))
+        (format "  %s" (propertize ann 'face 'marginalia-documentation))
+      ""))
+#+end_src
+
+** Runner Commands
+#+begin_src emacs-lisp
+  (defun my/run (cmd)
+    "Run CMD asynchronously from project root, with smart completion."
+    (interactive
+     (let ((minibuffer-completing-file-name nil))
+       (list (completing-read
+              "Run: "
+              (lambda (str pred action)
+                (if (eq action 'metadata)
+                    '(metadata (annotation-function . my/run--annotate)
+                               (category . my/run-command))
+                  (complete-with-action action (my/run--collect-candidates) str pred)))
+              nil nil nil 'my/run-history))))
+    (let* ((default-directory (or (and (project-current)
+                                       (project-root (project-current)))
+                                  default-directory))
+           (short (car (split-string cmd)))
+           (buf-name (format "*run:%s*" short)))
+      (async-shell-command cmd buf-name)
+      (message "Started: %s" cmd)))
+
+  (defun my/run-compile (cmd)
+    "Run CMD in a compilation buffer with smart completion."
+    (interactive
+     (list (completing-read
+            "Compile: "
+            (lambda (str pred action)
+              (if (eq action 'metadata)
+                  '(metadata (annotation-function . my/run--annotate)
+                             (category . my/run-command))
+                (complete-with-action action (my/run--collect-candidates) str pred)))
+            nil nil nil 'my/run-history)))
+    (let ((default-directory (or (and (project-current)
+                                       (project-root (project-current)))
+                                  default-directory)))
+      (compile cmd)))
+
+  (defun my/run-stop ()
+    "Stop a running async command."
+    (interactive)
+    (let* ((bufs (seq-filter (lambda (b)
+                               (and (string-prefix-p "*run:" (buffer-name b))
+                                    (get-buffer-process b)))
+                             (buffer-list)))
+           (names (mapcar #'buffer-name bufs)))
+      (if (null names)
+          (message "No running commands")
+        (let* ((choice (completing-read "Stop: " names nil t))
+               (proc (get-buffer-process (get-buffer choice))))
+          (when proc
+            (interrupt-process proc)
+            (sit-for 0.3)
+            (when (process-live-p proc) (kill-process proc)))
+          (message "Stopped %s" choice)))))
+
+  (defun my/run-show ()
+    "Switch to a running command buffer."
+    (interactive)
+    (let* ((bufs (seq-filter (lambda (b)
+                               (string-prefix-p "*run:" (buffer-name b)))
+                             (buffer-list)))
+           (names (mapcar #'buffer-name bufs)))
+      (if (null names)
+          (message "No command buffers")
+        (switch-to-buffer (completing-read "Show: " names nil t)))))
+
+  (defun my/run-restart ()
+    "Restart the last command from history."
+    (interactive)
+    (if my/run-history
+        (my/run (car my/run-history))
+      (call-interactively #'my/run)))
+#+end_src
+
+** Cape Integration (In-Buffer Completion)
+Provides Corfu popup suggestions for shell commands in eshell, shell-mode,
+comint, eat, vterm, and agent-shell buffers.
+
+#+begin_src emacs-lisp
+  (defvar my/cape-run-cache nil
+    "Cached candidates as (PROJECT-ROOT . CANDIDATES).")
+
+  (defun my/cape-run--invalidate-cache ()
+    "Clear cache when switching projects."
+    (setq my/cape-run-cache nil))
+
+  (advice-add 'project-switch-project :after
+              (lambda (&rest _) (my/cape-run--invalidate-cache)))
+
+  (defun my/cape-run--candidates ()
+    "Return cached or fresh command candidates for the current project."
+    (let ((root (or (and (project-current) (project-root (project-current)))
+                    default-directory)))
+      (if (and my/cape-run-cache (string= (car my/cape-run-cache) root))
+          (cdr my/cape-run-cache)
+        (let ((cands (my/run--collect-candidates)))
+          (setq my/cape-run-cache (cons root cands))
+          cands))))
+
+  (defun my/cape-run-capf ()
+    "Completion-at-point function for shell commands.
+  Completes from BOL or after &&, ||, |, ; separators."
+    (let* ((line-start (line-beginning-position))
+           (pt (point))
+           (text (buffer-substring-no-properties line-start pt))
+           ;; Find where the current command starts (after pipe, &&, ;, etc.)
+           (cmd-start (if (string-match ".*\\(?:[;&|][ \t]*\\)" text)
+                          (+ line-start (match-end 0))
+                        line-start))
+           (prefix (buffer-substring-no-properties cmd-start pt)))
+      (when (>= (length prefix) 1)
+        (list cmd-start pt
+              (completion-table-dynamic
+               (lambda (_) (my/cape-run--candidates)))
+              :annotation-function #'my/run--annotate
+              :exclusive 'no))))
+
+  ;; Hook into shell/terminal modes (low priority so LSP/native CAPFs win)
+  (dolist (hook '(eshell-mode-hook
+                  shell-mode-hook
+                  comint-mode-hook
+                  eat-mode-hook
+                  vterm-mode-hook
+                  agent-shell-mode-hook))
+    (add-hook hook
+              (lambda ()
+                (add-hook 'completion-at-point-functions
+                          #'my/cape-run-capf -50 t))))
+
+  ;; Also provide completion in M-x shell-command, compile, and my/run prompts
+  (add-hook 'minibuffer-setup-hook
+            (lambda ()
+              (when (memq this-command
+                          '(async-shell-command shell-command compile
+                            my/run my/run-compile))
+                (add-hook 'completion-at-point-functions
+                          #'my/cape-run-capf -50 t))))
+
+  ;; Merged shell super-CAPF: project commands + files + history + dabbrev
+  ;; This replaces the default CAPFs in shell buffers with a combined source.
+  (defun my/cape-shell-super-capf ()
+    "Combined CAPF: project commands + file paths + history + dabbrev."
+    (cape-wrap-super
+     #'my/cape-run-capf
+     #'cape-file
+     #'cape-history
+     #'cape-dabbrev))
+
+  (dolist (hook '(eshell-mode-hook
+                  shell-mode-hook
+                  comint-mode-hook))
+    (add-hook hook
+              (lambda ()
+                (setq-local completion-at-point-functions
+                            (list #'my/cape-shell-super-capf)))))
+#+end_src
+* Window Management (Popups & Rules)
+** Popup Windows (built-in toggle)
+#+begin_src emacs-lisp
+  (defvar my/popup-buffer-regexps
+    '("\\*Messages\\*" "Output\\*$" "\\*Async Shell Command\\*"
+      "\\*Help\\*" "\\*compilation\\*" "\\*Flymake diagnostics\\*" "\\*Warnings\\*"
+      "\\*docker-compose\\*" "\\*docker-run\\*")
+    "Regexps matching buffers treated as popups.")
+
+  (defun my/popup-buffer-p (buf)
+    "Return t if BUF matches a popup regexp or is derived from a popup mode."
+    (let ((name (buffer-name buf)))
+      (or (seq-some (lambda (re) (string-match-p re name)) my/popup-buffer-regexps)
+          (with-current-buffer buf
+            (derived-mode-p 'help-mode 'compilation-mode)))))
+
+  (defun my/popup-toggle ()
+    "Hide any visible popup, or show the most recent one."
+    (interactive)
+    (let ((popup-win (seq-find (lambda (w) (my/popup-buffer-p (window-buffer w)))
+                               (window-list))))
+      (if popup-win
+          (delete-window popup-win)
+        (when-let ((buf (seq-find #'my/popup-buffer-p (buffer-list))))
+          (display-buffer buf)))))
+
+  (defun my/popup-cycle ()
+    "Cycle through popup buffers."
+    (interactive)
+    (let* ((popups (seq-filter #'my/popup-buffer-p (buffer-list)))
+           (current (and (my/popup-buffer-p (current-buffer)) (current-buffer)))
+           (next (if current
+                     (or (cadr (member current popups)) (car popups))
+                   (car popups))))
+      (when next (display-buffer next))))
+
+  (global-set-key (kbd "C-`")   #'my/popup-toggle)
+  (global-set-key (kbd "M-`")   #'my/popup-cycle)
+#+end_src
+
+** Window Placement Rules (display-buffer-alist)
+#+begin_src emacs-lisp
+  (use-package emacs
+    :ensure nil
+    :config
+    ;; Prevent some buffers from taking over the whole frame
+    (setq select-enable-clipboard t)
+    (setq select-enable-primary t)
+    (setq save-interprogram-paste-before-kill t)
+    (setq selection-coding-system 'utf-8)
+    (setq display-buffer-alist
+        '(
+          ;; Bottom side buffers (Height 0.3)
+          ("\\*\\(Output\\|Injector\\|Async Shell Command\\).*"
+           (display-buffer-reuse-window display-buffer-at-bottom)
+           (window-height . 0.3))
+
+          ;; Help buffers
+          ("\\*Help.*"
+           (display-buffer-reuse-window display-buffer-at-bottom)
+           (window-height . 0.4))
+
+          ;; Magit: Let it do its own thing (it manages windows well)
+          ("Magit.*"
+           (display-buffer-same-window))
+          )))
+#+end_src
+
+* Evil Mode (Vim Emulation)
+#+begin_src emacs-lisp
+  ;; jk escape from insert mode (no package needed)
+  (defun my/evil-escape-jk ()
+    "Escape from insert mode with 'jk'."
+    (interactive)
+    (let ((modified (buffer-modified-p)))
+      (insert "j")
+      (let ((next-char (read-event nil nil 0.15)))
+        (if (equal next-char ?k)
+            (progn
+              (delete-char -1)
+              (set-buffer-modified-p modified)
+              (evil-normal-state))
+          (setq unread-command-events (list next-char))))))
+
+  (use-package evil
+    :ensure nil
+    :after (evil)
+    :config
+    (define-key evil-insert-state-map (kbd "j") 'my/evil-escape-jk)
+    (setq evil-emacs-state-cursor    '("#649bce" box)
+          evil-normal-state-cursor   '("#ebcb8b" box)
+          evil-visual-state-cursor   '("#676f7d" box)
+          evil-insert-state-cursor   '("#ebcb8b" bar)
+          evil-replace-state-cursor  '("#ebcb8b" hbar)
+          evil-operator-state-cursor '("#ebcb8b" hollow)))
+
+  (use-package evil-collection
+    :after evil
+    :ensure t
+    :custom
+    (evil-collection-magit-use-z-for-folds nil)
+    (evil-collection-magit-want-horizontal-movement t)
+    :config
+    (evil-collection-init))
+
+  (with-eval-after-load 'evil
+    (setq evil-emacs-state-modes
+          '(help-mode
+            helpful-mode
+            info-mode
+            info-lookup-mode
+            man-mode
+            woman-mode
+            epa-key-list-mode
+            epa-key-mode
+            occur-mode
+            diff-mode
+            proced-mode
+            completion-list-mode
+            completion-pcm--local-minibuffer-map
+            telega-chat-mode
+            telega-root-mode
+            mu4e-view-mode
+            mu4e-headers-mode
+            gnus-article-mode
+            gnus-group-mode
+            gnus-summary-mode
+            browse-kill-ring-mode
+            thingatpt-mode
+           view-mode
+             adoc-mode
+             term-mode
+             vterm-mode
+             eat-mode
+             eshell-mode
+             shell-mode))
+    (setq evil-normal-state-modes
+          '(magit-mode
+            magit-status-mode
+            magit-log-mode
+            magit-diff-mode
+            magit-process-mode
+            magit-refs-mode
+            magit-revision-mode
+            docker-mode
+            docker-container-mode
+            docker-image-mode
+            docker-network-mode
+            docker-volume-mode
+            docker-engine-mode
+            kubernetes-mode
+            kubernetes-overview-mode
+            kubernetes-logs-mode
+            org-mode
+            markdown-mode
+            js-md-mode))
+    (dolist (mode evil-emacs-state-modes)
+      (evil-set-initial-state mode 'emacs))
+    (dolist (mode evil-normal-state-modes)
+      (evil-set-initial-state mode 'normal)))
+#+end_src
+
+** Evil Extensions & Avy
+#+begin_src emacs-lisp
+  (use-package evil-surround
+    :ensure t
+    :after evil
+    :config (global-evil-surround-mode 1))
+
+  (use-package evil-nerd-commenter
+    :ensure t
+    :after evil
+    :config
+    (define-key evil-normal-state-map "gc" 'evilnc-comment-operator)
+    (define-key evil-visual-state-map "gc" 'evilnc-comment-operator)
+    (keymap-global-set "M-;" 'evilnc-comment-or-uncomment-lines))
+
+  (use-package avy
+    :ensure t
+    :config
+    (setq avy-timeout-seconds 0.3)
+    (define-key evil-normal-state-map (kbd "f") 'avy-goto-char-in-line)
+    (define-key evil-visual-state-map (kbd "f") 'avy-goto-char-in-line)
+    (define-key evil-motion-state-map "gs" 'avy-goto-char-2))
+#+end_src
+
+** Undo System
+ We use a combination of three packages for the supreme undo experience:
+ 1. ~undo-fu~: Simple linear wrapper for Emacs' undo system (required for Evil).
+ 2. ~undo-fu-session~: Saves undo history to disk (persistence across restarts).
+ 3. ~vundo~: Graphical visualizer of the undo tree (for when you get lost in undos/redos).
+
+ #+begin_src emacs-lisp
+  ;; Use Emacs 28+ native undo-redo; raise limits to match Doom Emacs defaults
+  (setq undo-limit 67108864        ;; 64mb
+        undo-strong-limit 100663296 ;; 96mb
+        undo-outer-limit 1006632960) ;; 960mb
+
+   (use-package undo-fu
+     :ensure t)
+
+   (use-package undo-fu-session
+     :ensure t
+     :init (undo-fu-session-global-mode)
+     :config
+     (setq undo-fu-session-incompatible-files '("/COMMIT_EDITMSG\\'" "/git-rebase-todo\\'")))
+
+   (use-package vundo
+     :ensure t
+     :commands (vundo)
+     :config
+     ;; Use beautiful Unicode symbols for the tree
+     (setq vundo-glyph-alist vundo-unicode-symbols)
+     (setq vundo-compact-display t))
+#+end_src
+* Visuals & Themes
+#+begin_src emacs-lisp
+  (use-package doom-themes
+   :demand t
+   :config
+   (setq doom-themes-enable-bold t
+         doom-themes-enable-italic t)
+
+   (defun my/setup-frame-visuals (frame)
+     (with-selected-frame frame
+       (load-theme 'doom-solarized-light t)
+       (doom-themes-visual-bell-config)
+       (doom-themes-org-config)
+       (scroll-bar-mode -1)
+       (tool-bar-mode -1)
+       (menu-bar-mode -1)))
+
+   (if (daemonp)
+       (add-hook 'after-make-frame-functions #'my/setup-frame-visuals)
+     (my/setup-frame-visuals (selected-frame))))
+
+   (defun my/set-font (family &rest props)
+     (when (member family (font-family-list))
+       (set-face-attribute 'default nil :family family :foundry "outline")))
+
+   (defun my/safe-set-font (families &rest props)
+     (cl-loop for family in families
+              when (member family (font-family-list))
+              return (progn
+                      (set-face-attribute 'default nil :family family)
+                      (cl-loop for (prop val) on props by 'cddr
+                               do (set-face-attribute 'default nil prop val))))
+     (unless (member (car families) (font-family-list))
+       (message "Warning: None of the specified font families are available: %s" families)))
+
+(when (display-graphic-p)
+      (my/safe-set-font '("JetBrainsMono Nerd Font" "FiraCode Nerd Font" "Hack" "DejaVu Sans Mono")
+                         :height 110)
+
+      (dolist (charset '((symbol . "Symbols Nerd Font")
+                         (emoji . "Noto Color Emoji")))
+        (when (member (cdr charset) (font-family-list))
+          (set-fontset-font t (car charset) (cdr charset)))))
+
+     (use-package nerd-icons
+       :ensure t
+       :demand t
+       :config
+       (defun my-nerd-icons-faicon-small (name &rest args)
+         (apply #'nerd-icons-faicon name (plist-put (copy-sequence args) :height 0.8)))
+       (defun my-nerd-icons-devicon-small (name &rest args)
+         (apply #'nerd-icons-devicon name (plist-put (copy-sequence args) :height 0.8)))
+
+       (add-to-list 'nerd-icons-extension-icon-alist '("gradle" my-nerd-icons-devicon-small "nf-dev-gradle"))
+       (add-to-list 'nerd-icons-extension-icon-alist '("kts" my-nerd-icons-devicon-small "nf-dev-gradle"))
+       (add-to-list 'nerd-icons-extension-icon-alist '("properties" my-nerd-icons-faicon-small "nf-fa-cog"))
+       (add-to-list 'nerd-icons-extension-icon-alist '("project" nerd-icons-octicon "nf-oct-file_code"))
+       (add-to-list 'nerd-icons-extension-icon-alist '("classpath" nerd-icons-octicon "nf-oct-file_code")))
+
+     (use-package doom-modeline
+       :ensure t
+       :init (doom-modeline-mode 1)
+       :config
+       (setq doom-modeline-hud t)
+       (setq doom-modeline-buffer-file-name-style 'relative-from-project)
+       (setq doom-modeline-height 25)
+       (setq doom-modeline-checker-enable t)
+       (setq doom-modeline-checker-simple-format nil)
+       (setq doom-modeline-support-mouse nil)
+       (setq doom-modeline-column-number nil)
+       (setq doom-modeline-percent-position nil)
+       (setq doom-modeline-position-line-format '("%l"))
+       (setq doom-modeline-buffer-encoding nil)
+       (setq doom-modeline-major-mode-icon t)
+       (setq doom-modeline-major-mode-hide-name t)
+       (setq doom-modeline-project-name t)
+
+       (column-number-mode -1)
+
+       ;; Click integration for Flymake
+       (defun my/doom-modeline-flymake-click ()
+         (interactive)
+         (if (bound-and-true-p flymake-mode)
+             (flymake-show-buffer-diagnostics)
+           (message "Flymake not active")))
+
+       (define-key doom-modeline-mode-map (kbd "<mode-line> <flymake> <mouse-1>") 'my/doom-modeline-flymake-click))
+
+     ;; Ansi Colors for Compilation
+     (use-package ansi-color
+       :ensure nil
+       :hook (compilation-filter . ansi-color-compilation-filter))
+
+     ;; Rainbow Identifiers
+     (use-package rainbow-identifiers
+       :ensure t
+       :hook (prog-mode . rainbow-identifiers-mode)
+       :config
+       (setq rainbow-identifiers-cie-l-saturation 45
+             rainbow-identifiers-cie-l-lightness 70
+             rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
+#+end_src
+
