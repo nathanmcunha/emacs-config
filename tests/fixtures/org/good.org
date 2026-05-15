@@ -1,5 +1,0 @@
-* Good Org
-
-#+begin_src emacs-lisp :tangle no
-(message "fixture ok")
-#+end_src
