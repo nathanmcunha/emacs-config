@@ -677,7 +677,7 @@ from the current project, and feeds them into the Corfu/Cape completion stack.
                 '("up -d" "down" "logs -f" "ps" "build" "restart" "pull")))))
 
   (defvar my/run--cache nil
-    "Alist of (PROJECT-ROOT . (TIMESTAMP . CANDIDATES)).")
+    "Alist of (PROJECT-ROOT TIMESTAMP CANDIDATES).")
 
   (defun my/run--project-key ()
     "Return project root or default-directory as key for caching."
@@ -717,7 +717,7 @@ structure/config changes."
                                           my/run-favorites
                                           my/run-history))
                       :test #'string= :from-end t)))
-          (setq my/run--cache (assoc-delete-all root my/run--cache))
+          (setq my/run--cache (cl-delete root my/run--cache :key #'car :test #'equal))
           (push (list root stamp cands) my/run--cache)
           cands))))
 
