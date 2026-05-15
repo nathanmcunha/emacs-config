@@ -685,7 +685,8 @@ from the current project, and feeds them into the Corfu/Cape completion stack.
 
   (defun my/run--project-markers-timestamp (root)
     "Return a stable timestamp (integer) computed from marker files in ROOT.
-Checks common project files (package.json, Makefile, docker-compose.yml)."
+Checks common project files (package.json, Makefile, docker-compose.yml,
+docker-compose.yaml, pom.xml, build.gradle)."
     (let* ((markers '("package.json" "Makefile" "docker-compose.yml" "docker-compose.yaml" "pom.xml" "build.gradle"))
            (times
             (cl-loop for f in markers
@@ -712,7 +713,7 @@ Checks common project files (package.json, Makefile, docker-compose.yml)."
                                           my/run-favorites
                                           my/run-history))
                       :test #'string= :from-end t)))
-          (setq my/run--cache (assq-delete-all root my/run--cache))
+          (setq my/run--cache (assoc-delete-all root my/run--cache))
           (push (list root stamp cands) my/run--cache)
           cands))))
 
