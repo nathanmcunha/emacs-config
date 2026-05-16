@@ -17,6 +17,14 @@ Load =custom.el= for local overrides and safe customizations that shouldn't be v
   (load custom-file 'noerror))
 #+end_src
 
+** Local Directory Variables
+Define directory paths used across the config for LSP servers, sessions, and package management.
+
+#+begin_src emacs-lisp
+(defconst my-local-dir (expand-file-name ".local/" user-emacs-directory))
+(defconst my-local-pkg-dir (expand-file-name "packages/" my-local-dir))
+#+end_src
+
 ** Package Management
 #+begin_src emacs-lisp
 ;; Prevent use-package from attempting to install packages (Nix manages packages).
