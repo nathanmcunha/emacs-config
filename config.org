@@ -1,9 +1,14 @@
 #+TITLE: Emacs Config (Modular)
 #+AUTHOR: Nathan Martins Cunha
-#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle config.el :results silent
 
-#+include: "core.org"
-#+include: "ui.org"
-#+include: "completion.org"
-#+include: "tools.org"
-#+include: "bindings.org"
+#+begin_src emacs-lisp
+(setq custom-file (expand-file-name "custom.el" user-emacs-directory))
+(when (file-exists-p custom-file)
+  (load custom-file 'noerror))
+
+(dolist (file '("core.el" "ui.el" "completion.el" "tools.el" "bindings.el"))
+  (let ((path (expand-file-name file user-emacs-directory)))
+    (when (file-exists-p path)
+      (load path 'noerror 'nomessage))))
+#+end_src

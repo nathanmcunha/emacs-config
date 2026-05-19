@@ -1,3 +1,5 @@
+#+PROPERTY: header-args:emacs-lisp :tangle ui.el :results silent
+
 * Async Command Runner
 A general-purpose async command runner with smart completion.
 Detects mise tasks, npm scripts, Makefile targets, Gradle tasks, and Docker Compose commands

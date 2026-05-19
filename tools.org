@@ -1,3 +1,5 @@
+#+PROPERTY: header-args:emacs-lisp :tangle tools.el :results silent
+
 * Development Tools
 ** Snippets (Tempel)
  #+begin_src emacs-lisp :tangle yes
@@ -139,25 +141,29 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
               html-ts-mode css-ts-mode
               dockerfile-ts-mode yaml-ts-mode
               sql-mode
+              java-mode java-ts-mode
               nix-mode qml-mode
               c++-mode c++-ts-mode c-mode c-ts-mode) . lsp-deferred)
             (lsp-mode . lsp-enable-which-key-integration))
      :commands (lsp lsp-deferred)
      :init
-     ;; Performance
+     ;; Performance (Doom-inspired)
      (setq lsp-idle-delay 0.5)
      (setq lsp-log-io nil)
      (setq lsp-completion-provider :none)
-     (setq lsp-headerline-breadcrumb-enable t)
+     (setq lsp-headerline-breadcrumb-enable nil)  ; opt-in (Doom)
      (setq lsp-modeline-diagnostics-enable nil)
      (setq lsp-diagnostics-provider :flymake)
+     (setq lsp-enable-folding nil)  ; disable expensive feature (Doom)
+     (setq lsp-enable-text-document-color nil)  ; disable (Doom)
      (setq lsp-enable-snippet nil)
      (setq lsp-enable-symbol-highlighting t)
      (setq lsp-enable-on-type-formatting nil)
      (setq lsp-enable-indentation nil)
-     (setq lsp-enable-text-document-color t)
      (setq lsp-keep-workspace-alive nil)
-     (setq lsp-file-watch-threshold 500000)
+     (setq lsp-file-watch-threshold 10000)  ; reduced from 500000
+     (setq read-process-output-max (* 1024 1024))  ; 1MB buffer (Doom)
+
 
      ;; Disable auto-install — all servers managed by Nix
      (setq lsp-auto-install nil)
@@ -237,67 +243,57 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
 ** Java Development (lsp-java)
 Java language server using Eclipse JDT.LS via lsp-java.
 
-#+begin_src emacs-lisp
+#+begin_src emacs-lisp :tangle yes
   (use-package lsp-java
     :ensure t
+    :demand t
     :after lsp-mode
-    :hook ((java-mode java-ts-mode) . (lambda ()
-                                       (require 'lsp-java)
-                                       (lsp-deferred)))
+    :hook ((java-mode . (lambda () (require 'lsp-java) (lsp-deferred)))
+           (java-ts-mode . (lambda () (require 'lsp-java) (lsp-deferred))))
     :config
     (setq lsp-java-server-install-dir (expand-file-name "lsp/eclipse.jdt.ls/" my-local-pkg-dir))
     (setq lsp-java-workspace-dir (expand-file-name "state/java-workspace/" my-local-dir))
-    (setq lsp-java-import-gradle-enabled t)
-    (setq lsp-java-vmargs
-          '("-XX:+UseG1GC" "-XX:+UseStringDeduplication"
-            "-Xmx2G" "-Xms512m"))
-    (setq lsp-java-debug-plugin t)
-    (setq lsp-java-generate-to-string-code-style "STRING_BUILDER")
-    (setq lsp-java-generate-equals-and-hash-code t))
+    (setq lsp-java-import-maven-enabled t)
+    (setq lsp-java-import-gradle-enabled nil)  ; disable Gradle
+    (setq lsp-java-vmargs '("-XX:+UseG1GC" "-Xmx2G" "-Xms512m"))
+    (setq lsp-java-bundles '())  ; disable all extensions for testing
+    (setq lsp-java-completion-on-did-select nil))  ; disable onDidSelect timeout
+#+end_src
 
-  (use-package dap-mode
-    :ensure t
-    :after lsp-java
-    :config
-    (require 'dap-java)
-    (setq dap-java-test-runner (expand-file-name "lsp/eclipse.jdt.ls/test-runner/test-runner" my-local-pkg-dir))
-    (my/bind-leader "d t"  'dap-java-run-test-method "Debug Test")
-    (my/bind-leader "d b"  'dap-breakpoint-toggle "Toggle Breakpoint")
-    (my/bind-leader "d c"  'dap-continue "Continue")
-    (my/bind-leader "d n"  'dap-next "Next (Step Over)")
-    (my/bind-leader "d i"  'dap-step-in "Step In")
-    (my/bind-leader "d o"  'dap-step-out "Step Out")
-    (my/bind-leader "d r"  'dap-debug-restart "Restart")
-    (my/bind-leader "d l"  'dap-ui-locals "Show Layout")
-    (my/bind-leader "d Q"  'dap-disconnect "Quit Debugger"))
+;; TEMPORARILY DISABLED - Enable after testing
+;; #+begin_src emacs-lisp :tangle no
+;;   (use-package dap-mode ...
 
+#+begin_src emacs-lisp
   (defun my/java-code-actions ()
-    "Unified IntelliJ-style code actions for Java."
+    "Java-friendly code action entrypoint."
     (interactive)
-    (let* ((custom-actions
-            '(("Generate toString"           . lsp-java-generate-to-string)
-              ("Generate hashCode/equals"    . lsp-java-generate-equals-and-hash-code)
-              ("Generate overrides"          . lsp-java-generate-overrides)
-              ("Generate getters/setters"    . lsp-java-add-getter-setter)
-              ("Add unimplemented methods"   . lsp-java-add-unimplemented-methods)
-              ("Organize imports"            . lsp-java-organize-imports)
-              ("Extract variable"            . lsp-java-extract-to-local-variable)
-              ("Extract method"              . lsp-java-extract-method)
-              ("Extract constant"            . lsp-java-extract-to-constant)
-              ("Inline variable"             . lsp-java-inline)
-              ("Convert to static import"    . lsp-java-convert-to-static-import)
-              ("Type hierarchy"             . lsp-java-type-hierarchy)
-              ("Find implementations"        . lsp-find-implementation)))
-           (choice (completing-read "Action: " (mapcar #'car custom-actions) nil t))
-           (cmd (cdr (assoc choice custom-actions))))
-      (call-interactively cmd)))
+    (cond
+     ;; Prefer lsp-mode actions when available
+     ((and (bound-and-true-p lsp-mode)
+           (fboundp 'lsp-execute-code-action))
+      (call-interactively #'lsp-execute-code-action))
+     ;; Fallback for eglot users
+     ((and (bound-and-true-p eglot--managed-mode)
+           (fboundp 'eglot-code-actions))
+      (call-interactively #'eglot-code-actions))
+     (t
+      (user-error "No LSP client active for Java code actions"))))
 
   (defun my/smart-code-actions ()
-    "Context-aware code actions."
+    "Context-aware code actions for LSP/Eglot with Java specialization."
     (interactive)
-    (if (derived-mode-p 'java-mode 'java-ts-mode)
-        (my/java-code-actions)
-      (call-interactively #'lsp-execute-code-action)))
+    (cond
+     ((derived-mode-p 'java-mode 'java-ts-mode)
+      (my/java-code-actions))
+     ((and (bound-and-true-p lsp-mode)
+           (fboundp 'lsp-execute-code-action))
+      (call-interactively #'lsp-execute-code-action))
+     ((and (bound-and-true-p eglot--managed-mode)
+           (fboundp 'eglot-code-actions))
+      (call-interactively #'eglot-code-actions))
+     (t
+      (user-error "No code actions available in current buffer"))))
 #+end_src
 
 #+begin_src emacs-lisp
@@ -461,7 +457,7 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
 #+end_src
 
 ** Formatting (Apheleia)
-#+begin_src emacs-lisp
+#+begin_src emacs-lisp :tangle yes
   (use-package apheleia
     :ensure t
     :init (apheleia-global-mode +1)
@@ -470,14 +466,13 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
      (setf (alist-get 'google-java-format apheleia-formatters)
            '("google-java-format" "-"))
      ;; Define Ruff as the primary formatter and import organizer for Python
-     ;; Use a custom command to run both 'check --fix' (for imports) and 'format'
-     ;; Custom Prettier using absolute path to avoid npx issues
      (setf (alist-get 'prettier apheleia-formatters)
            '("prettier" "--stdin-filepath" filepath))
      (setf (alist-get 'ruff apheleia-formatters)
            '("sh" "-c" "ruff check --fix --stdin-filename \"$0\" - | ruff format --stdin-filename \"$0\" -" filepath))
-     (push '(java-mode . google-java-format) apheleia-mode-alist)
-     (push '(java-ts-mode . google-java-format) apheleia-mode-alist)
+     ;; DISABLED for Java testing - re-enable after
+     ;; (push '(java-mode . google-java-format) apheleia-mode-alist)
+     ;; (push '(java-ts-mode . google-java-format) apheleia-mode-alist)
      (push '(python-mode . ruff) apheleia-mode-alist)
      (push '(python-ts-mode . ruff) apheleia-mode-alist)
      (push '(js-ts-mode . prettier) apheleia-mode-alist)
@@ -989,7 +984,8 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
         (use-package org
         :ensure nil
         :hook ((org-mode . visual-line-mode)
-               (org-mode . org-indent-mode))
+               (org-mode . org-indent-mode)
+               (org-mode . my/org-enable-auto-tangle))
         :bind (:map org-mode-map
                     ("TAB" . my/org-tab-dwim))
         :config
@@ -1005,6 +1001,32 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
               org-hide-block-startup nil
               org-src-preserve-indentation nil
               org-startup-folded 'content)
+
+        (defconst my/org-auto-tangle-files
+          '("core.org" "ui.org" "completion.org" "tools.org" "bindings.org" "config.org")
+          "Org files in `user-emacs-directory' that should auto-tangle on save.")
+
+        (defun my/org-config-file-p (&optional file)
+          "Return non-nil when FILE is one of the managed literate config files."
+          (let* ((f (or file buffer-file-name))
+                 (name (and f (file-name-nondirectory f)))
+                 (in-config-dir (and f
+                                     (string-prefix-p (file-truename user-emacs-directory)
+                                                      (file-truename (file-name-directory f))))))
+            (and in-config-dir (member name my/org-auto-tangle-files))))
+
+        (defun my/org-auto-tangle-config ()
+          "Auto-tangle the current Org buffer when it belongs to Emacs config."
+          (when (my/org-config-file-p)
+            (let ((org-confirm-babel-evaluate nil))
+              (org-babel-tangle)
+              (message "Auto-tangled %s" (file-name-nondirectory buffer-file-name)))))
+
+        (defun my/org-enable-auto-tangle ()
+          "Enable per-buffer auto-tangle for managed Emacs config Org files."
+          (when (my/org-config-file-p)
+            (add-hook 'after-save-hook #'my/org-auto-tangle-config nil t)))
+
         (defun my/org-tab-dwim ()
           (interactive)
           (or (condition-case nil (progn (tempel-expand) t) (user-error nil))

@@ -1,6 +1,6 @@
 #+TITLE: My Doom-Like Vanilla Configuration
 #+AUTHOR: Nathan Martins Cunha
-#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle core.el :results silent
 
 * File Header
 #+begin_src emacs-lisp
@@ -538,14 +538,30 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
                     `(menu-item ,description ,command)
                   command)))
 
-  ;; Bind the leader map to SPC in Evil states
-  (with-eval-after-load 'evil
-    (keymap-set evil-normal-state-map "SPC" my-leader-map)
-    (keymap-set evil-visual-state-map "SPC" my-leader-map)
-    (keymap-set evil-motion-state-map "SPC" my-leader-map))
+  (defun my/apply-evil-leader-bindings ()
+    "Apply leader bindings for Evil and global fallback keys."
+    (when (featurep 'evil)
+      ;; Doom-like + robust precedence over mode maps
+      (evil-define-key* '(normal visual motion) 'global (kbd "SPC") my-leader-map)
+      ;; Insert-state fallback for terminal/GUI reliability
+      (keymap-set evil-insert-state-map "M-SPC" my-leader-map)
+      (keymap-set evil-insert-state-map "C-SPC" my-leader-map))
+    ;; Global fallback when Evil is not active
+    (keymap-global-set "M-SPC" my-leader-map))
 
-  ;; Bind to M-SPC globally
-  (keymap-global-set "M-SPC" my-leader-map)
+  ;; Apply now, after Evil loads, and again after init to resist late overrides.
+  (with-eval-after-load 'evil
+    (my/apply-evil-leader-bindings)
+    (add-hook 'after-init-hook #'my/apply-evil-leader-bindings))
+
+  (defun my/which-key-debug (key)
+    "Debug KEY resolution in current context (Evil-aware)."
+    (interactive (list (read-key-sequence "Key sequence: ")))
+    (let ((cmd (key-binding key t)))
+      (message "state=%s key=%s -> %s"
+               (if (boundp 'evil-state) evil-state 'none)
+               (key-description key)
+               cmd)))
 
   ;; Add prefix labels for which-key
   (with-eval-after-load 'which-key

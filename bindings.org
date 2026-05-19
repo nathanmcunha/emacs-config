@@ -1,3 +1,5 @@
+#+PROPERTY: header-args:emacs-lisp :tangle bindings.el :results silent
+
 * Keybindings Configuration
 ** Centralized Leader Bindings
 #+begin_src emacs-lisp
@@ -6,6 +8,7 @@
 
     ;; --- Help & Config (h) ---
     (my/bind-leader "h b i" 'my/emacs-build-info "Emacs build info")
+    (my/bind-leader "h k"   'my/which-key-debug "debug keybinding")
     (my/bind-leader "h r r" (lambda () (interactive) (load-file user-init-file)) "reload config")
 
     ;; --- Buffer (b) ---

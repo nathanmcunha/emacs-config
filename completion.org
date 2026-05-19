@@ -1,266 +1,143 @@
-* Completion System (Vertico stack)
-** Vertico, Savehist, Orderless, Marginalia
-#+begin_src emacs-lisp
+# -*- lexical-binding: t; -*-
+#+PROPERTY: header-args:emacs-lisp :tangle completion.el :results silent
+* Completion System (Vertico Stack)
+Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
+
+** Vertico (Minibuffer Completion)
+#+begin_src emacs-lisp :tangle yes
   (use-package vertico
     :demand t
-    :init
-    (vertico-mode)
-    (vertico-multiform-mode)
-    :custom (vertico-cycle t)
+    :init (vertico-mode)
+    :custom
+    (vertico-cycle t)
+    (vertico-count 17)
     :bind (:map vertico-map
                 ("C-j" . vertico-next)
                 ("C-k" . vertico-previous)
+                ("TAB" . minibuffer-complete)
+                ([tab] . minibuffer-complete)
+                ("C-l" . vertico-exit)
+                ("RET" . vertico-exit)
+                ("M-RET" . vertico-exit-input)
                 ("C-f" . vertico-scroll-down)
-                ("C-b" . vertico-scroll-up)))
+                ("C-b" . vertico-scroll-up))
+    :config
+    ;; Doom-like file navigation in minibuffer
+    (require 'vertico-directory)
+    (define-key vertico-map (kbd "C-h") #'vertico-directory-up)
+    (define-key vertico-map (kbd "DEL") #'vertico-directory-delete-char)
+    (define-key vertico-map (kbd "M-DEL") #'vertico-directory-delete-word)
 
-  (use-package savehist
-    :ensure nil
-    :init (savehist-mode))
+    ;; Persist and replay minibuffer sessions (Doom-like)
+    (require 'vertico-repeat)
+    (add-hook 'minibuffer-setup-hook #'vertico-repeat-save))
+#+end_src
 
+** Orderless (Fuzzy Matching)
+#+begin_src emacs-lisp :tangle yes
   (use-package orderless
-    :ensure t
+    :demand t
     :custom
     (completion-styles '(orderless basic))
-    (completion-category-overrides '((file (styles basic partial-completion))))
+    (completion-category-defaults nil)
+    (completion-category-overrides '((file (styles orderless partial-completion))))
     :config
-    (defun my/orderless-dispatch (pattern _index _total)
-      (cond
-       ;; Standard dispatchers
-       ((string-prefix-p "!" pattern) `(orderless-without-literal . ,(substring pattern 1)))
-       ((string-suffix-p "=" pattern) `(orderless-literal . ,(substring pattern 0 -1)))
-       ((string-prefix-p "," pattern) `(orderless-initialism . ,(substring pattern 1)))
-       ((string-suffix-p "~" pattern) `(orderless-flex . ,(substring pattern 0 -1)))
-       ;; New: Anchor dispatchers
-       ((string-prefix-p "^" pattern) `(orderless-regexp . ,(concat "^" (substring pattern 1))))
-       ((string-suffix-p "$" pattern) `(orderless-regexp . ,(concat (substring pattern 0 -1) "$")))))
-    (setq orderless-style-dispatchers '(my/orderless-dispatch)))
+    (setq orderless-affix-dispatch-alist
+          '((?! . orderless-without-literal)
+            (?& . orderless-annotation)
+            (?% . char-fold-to-regexp)
+            (?` . orderless-initialism)
+            (?= . orderless-literal)
+            (?^ . orderless-literal-prefix)
+            (?~ . orderless-flex)))
+    (setq orderless-component-separator #'orderless-escapable-split-on-space))
+#+end_src
 
+** Marginalia (Completion Annotations)
+#+begin_src emacs-lisp :tangle yes
   (use-package marginalia
-    :ensure t
     :after vertico
     :custom
     (marginalia-max-relative-age 0)
     (marginalia-align 'right)
     :init (marginalia-mode)
-    :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle))
-    :config
-    ;; Custom simplified annotator for Buffers
-    (defun my/marginalia-annotate-buffer (cand)
-      (when-let (buffer (get-buffer cand))
-        (let* ((file (buffer-file-name buffer))
-               (type (cond (file "File")
-                           ((derived-mode-p 'dired-mode) "Dir")
-                           (t "Buf")))
-               ;; Get path relative to project or home
-               (path (if file
-                         (if-let ((project (project-current nil (file-name-directory file))))
-                             (file-relative-name file (project-root project))
-                           (abbreviate-file-name file))
-                       "")))
-          (marginalia--fields
-           (type :width 5 :face 'marginalia-type)
-           (path :face 'marginalia-file-name)))))
+    :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle)))
 
-    ;; Custom simplified annotator for Files (Recentf)
-    (defun my/marginalia-annotate-file (cand)
-      (let* ((path (if-let ((project (project-current nil (file-name-directory cand))))
-                       (file-relative-name cand (project-root project))
-                     (abbreviate-file-name cand))))
-        (marginalia--fields
-         ("File" :width 5 :face 'marginalia-type)
-         (path :face 'marginalia-file-name))))
-
-    ;; Register the custom annotators safely
-    (with-eval-after-load 'marginalia
-      (setq marginalia-annotator-alist
-            (append '((buffer . my/marginalia-annotate-buffer)
-                      (file . my/marginalia-annotate-file))
-                    (bound-and-true-p marginalia-annotator-alist)))))
-
+  ;; Icons in minibuffer completion (Doom-like feel)
   (use-package nerd-icons-completion
-    :after marginalia
+    :after (marginalia nerd-icons)
     :config
-    (nerd-icons-completion-mode)
+    (nerd-icons-completion-mode 1)
     (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
 #+end_src
 
-** Consult & Embark
-#+begin_src emacs-lisp
+** Savehist (Minibuffer History)
+#+begin_src emacs-lisp :tangle yes
+  (use-package savehist
+    :ensure nil
+    :init (savehist-mode))
+#+end_src
+
+** Consult & Embark (Enhanced Completions)
+#+begin_src emacs-lisp :tangle yes
   (use-package consult
-    :init
+    :demand t
+    :custom
+    (consult-narrow-key "<")
+    (consutl-widen-key ">")
+    (consult-preview-key "M-.")
+    (consult-project-function (lambda (_) (when-let (p (project-current)) (project-root p))))
+    :bind (("C-x b" . consult-buffer)
+           ("C-x C-b" . consult-buffer)
+           ("M-y" . consult-yank-pop)
+           ("M-." . consult-mark-symbol)
+           ("M-?" . consult-ripgrep))
+    :config
+    ;; Doom-like preview defaults
+    (consult-customize consult-buffer consult-source-recent-file
+                       :preview-key "C-SPC")
     (setq register-preview-delay 0.5
           register-preview-function #'consult-register-format)
+    (advice-add #'register-preview :override #'consult-register-window)
     (setq xref-show-xrefs-function #'consult-xref
-          xref-show-definitions-function #'consult-xref)
-    (setq consult-narrow-key "<")
-    (setq consult-widen-key ">")
-    ;; Only preview on explicit key, reduces IO on large repositories
-    (setq consult-preview-key (kbd "M-."))
-    (setq consult-project-function (lambda (_) (when-let (p (project-current)) (project-root p))))
+          xref-show-definitions-function #'consult-xref))
 
-    ;; REMOVEMOS A LINHA :bind QUE CAUSAVA O ERRO
-
+  (use-package embark
+    :demand t
+    :bind (("C-;" . embark-act)
+           ("M-;" . embark-act)   ; terminal-safe fallback
+           ("C-:" . embark-dwim)
+           ("M-:" . embark-dwim)) ; terminal-safe fallback
+    :init (setq prefix-help-command #'embark-prefix-help-command)
     :config
-    (defun my/consult-project-group (cand transform)
-      (if transform cand
-        (let* ((buffer (get-buffer cand))
-               (path (if buffer (buffer-local-value 'default-directory buffer) cand))
-               (proj (project-current nil (if (and path (file-directory-p path)) path (and path (file-name-directory path))))))
-          (if proj
-              (format "Project: %s" (file-name-nondirectory (directory-file-name (project-root proj))))
-            "No Project / Misc"))))
+    (add-to-list 'display-buffer-alist
+                 '("\\`*Embark Collect \\(Live\\|Completions\\)*"
+                   nil
+                   (window-parameters (mode-line-format . none))))
+    ;; Doom-style live preview in collect buffers
+    (add-hook 'embark-collect-mode-hook #'consult-preview-at-point-mode))
 
-    (consult-customize
-     consult-source-buffer :group #'my/consult-project-group
-     consult-source-recent-file :group #'my/consult-project-group))
+  (use-package embark-consult :after (embark consult))
 
-      (use-package consult-dir
-        :bind (("C-x C-d" . consult-dir)
-               :map minibuffer-local-completion-map
-               ("C-x C-d" . consult-dir)
-               ("C-x C-j" . consult-dir-jump-file)))
-
-      ;; Wgrep enables editing the results of grep/ripgrep
-      ;; Wgrep's byte-compilation can trip over Emacs 30 batch settings during Elpaca sync.
-      ;; Keep the package installed, but skip compiling it as part of the build.
-      (use-package wgrep
-        :ensure t)
-
-    (use-package embark
-      :ensure t
-      :bind
-      (("C-;" . embark-act)
-       ("C-:" . embark-dwim)
-       ("C-h B" . embark-bindings))
-      :init
-      (setq prefix-help-command #'embark-prefix-help-command)
-      :config
-      (add-to-list 'display-buffer-alist
-                   '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
-                     nil
-                     (window-parameters (mode-line-format . none))))
-
-      ;; --- 1. Enhanced Identifier Map with LSP/Eglot Actions ---
-      (defvar my/embark-identifier-map
-        (let ((map (copy-keymap embark-identifier-map)))
-          (define-key map (kbd "R") #'lsp-rename)
-          (define-key map (kbd "A") #'my/smart-code-actions)
-          (define-key map (kbd "O") #'lsp-java-organize-imports)
-          (define-key map (kbd "F") #'lsp-format-buffer)
-          (define-key map (kbd "H") #'lsp-describe-thing-at-point)
-          (define-key map (kbd "L") #'flymake-show-diagnostics-at-point)
-          (define-key map (kbd "E") #'xref-find-definitions-other-window)
-          map)
-        "Enhanced identifier map with LSP actions.")
-
-      (setq embark-identifier-map my/embark-identifier-map)
-
-      ;; --- 2. Smart Path Guessing Improvements ---
-      (require 'ffap)
-      ;; Recognize more file-like patterns for ffap
-      (dolist (pair '((git-truename "\\([-[:alnum:]_.$=/:]+\\)")
-                      (yaml-key . "\\(?1:[[:alnum:]_-]+[[:space:]]*:\\)")
-                      (docker-image . "\\(?:[a-z0-9._-]+/\\)?[a-z0-9._-]+:[a-z0-9._-]+")))
-        (add-to-list 'ffap-string-at-point-mode-alist pair))
-
-      ;; Make embark guess file paths more aggressively
-      (defvar my/embark-extra-file-actions
-        '(("P" . (lambda (f) (with-current-buffer (find-file-noselect f) (pop-to-buffer))))
-          ("D" . dired)
-          ("X" . executable-make-absolute-file-local-name))
-        "Additional file actions for embark.")
-
-      ;; Enhance the file map with extra actions
-      (dolist (action my/embark-extra-file-actions)
-        (define-key embark-file-map (car action) (cdr action)))
-
-      ;; --- 3. Org-Specific Targets (Links, Timestamps, Dates) ---
-      (defun my/embark-target-org-link ()
-        "Detect Org mode links."
-        (when (and (eq major-mode 'org-mode)
-                   (org-in-regexp org-link-any-re 1))
-          (let* ((start (match-beginning 1))
-                 (end (match-end 1))
-                 (link (org-link-unescape (match-string 1))))
-            (when link
-              (cons 'org-link link)))))
-
-      (defun my/embark-target-org-timestamp ()
-        "Detect Org timestamps."
-        (when (and (eq major-mode 'org-mode)
-                   (org-in-regexp org-ts-regexp-both 1))
-          (let ((start (match-beginning 1))
-                (end (match-end 1)))
-            (cons 'org-timestamp (match-string 1)))))
-
-      (defun my/embark-target-org-deadline ()
-        "Detect Org deadline timestamps."
-        (when (and (eq major-mode 'org-mode)
-                   (org-in-regexp org-deadline-re 1))
-          (let ((start (match-beginning 1))
-                (end (match-end 1)))
-            (cons 'org-deadline (match-string 1)))))
-
-      (defun my/embark-target-org-schedule ()
-        "Detect Org scheduled timestamps."
-        (when (and (eq major-mode 'org-mode)
-                   (org-in-regexp org-scheduled-re 1))
-          (let ((start (match-beginning 1))
-                (end (match-end 1)))
-            (cons 'org-schedule (match-string 1)))))
-
-      ;; Add Org target finders
-      (add-to-list 'embark-target-finders #'my/embark-target-org-link)
-      (add-to-list 'embark-target-finders #'my/embark-target-org-timestamp)
-      (add-to-list 'embark-target-finders #'my/embark-target-org-deadline)
-      (add-to-list 'embark-target-finders #'my/embark-target-org-schedule)
-
-      ;; Define Org-specific action keymaps
-      (defvar-keymap my/embark-org-link-map
-        :doc "Keymap for Org link actions."
-        :parent embark-general-map
-        "RET" #'org-open-at-point
-        "o" #'org-open-at-point
-        "f" #'org-link-open-if-in-browser
-        "c" #'org-copy-link
-        "k" #'org-kill-link
-        "e" #'org-edit-link)
-
-      (defvar-keymap my/embark-org-timestamp-map
-        :doc "Keymap for Org timestamp actions."
-        :parent embark-general-map
-        "RET" #'org-time-stamp
-        "c" #'org-clone-subtree-with-time-shift
-        "+" #'org-timestamp-up
-        "-" #'org-timestamp-down
-        "s" #'org-schedule)
-
-      ;; Register Org action maps
-      (setq embark-keymap-alist
-            (append
-             '((org-link . my/embark-org-link-map)
-               (org-timestamp . my/embark-org-timestamp-map)
-               (org-deadline . my/embark-org-timestamp-map)
-               (org-schedule . my/embark-org-timestamp-map))
-             embark-keymap-alist)))
-
-    (use-package embark-consult
-      :ensure t
-      :after (embark consult))
+  ;; Use Consult UI for completion-in-region when Vertico is active
+  (setq completion-in-region-function
+        (lambda (&rest args)
+          (apply (if (bound-and-true-p vertico-mode)
+                     #'consult-completion-in-region
+                   #'completion--in-region)
+                 args)))
 #+end_src
 
 * In-Buffer Completion (Corfu + Cape)
-This module configures the "Intellisense" experience using Corfu, with specific tweaks to handle Yasnippet expansion gracefully via the TAB key.
+Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
 
-** UI Configuration (Corfu)
-Sets up the popup, cycling, and integration with icons.
-
+** Corfu (IntelliSense Popup)
 #+begin_src emacs-lisp :tangle yes
   (use-package corfu
     :demand t
     :custom
     (corfu-auto t)
-    (corfu-auto-delay 0.2)
+    (corfu-auto-delay 0.24)          ; Doom uses 0.24
     (corfu-auto-prefix 2)
     (corfu-cycle t)
     (corfu-preselect 'prompt)
@@ -269,17 +146,20 @@ Sets up the popup, cycling, and integration with icons.
     (corfu-on-exact-match nil)
     (corfu-quit-at-boundary 'separator)
     (corfu-quit-no-match 'separator)
+    (corfu-popupinfo-delay '(0.8 . 0.4))
     :init
     (global-corfu-mode)
     (setq tab-always-indent 'complete)
     :bind
     (:map corfu-map
+          ("C-j" . corfu-next)
+          ("C-k" . corfu-previous)
+          ("C-l" . corfu-insert)
+          ("C-h" . corfu-reset)
           ("TAB" . corfu-next)
           ([tab] . corfu-next)
           ("S-TAB" . corfu-previous)
           ([backtab] . corfu-previous)
-          ("C-j" . corfu-next)
-          ("C-k" . corfu-previous)
           ("RET" . corfu-insert)
           ("M-d" . corfu-popupinfo-toggle)
           ("M-p" . corfu-popupinfo-scroll-up)
@@ -289,17 +169,61 @@ Sets up the popup, cycling, and integration with icons.
     (corfu-history-mode 1)
     (keymap-global-set "C-SPC" #'completion-at-point)
 
-    ;; Orderless for LSP completions
-    (setq completion-category-overrides
-          '((lsp-capf (styles orderless))))
+    ;; Use orderless for LSP completions (like Doom)
+    (add-to-list 'completion-category-overrides `(lsp-capf (styles orderless)))
+
+    ;; Exclude modes where Corfu shouldn't activate (like Doom)
+    (setq global-corfu-modes
+          '((not erc-mode circe-mode help-mode gud-mode vterm-mode magit-mode)
+            t))
 
     (with-eval-after-load 'savehist
       (add-to-list 'savehist-additional-variables 'corfu-history)))
 
-  ;; Pretty icons for Corfu
+  ;; Nerd Icons for Corfu
   (use-package nerd-icons-corfu
     :after corfu
     :config
     (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
 #+end_src
 
+** Cape (Completion Backends)
+#+begin_src emacs-lisp :tangle yes
+  (use-package cape
+    :demand t
+    :init
+    ;; Make LSP completion non-interruptible (key fix for stability)
+    (advice-add #'lsp-completion-at-point :around #'cape-wrap-noninterruptible)
+    (advice-add #'lsp-completion-at-point :around #'cape-wrap-nonexclusive)
+    (advice-add #'comint-completion-at-point :around #'cape-wrap-nonexclusive)
+    (advice-add #'eglot-completion-at-point :around #'cape-wrap-nonexclusive)
+    (advice-add #'pcomplete-completions-at-point :around #'cape-wrap-nonexclusive)
+
+    ;; File completion in prog modes (LOW priority = runs after LSP)
+    (add-hook 'prog-mode-hook
+              (lambda () (add-hook 'completion-at-point-functions #'cape-file -10 t)))
+
+    ;; Elisp in org/markdown
+    (add-hook 'org-mode-hook
+              (lambda () (add-hook 'completion-at-point-functions #'cape-elisp-block 0 t)))
+    (add-hook 'markdown-mode-hook
+              (lambda () (add-hook 'completion-at-point-functions #'cape-elisp-block 0 t)))
+
+    ;; Dabbrev as FALLBACK (high priority = runs last)
+    (dolist (hook '(prog-mode-hook text-mode-hook conf-mode-hook comint-mode-hook))
+      (add-hook hook
+                (lambda () (add-hook 'completion-at-point-functions #'cape-dabbrev 20 t))))
+
+    :config
+    (setq pcomplete-ignore-case t)
+    (setq cape-dabbrev-check-other-buffers t)
+    (setq cape-dabbrev-buffer-scanning-size-limit (* 1 1024 1024)))  ; 1MB limit
+#+end_src
+
+** LSP Completion Integration
+#+begin_src emacs-lisp :tangle yes
+  ;; LSP uses Corfu for completion (like Doom)
+  (setq lsp-completion-provider :none)
+
+  (add-hook 'lsp-mode-hook #'lsp-completion-mode)
+#+end_src
