@@ -208,10 +208,11 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
                               (http://json.schemastore.org/docker-compose . "docker-compose.ya?ml")))
 
     ;; Reconnect LSP when envrc activates a new environment (picks up direnv venv/PATH)
-    (add-hook 'envrc-after-update-hook
-              (lambda ()
-                (when-let (ws (car (lsp-workspaces)))
-                  (lsp-workspace-restart ws))))
+    (when (boundp 'envrc-after-update-hook)
+      (add-hook 'envrc-after-update-hook
+                (lambda ()
+                  (when-let (ws (car (lsp-workspaces)))
+                    (lsp-workspace-restart ws)))))
 
     ;; evil normal-state bindings (evil-collection has no lsp-mode module;
     ;; replaces what evil-collection-eglot provided for eglot-mode-map)

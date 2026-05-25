@@ -2,6 +2,13 @@
 #+AUTHOR: Nathan Martins Cunha
 #+PROPERTY: header-args:emacs-lisp :tangle config.el :results silent
 
+# Keep modules visible to Nix use-package parsing.
+#+include: "core.org"
+#+include: "ui.org"
+#+include: "completion.org"
+#+include: "tools.org"
+#+include: "bindings.org"
+
 #+begin_src emacs-lisp
 (setq custom-file (expand-file-name "custom.el" user-emacs-directory))
 (when (file-exists-p custom-file)
