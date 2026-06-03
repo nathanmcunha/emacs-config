@@ -966,7 +966,7 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
 
   ;; ── Agent Shell Sidebar ───────────────────────────────────
   (use-package agent-shell-sidebar
-    :ensure t
+    :ensure nil
     :vc (:url "https://github.com/cmacrae/agent-shell-sidebar")
     :after agent-shell
     :config

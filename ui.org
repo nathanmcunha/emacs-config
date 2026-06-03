@@ -522,104 +522,136 @@ comint, eat, vterm, and agent-shell buffers.
 #+end_src
 * Visuals & Themes
 #+begin_src emacs-lisp
-  (use-package doom-themes
-   :demand t
-   :config
-   (setq doom-themes-enable-bold t
-         doom-themes-enable-italic t)
+  (defun my/set-font (family &rest props)
+    "Set default face attributes if the family exists."
+    (when (member family (font-family-list))
+      (set-face-attribute 'default nil :family family :foundry "outline")))
 
-   (defun my/setup-frame-visuals (frame)
-     (with-selected-frame frame
-       (load-theme 'doom-solarized-light t)
-       (doom-themes-visual-bell-config)
-       (doom-themes-org-config)
-       (scroll-bar-mode -1)
-       (tool-bar-mode -1)
-       (menu-bar-mode -1)))
-
-   (if (daemonp)
-       (add-hook 'after-make-frame-functions #'my/setup-frame-visuals)
-     (my/setup-frame-visuals (selected-frame))))
-
-   (defun my/set-font (family &rest props)
-     (when (member family (font-family-list))
-       (set-face-attribute 'default nil :family family :foundry "outline")))
-
-   (defun my/safe-set-font (families &rest props)
-     (cl-loop for family in families
-              when (member family (font-family-list))
-              return (progn
+  (defun my/safe-set-font (families &rest props)
+    "Safely cycle through FAMILIES and apply the first match with PROPS."
+    (cl-loop for family in families
+             when (member family (font-family-list))
+             return (progn
                       (set-face-attribute 'default nil :family family)
                       (cl-loop for (prop val) on props by 'cddr
                                do (set-face-attribute 'default nil prop val))))
-     (unless (member (car families) (font-family-list))
-       (message "Warning: None of the specified font families are available: %s" families)))
+    (unless (member (car families) (font-family-list))
+      (message "Warning: None of the specified font families are available: %s" families)))
 
-(when (display-graphic-p)
-      (my/safe-set-font '("JetBrainsMono Nerd Font" "FiraCode Nerd Font" "Hack" "DejaVu Sans Mono")
-                         :height 110)
+  (use-package doom-themes
+    :demand t
+    :config
+    (setq doom-themes-enable-bold t
+          doom-themes-enable-italic t)
+    (doom-themes-visual-bell-config)
+    (doom-themes-org-config)
+    (doom-themes-treemacs-config)
 
-      (dolist (charset '((symbol . "Symbols Nerd Font")
-                         (emoji . "Noto Color Emoji")))
-        (when (member (cdr charset) (font-family-list))
-          (set-fontset-font t (car charset) (cdr charset)))))
+    (defun nm/noctalia-dark-p ()
+      "Return t if noctalia is currently in dark mode."
+      (let ((darkfile (expand-file-name "~/.config/noctalia/.darkmode")))
+        (and (file-exists-p darkfile)
+             (string= "1" (string-trim
+                           (with-temp-buffer
+                             (insert-file-contents darkfile)
+                             (buffer-string)))))))
 
-     (use-package nerd-icons
-       :ensure t
-       :demand t
-       :config
-       (defun my-nerd-icons-faicon-small (name &rest args)
-         (apply #'nerd-icons-faicon name (plist-put (copy-sequence args) :height 0.8)))
-       (defun my-nerd-icons-devicon-small (name &rest args)
-         (apply #'nerd-icons-devicon name (plist-put (copy-sequence args) :height 0.8)))
+    (defun nm/apply-noctalia-theme ()
+      "Load doom-gruvbox theme."
+      (interactive)
+      (mapc #'disable-theme custom-enabled-themes)
+      (load-theme 'doom-gruvbox t)
+      (setq-default frame-background-mode 'dark)
+      (mapc (lambda (f)
+              (set-frame-parameter f 'background-mode 'dark))
+            (frame-list)))
 
-       (add-to-list 'nerd-icons-extension-icon-alist '("gradle" my-nerd-icons-devicon-small "nf-dev-gradle"))
-       (add-to-list 'nerd-icons-extension-icon-alist '("kts" my-nerd-icons-devicon-small "nf-dev-gradle"))
-       (add-to-list 'nerd-icons-extension-icon-alist '("properties" my-nerd-icons-faicon-small "nf-fa-cog"))
-       (add-to-list 'nerd-icons-extension-icon-alist '("project" nerd-icons-octicon "nf-oct-file_code"))
-       (add-to-list 'nerd-icons-extension-icon-alist '("classpath" nerd-icons-octicon "nf-oct-file_code")))
+    (defun my/setup-frame-visuals (frame)
+      (with-selected-frame frame
+        (nm/apply-noctalia-theme)
+        (scroll-bar-mode -1)
+        (tool-bar-mode -1)
+        (menu-bar-mode -1)
+        
+        ;; Apply fonts inside the frame creation hook to fix daemon loading
+        (when (display-graphic-p frame)
+          ;; Main coding font (Atkinson) - my/safe-set-font is now fully safe to call!
+          (my/safe-set-font '("Atkinson Hyperlegible Mono" "FiraCode Nerd Font" "Hack") :height 110)
+          
+          ;; Proportional reading font (Lexend) for Org-mode
+          (when (member "Lexend" (font-family-list))
+            (set-face-attribute 'variable-pitch nil :family "Lexend" :height 1.15))
+          
+          ;; Symbol & Emoji fallbacks
+          (dolist (charset '((symbol . "Symbols Nerd Font")
+                             (emoji . "Noto Color Emoji")))
+            (when (member (cdr charset) (font-family-list))
+              (set-fontset-font t (car charset) (cdr charset)))))))
 
-     (use-package doom-modeline
-       :ensure t
-       :init (doom-modeline-mode 1)
-       :config
-       (setq doom-modeline-hud t)
-       (setq doom-modeline-buffer-file-name-style 'relative-from-project)
-       (setq doom-modeline-height 25)
-       (setq doom-modeline-checker-enable t)
-       (setq doom-modeline-checker-simple-format nil)
-       (setq doom-modeline-support-mouse nil)
-       (setq doom-modeline-column-number nil)
-       (setq doom-modeline-percent-position nil)
-       (setq doom-modeline-position-line-format '("%l"))
-       (setq doom-modeline-buffer-encoding nil)
-       (setq doom-modeline-major-mode-icon t)
-       (setq doom-modeline-major-mode-hide-name t)
-       (setq doom-modeline-project-name t)
+    (if (daemonp)
+        (add-hook 'after-make-frame-functions #'my/setup-frame-visuals)
+      (my/setup-frame-visuals (selected-frame))))
 
-       (column-number-mode -1)
+  (use-package solaire-mode
+    :ensure t
+    :hook (after-init . solaire-global-mode))
 
-       ;; Click integration for Flymake
-       (defun my/doom-modeline-flymake-click ()
-         (interactive)
-         (if (bound-and-true-p flymake-mode)
-             (flymake-show-buffer-diagnostics)
-           (message "Flymake not active")))
+  ;; 3. ADHD Brain & Org-mode Tweaks
+  (setq-default line-spacing 0.4)
+  (add-hook 'org-mode-hook #'variable-pitch-mode)
 
-       (define-key doom-modeline-mode-map (kbd "<mode-line> <flymake> <mouse-1>") 'my/doom-modeline-flymake-click))
+  (use-package nerd-icons
+    :ensure t
+    :demand t
+    :config
+    (defun my-nerd-icons-faicon-small (name &rest args)
+      (apply #'nerd-icons-faicon name (plist-put (copy-sequence args) :height 0.8)))
+    (defun my-nerd-icons-devicon-small (name &rest args)
+      (apply #'nerd-icons-devicon name (plist-put (copy-sequence args) :height 0.8)))
 
-     ;; Ansi Colors for Compilation
-     (use-package ansi-color
-       :ensure nil
-       :hook (compilation-filter . ansi-color-compilation-filter))
+    (add-to-list 'nerd-icons-extension-icon-alist '("gradle" my-nerd-icons-devicon-small "nf-dev-gradle"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("kts" my-nerd-icons-devicon-small "nf-dev-gradle"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("properties" my-nerd-icons-faicon-small "nf-fa-cog"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("project" nerd-icons-octicon "nf-oct-file_code"))
+    (add-to-list 'nerd-icons-extension-icon-alist '("classpath" nerd-icons-octicon "nf-oct-file_code")))
 
-     ;; Rainbow Identifiers
-     (use-package rainbow-identifiers
-       :ensure t
-       :hook (prog-mode . rainbow-identifiers-mode)
-       :config
-       (setq rainbow-identifiers-cie-l-saturation 45
-             rainbow-identifiers-cie-l-lightness 70
-             rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
+  (use-package doom-modeline
+    :ensure t
+    :init (doom-modeline-mode 1)
+    :config
+    (setq doom-modeline-hud t)
+    (setq doom-modeline-buffer-file-name-style 'relative-from-project)
+    (setq doom-modeline-height 25)
+    (setq doom-modeline-checker-enable t)
+    (setq doom-modeline-checker-simple-format nil)
+    (setq doom-modeline-support-mouse nil)
+    (setq doom-modeline-column-number nil)
+    (setq doom-modeline-percent-position nil)
+    (setq doom-modeline-position-line-format '("%l"))
+    (setq doom-modeline-buffer-encoding nil)
+    (setq doom-modeline-major-mode-icon t)
+    (setq doom-modeline-major-mode-hide-name t)
+    (setq doom-modeline-project-name t)
+
+    (column-number-mode -1)
+
+    (defun my/doom-modeline-flymake-click ()
+      (interactive)
+      (if (bound-and-true-p flymake-mode)
+          (flymake-show-buffer-diagnostics)
+        (message "Flymake not active")))
+
+    (define-key doom-modeline-mode-map (kbd "<mode-line> <flymake> <mouse-1>") 'my/doom-modeline-flymake-click))
+
+  (use-package ansi-color
+    :ensure nil
+    :hook (compilation-filter . ansi-color-compilation-filter))
+
+  (use-package rainbow-identifiers
+    :ensure t
+    :hook (prog-mode . rainbow-identifiers-mode)
+    :config
+    (setq rainbow-identifiers-cie-l-saturation 45
+          rainbow-identifiers-cie-l-lightness 70
+          rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
 #+end_src
-
