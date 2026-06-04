@@ -1,8 +1,10 @@
+# -*- lexical-binding: t; -*-
+
 #+PROPERTY: header-args:emacs-lisp :tangle tools.el :results silent
 
 * Development Tools
 ** Snippets (Tempel)
- #+begin_src emacs-lisp :tangle yes
+ #+begin_src emacs-lisp
    (use-package tempel
      :ensure t
      :bind (("M-+" . tempel-complete)
@@ -15,61 +17,13 @@
 #+end_src
 
 ** Extended Backends (Cape)
-#+begin_src emacs-lisp :tangle yes
-  (use-package cape
-    :ensure t
-    :init
-    ;; Wrap comint and pcomplete for better shell/REPL completion
-    (advice-add #'comint-completion-at-point :around #'cape-wrap-nonexclusive)
-    (advice-add #'pcomplete-completions-at-point :around #'cape-wrap-nonexclusive)
+;; Cape is configured in completion.org — this heading exists only for
+;; documentation. The Nix use-package parser discovers the dependency from
+;; completion.org's `use-package cape` block.
 
-    ;; Add CAPFs buffer-locally with proper ordering (higher = higher priority)
-    ;; File completion in prog modes (depth -10 = lower priority than LSP)
-    (add-hook 'prog-mode-hook
-              (lambda () (add-hook 'completion-at-point-functions #'cape-file -10 t)))
-
-    ;; Dabbrev as fallback in most buffers (depth 20 = low priority fallback)
-    (dolist (hook '(prog-mode-hook text-mode-hook conf-mode-hook comint-mode-hook))
-      (add-hook hook (lambda () (add-hook 'completion-at-point-functions #'cape-dabbrev 20 t))))
-
-    ;; Elisp blocks in org/markdown
-    (add-hook 'org-mode-hook
-              (lambda () (add-hook 'completion-at-point-functions #'cape-elisp-block 0 t)))
-    (add-hook 'markdown-mode-hook
-              (lambda () (add-hook 'completion-at-point-functions #'cape-elisp-block 0 t)))
-
-    :config
-    (setq pcomplete-ignore-case t)
-    (setq cape-dabbrev-check-other-buffers t))
-#+end_src
-
-** Spell Checking and Dictionary (Jinx + Cape-Dict)
-#+begin_src emacs-lisp :tangle no
-  (use-package jinx
-    :ensure nil
-    :defer t
-    :hook (prog-mode . jinx-mode)
-    :hook (text-mode . jinx-mode)
-    :hook (org-mode . jinx-mode)
-    :bind (("M-$" . jinx-correct)
-           ("C-M-$" . jinx-languages)))
-
-  (defun my/spell-toggle-lang ()
-    "Toggle between English and Brazilian Portuguese for Jinx and Cape."
-    (interactive)
-    (if (string-match-p "en_US" (or (getenv "DICTIONARY") ""))
-        (setenv "DICTIONARY" "pt_BR")
-      (setenv "DICTIONARY" "en_US"))
-    (when (fboundp 'jinx-languages)
-      (if (member "pt_BR" (split-string (or (jinx--get-languages) "") " "))
-          (jinx-languages "en_US")
-        (jinx-languages "pt_BR en_US")))
-    (message "Spell language: %s" (if (string-match-p "pt_BR" (or (getenv "DICTIONARY") "")) "pt_BR" "en_US")))
-
-  ;; Add dictionary completion to global CAPF
-  (add-hook 'completion-at-point-functions #'cape-dict t)
-
-#+end_src
+;; Spell checking (jinx + cape-dict) disabled.
+;; To re-enable, remove :tangle no from the use-package jinx block
+;; and add cape keyword to extraEmacsPackages in emacs.nix.
 
 ** Git (Magit)
 #+begin_src emacs-lisp
@@ -244,7 +198,7 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
 ** Java Development (lsp-java)
 Java language server using Eclipse JDT.LS via lsp-java.
 
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   (use-package lsp-java
     :ensure t
     :demand t
@@ -458,7 +412,7 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
 #+end_src
 
 ** Formatting (Apheleia)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   (use-package apheleia
     :ensure t
     :init (apheleia-global-mode +1)
@@ -759,7 +713,7 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
                (visual-wrap-prefix-mode 1)))
 #+end_src
 **  Eletric Pair (for brackets)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
 (use-package elec-pair
         :ensure nil
         :hook (prog-mode . electric-pair-mode)
@@ -778,13 +732,9 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
     (setq emmet-move-cursor-between-quotes t))
 #+end_src
 
-** AI Tools
-** Claude 
+** Terminals (EAT + VTerm)
+;; AI tools (claude-code, agent-shell) moved to ai.org
 #+begin_src emacs-lisp
-  ;; install required inheritenv dependency:
-  (use-package inheritenv
-    :vc (:url "https://github.com/purcell/inheritenv" :rev :newest))
-
   ;; for eat terminal backend:
   (use-package eat
     :ensure t
@@ -897,212 +847,15 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
   (setq shell-file-name "zsh"
         explicit-shell-file-name "zsh")
   (setq vterm-shell  "zsh")
-  ;; install claude-code.el
-  (use-package claude-code :ensure t
-    :vc (:url "https://github.com/stevemolitor/claude-code.el" :rev :newest)
-    :config
-    (claude-code-mode)
-    :bind-keymap ("C-c c" . claude-code-command-map)
-    ;; Optionally define a repeat map so that "M" will cycle thru Claude auto-accept/plan/confirm modes after invoking claude-code-cycle-mode / C-c M.
-    :bind
-    (:repeat-map my-claude-code-map ("M" . claude-code-cycle-mode)))
-#+end_src
-*** AI Code Assistant (agent-shell)
-#+begin_src emacs-lisp
-  (use-package shell-maker
-    :ensure t
-    :demand t)
-
-  (use-package acp
-    :ensure t
-    :demand t)
-
-  (use-package agent-shell
-    :ensure t
-    :after (shell-maker acp)
-    :config
-    ;; ── Load OpenCode backend ─────────────────────────────────
-    (require 'agent-shell-opencode)
-
-    ;; Use OpenCode's own auth (already configured via `opencode auth login`)
-    (setq agent-shell-opencode-authentication
-          (agent-shell-opencode-make-authentication :none t))
-
-    ;; Always use OpenCode, skip the selection prompt
-    (setq agent-shell-preferred-agent-config 'opencode)
-
-    ;; ── Terminal-like behavior ────────────────────────────────
-    ;; Start fresh sessions without prompting (like opening a new terminal)
-    (setq agent-shell-session-strategy 'new)
-
-    ;; Instant interrupt without confirmation (like C-c in a raw TTY)
-    (setq agent-shell-confirm-interrupt nil)
-
-    ;; ── Visual chrome reduction ───────────────────────────────
-    ;; Minimal text header instead of graphical blocks
-    (setq agent-shell-header-style 'text)
-
-    ;; Plain colored text labels instead of boxed UI elements
-    (setq agent-shell-status-kind-label-function
-          #'agent-shell--plain-colored-status-kind-label)
-
-    ;; No busy spinner in mode line
-    (setq agent-shell-show-busy-indicator nil)
-
-    ;; ── Inline display (no collapsible sections) ──────────────
-    ;; Auto-expand tool calls so you see everything inline
-    (setq agent-shell-tool-use-expand-by-default t)
-
-    ;; Auto-expand AI thought process sections
-    (setq agent-shell-thought-process-expand-by-default t)
-
-    ;; Auto-expand your own messages
-    (setq agent-shell-user-message-expand-by-default t)
-
-    ;; ── Keybindings ───────────────────────────────────────────
-    :bind (:map agent-shell-mode-map
-                ("C-l" . comint-clear-buffer)
-                ("C-c C-k" . comint-clear-buffer)))
-
-  ;; ── Agent Shell Sidebar ───────────────────────────────────
-  (use-package agent-shell-sidebar
-    :ensure nil
-    :vc (:url "https://github.com/cmacrae/agent-shell-sidebar")
-    :after agent-shell
-    :config
-    ;; Use OpenCode as the default provider in sidebar
-    (setq agent-shell-sidebar-default-config
-          (agent-shell-opencode-make-agent-config))
-
-    ;; Sidebar on the right, 25% width, locked
-    (setq agent-shell-sidebar-position 'right)
-    (setq agent-shell-sidebar-width "25%")
-    (setq agent-shell-sidebar-locked t))
- #+end_src
-
-** Org Mode
-#+begin_src emacs-lisp
-        (use-package org
-        :ensure nil
-        :hook ((org-mode . visual-line-mode)
-               (org-mode . org-indent-mode)
-               (org-mode . my/org-enable-auto-tangle))
-        :bind (:map org-mode-map
-                    ("TAB" . my/org-tab-dwim))
-        :config
-        (require 'org-tempo)
-        ;; Disable persistent cache to fix "Got element without parent" warnings
-        (setq org-element-use-cache nil)
-        (setq org-ellipsis " ▾"
-              org-hide-emphasis-markers t
-              org-src-fontify-natively t
-              org-fontify-quote-and-verse-blocks t
-              org-src-tab-acts-natively t
-              org-edit-src-content-indentation 2
-              org-hide-block-startup nil
-              org-src-preserve-indentation nil
-              org-startup-folded 'content)
-
-        (defconst my/org-auto-tangle-files
-          '("core.org" "ui.org" "completion.org" "tools.org" "bindings.org" "config.org")
-          "Org files in `user-emacs-directory' that should auto-tangle on save.")
-
-        (defun my/org-config-file-p (&optional file)
-          "Return non-nil when FILE is one of the managed literate config files."
-          (let* ((f (or file buffer-file-name))
-                 (name (and f (file-name-nondirectory f)))
-                 (in-config-dir (and f
-                                     (string-prefix-p (file-truename user-emacs-directory)
-                                                      (file-truename (file-name-directory f))))))
-            (and in-config-dir (member name my/org-auto-tangle-files))))
-
-        (defun my/org-auto-tangle-config ()
-          "Auto-tangle the current Org buffer when it belongs to Emacs config."
-          (when (my/org-config-file-p)
-            (let ((org-confirm-babel-evaluate nil))
-              (org-babel-tangle)
-              (message "Auto-tangled %s" (file-name-nondirectory buffer-file-name)))))
-
-        (defun my/org-enable-auto-tangle ()
-          "Enable per-buffer auto-tangle for managed Emacs config Org files."
-          (when (my/org-config-file-p)
-            (add-hook 'after-save-hook #'my/org-auto-tangle-config nil t)))
-
-        (defun my/org-tab-dwim ()
-          (interactive)
-          (or (condition-case nil (progn (tempel-expand) t) (user-error nil))
-              (and (fboundp 'completion-at-point)
-                   (completion-at-point))
-              (org-cycle))))
-
-  (use-package org-modern
-        :ensure t
-        :hook (org-mode . org-modern-mode)
-        :config
-        (setq org-modern-star '("◉" "○" "◈" "◇" "✳" "◆" "□")
-              org-modern-table-vertical 1
-              org-modern-table-horizontal 0.2
-              org-modern-list '((43 . "➤") (45 . "–") (42 . "•"))
-              org-modern-todo nil org-modern-tag nil org-modern-priority nil))
-
-      ;; variable-pitch-mode is built-in; fix code/table faces to stay monospace
-      (add-hook 'org-mode-hook 'variable-pitch-mode)
-      (dolist (face '(org-block org-code org-table org-verbatim
-                      org-meta-line org-block-begin-line org-block-end-line))
-        (set-face-attribute face nil :inherit 'fixed-pitch))
-
-      (use-package ob-mermaid :ensure t :after org
-        :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (sql . t) (emacs-lisp . t))))
-
-
-      (use-package org-roam
-        :ensure t
-        :init
-        (setq org-roam-v2-ack t)
-        (setq org-roam-directory (expand-file-name "~/org"))
-        (unless (file-directory-p org-roam-directory)
-          (make-directory org-roam-directory t))
-        :custom
-        (org-roam-completion-everywhere nil)
-        :config (org-roam-db-autosync-mode))
 #+end_src
 
-** Markdown
-#+begin_src emacs-lisp
-  (use-package markdown-mode
-    :ensure t
-    :mode ("README\.md\'" . gfm-mode)
-    :init (setq markdown-command "multimarkdown")
-    :config (setq markdown-fontify-code-blocks-natively t))
-#+end_src
+;; Org Mode configuration moved to notes.org
 
-** Docker & Kubernetes
-#+begin_src emacs-lisp
-  (use-package docker
-    :ensure t
-    :commands (docker docker-compose)
-    :init
-    (setq docker-command "podman")
-    (setq docker-docker-path "podman")
-    (setq docker-compose-command "podman compose")
-    (setq docker-container-tramp-method "podman")
 
-    (let ((uid (number-to-string (user-uid))))
-      (setenv "DOCKER_HOST" (concat "unix:///run/user/" uid "/podman/podman.sock"))
-      ;; Explicitly set the command with the socket path to avoid any environment issues
-      (setq docker-compose-command (concat "DOCKER_HOST=unix:///run/user/" uid "/podman/podman.sock podman compose")))
+;; Markdown configuration moved to notes.org
 
-    :config
-    ;; Podman network ls doesn't support the 'Scope' field in older versions
-    (setq docker-network-columns
-          '((:name "Network ID" :width 20 :template "{{ json .ID }}" :sort nil :format nil)
-            (:name "Name" :width 50 :template "{{ json .Name }}" :sort nil :format nil)
-            (:name "Driver" :width 10 :template "{{ json .Driver }}" :sort nil :format nil))))
 
-  (use-package kubernetes
-    :ensure t
-    :commands kubernetes)
-#+end_src
+;; Docker & Kubernetes configuration moved to containers.org
 
 ** Environment (envrc)
 Per-project environment activation via direnv. Works with both Nix flakes and mise projects.
@@ -1114,8 +867,8 @@ Each project needs a ~.envrc~ file (~use flake~ for Nix, or ~mise direnv activat
     :hook (after-init . envrc-global-mode))
 #+end_src
 
-** Debugging (dap-mode)
-Java debugging via dap-mode with JDTLS support.
+** Which-Func (breadcrumb in header-line)
+;; dap-mode config temporarily disabled — re-enable after testing
 
 #+begin_src emacs-lisp
   (require 'which-func)
@@ -1244,4 +997,27 @@ Module for subtle coverage visualization.
   ;; Auto-refresh integration
   (advice-add 'my/project-test :after
               (lambda (&rest _) (when my/java-coverage-visible (my/java-apply-subtle-coverage))))
+#+end_src
+
+** TRAMP GCP Configuration
+Enable TRAMP for GCP compute instances without modifying =~/.ssh/config=.
+
+#+begin_src emacs-lisp
+  ;; Enable TRAMP for GCP compute instances
+  (setq tramp-ssh-controlmaster-options
+        (concat "-o UserKnownHostsFile=/home/nathanmcunha/.ssh/google_compute_known_hosts "
+                "-o HostKeyAlias=compute.5250592080668089503 "
+                "-o CheckHostIP=no -o HashKnownHosts=no "
+                "-o IdentitiesOnly=yes "
+                "-i /home/nathanmcunha/.ssh/google_compute_engine"))
+
+  ;; Custom TRAMP method for gcloud
+  (setq tramp-methods
+        (cons '("gcloud"
+                (tramp-login-program "gcloud compute ssh")
+                (tramp-login-args (("%h" "--zone" "%k")))
+                (tramp-remote-shell "/bin/sh")
+                (tramp-remote-shell-login ("-l"))
+                (tramp-remote-shell-args ("-c")))
+              tramp-methods))
 #+end_src

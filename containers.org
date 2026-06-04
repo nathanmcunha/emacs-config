@@ -1,0 +1,31 @@
+# -*- lexical-binding: t; -*-
+
+#+PROPERTY: header-args:emacs-lisp :tangle containers.el :results silent
+
+* Docker & Kubernetes
+#+begin_src emacs-lisp
+  (use-package docker
+    :ensure t
+    :commands (docker docker-compose)
+    :init
+    (setq docker-command "podman")
+    (setq docker-docker-path "podman")
+    (setq docker-compose-command "podman compose")
+    (setq docker-container-tramp-method "podman")
+
+    (let ((uid (number-to-string (user-uid))))
+      (setenv "DOCKER_HOST" (concat "unix:///run/user/" uid "/podman/podman.sock"))
+      ;; Explicitly set the command with the socket path to avoid any environment issues
+      (setq docker-compose-command (concat "DOCKER_HOST=unix:///run/user/" uid "/podman/podman.sock podman compose")))
+
+    :config
+    ;; Podman network ls doesn't support the 'Scope' field in older versions
+    (setq docker-network-columns
+          '((:name "Network ID" :width 20 :template "{{ json .ID }}" :sort nil :format nil)
+            (:name "Name" :width 50 :template "{{ json .Name }}" :sort nil :format nil)
+            (:name "Driver" :width 10 :template "{{ json .Driver }}" :sort nil :format nil))))
+
+  (use-package kubernetes
+    :ensure t
+    :commands kubernetes)
+#+end_src

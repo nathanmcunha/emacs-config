@@ -4,7 +4,7 @@
 Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 
 ** Vertico (Minibuffer Completion)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   (use-package vertico
     :demand t
     :init (vertico-mode)
@@ -34,7 +34,7 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 #+end_src
 
 ** Orderless (Fuzzy Matching)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   (use-package orderless
     :demand t
     :custom
@@ -54,7 +54,7 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 #+end_src
 
 ** Marginalia (Completion Annotations)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   (use-package marginalia
     :after vertico
     :custom
@@ -72,14 +72,14 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 #+end_src
 
 ** Savehist (Minibuffer History)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   (use-package savehist
     :ensure nil
     :init (savehist-mode))
 #+end_src
 
 ** Consult & Embark (Enhanced Completions)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   (use-package consult
     :demand t
     :custom
@@ -132,7 +132,7 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
 
 ** Corfu (IntelliSense Popup)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   (use-package corfu
     :demand t
     :custom
@@ -188,7 +188,7 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
 #+end_src
 
 ** Cape (Completion Backends)
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   (use-package cape
     :demand t
     :init
@@ -221,7 +221,7 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
 #+end_src
 
 ** LSP Completion Integration
-#+begin_src emacs-lisp :tangle yes
+#+begin_src emacs-lisp
   ;; LSP uses Corfu for completion (like Doom)
   (setq lsp-completion-provider :none)
 

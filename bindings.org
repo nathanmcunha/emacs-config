@@ -1,3 +1,5 @@
+# -*- lexical-binding: t; -*-
+
 #+PROPERTY: header-args:emacs-lisp :tangle bindings.el :results silent
 
 * Keybindings Configuration
@@ -108,10 +110,7 @@
     (my/bind-leader "f e" (lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) "open early-init")
     (my/bind-leader "f E" (lambda () (interactive) (dired (expand-file-name user-emacs-directory))) "browse emacs.d")
 
-    ;; --- Spell & Language (S) ---
-  ;;  (my/bind-leader "S s" 'jinx-correct "correct word")
-   ;; (my/bind-leader "S t" 'my/spell-toggle-lang "toggle lang (EN/PT)")
-    ;;(my/bind-leader "S l" 'jinx-languages "select languages")
+  ;; Spell binding section removed — re-enable jinx first (see tools.org)
 
     ;; --- Go to (g) ---
     (my/bind-leader "g s" 'magit-status "magit status")

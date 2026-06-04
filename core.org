@@ -4,7 +4,7 @@
 
 * File Header
 #+begin_src emacs-lisp
- ;;; config.el --- Tangled Configuration -*- lexical-binding: t -*-
+ ;;; core.el --- Tangled Configuration -*- lexical-binding: t -*-
 #+end_src
 
 * Core Configuration

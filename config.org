@@ -1,3 +1,5 @@
+# -*- lexical-binding: t; -*-
+
 #+TITLE: Emacs Config (Modular)
 #+AUTHOR: Nathan Martins Cunha
 #+PROPERTY: header-args:emacs-lisp :tangle config.el :results silent
@@ -5,16 +7,20 @@
 # Keep modules visible to Nix use-package parsing.
 #+include: "core.org"
 #+include: "ui.org"
+#+include: "theme.org"
 #+include: "completion.org"
 #+include: "tools.org"
 #+include: "bindings.org"
+#+include: "notes.org"
+#+include: "ai.org"
+#+include: "containers.org"
 
 #+begin_src emacs-lisp
 (setq custom-file (expand-file-name "custom.el" user-emacs-directory))
 (when (file-exists-p custom-file)
   (load custom-file 'noerror))
 
-(dolist (file '("core.el" "ui.el" "completion.el" "tools.el" "bindings.el"))
+(dolist (file '("core.el" "ui.el" "theme.el" "completion.el" "tools.el" "bindings.el" "notes.el" "ai.el" "containers.el"))
   (let ((path (expand-file-name file user-emacs-directory)))
     (when (file-exists-p path)
       (load path 'noerror 'nomessage))))
