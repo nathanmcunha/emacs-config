@@ -1,6 +1,6 @@
 # -*- lexical-binding: t; -*-
 
-#+PROPERTY: header-args:emacs-lisp :tangle ai.el :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle no
 
 * AI Tools
 ** Claude
