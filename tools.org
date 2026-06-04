@@ -1003,21 +1003,22 @@ Module for subtle coverage visualization.
 Enable TRAMP for GCP compute instances without modifying =~/.ssh/config=.
 
 #+begin_src emacs-lisp
-  ;; Enable TRAMP for GCP compute instances
-  (setq tramp-ssh-controlmaster-options
-        (concat "-o UserKnownHostsFile=/home/nathanmcunha/.ssh/google_compute_known_hosts "
-                "-o HostKeyAlias=compute.5250592080668089503 "
-                "-o CheckHostIP=no -o HashKnownHosts=no "
-                "-o IdentitiesOnly=yes "
-                "-i /home/nathanmcunha/.ssh/google_compute_engine"))
+  (with-eval-after-load 'tramp
+    ;; Enable TRAMP for GCP compute instances
+    (setq tramp-ssh-controlmaster-options
+          (concat "-o UserKnownHostsFile=/home/nathanmcunha/.ssh/google_compute_known_hosts "
+                  "-o HostKeyAlias=compute.5250592080668089503 "
+                  "-o CheckHostIP=no -o HashKnownHosts=no "
+                  "-o IdentitiesOnly=yes "
+                  "-i /home/nathanmcunha/.ssh/google_compute_engine"))
 
-  ;; Custom TRAMP method for gcloud
-  (setq tramp-methods
-        (cons '("gcloud"
-                (tramp-login-program "gcloud compute ssh")
-                (tramp-login-args (("%h" "--zone" "%k")))
-                (tramp-remote-shell "/bin/sh")
-                (tramp-remote-shell-login ("-l"))
-                (tramp-remote-shell-args ("-c")))
-              tramp-methods))
+    ;; Custom TRAMP method for gcloud
+    (setq tramp-methods
+          (cons '("gcloud"
+                  (tramp-login-program "gcloud compute ssh")
+                  (tramp-login-args (("%h" "--zone" "%k")))
+                  (tramp-remote-shell "/bin/sh")
+                  (tramp-remote-shell-login ("-l"))
+                  (tramp-remote-shell-args ("-c")))
+                tramp-methods)))
 #+end_src
