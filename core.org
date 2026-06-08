@@ -25,6 +25,50 @@ Define directory paths used across the config for LSP servers, sessions, and pac
 (defconst my-local-pkg-dir (expand-file-name "packages/" my-local-dir))
 #+end_src
 
+** XDG-Style File Paths
+Redirect Emacs-generated state/cache files to standard XDG locations
+to keep ~/.config/emacs/ clean of auto-generated files.
+
+#+begin_src emacs-lisp
+;; Redirect state, cache, and data files away from user-emacs-directory
+(defconst my-state-dir (expand-file-name "~/.local/state/emacs/"))
+(defconst my-cache-dir (expand-file-name "~/.cache/emacs/"))
+(defconst my-data-dir (expand-file-name "~/.local/share/emacs/"))
+
+;; Make sure state/cache directories exist
+(dolist (dir (list my-state-dir my-cache-dir my-data-dir))
+  (unless (file-directory-p dir)
+    (make-directory dir t)))
+
+;; Savehist (minibuffer history)
+(setq savehist-file (expand-file-name "history" my-state-dir))
+
+;; Recentf
+(setq recentf-save-file (expand-file-name "recentf" my-state-dir))
+
+;; Save place (cursor position restoration)
+(setq save-place-file (expand-file-name "places" my-state-dir))
+
+;; Auto-save list
+(setq auto-save-list-file-prefix (expand-file-name "auto-save/saves-" my-cache-dir))
+
+;; TRAMP connection cache
+(setq tramp-persistency-file-name (expand-file-name "tramp" my-state-dir))
+
+;; Transient history
+(setq transient-history-file-name (expand-file-name "transient/history.el" my-state-dir))
+
+;; Undo-fu session (persistent undo)
+(setq undo-fu-session-directory (expand-file-name "undo-fu-session/" my-state-dir))
+
+;; Org-roam database
+(setq org-roam-db-location (expand-file-name "org-roam.db" my-state-dir))
+
+;; ELPA package directory (stays here for non-Nix fallback)
+(setq package-user-dir (expand-file-name "elpa/" my-data-dir))
+#+end_src
+
+
 ** Package Management
 #+begin_src emacs-lisp
 ;; Prevent use-package from attempting to install packages (Nix manages packages).
@@ -339,7 +383,6 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
                     eshell-mode-hook
                     eat-mode-hook
                     gemini-cli-mode-hook
-                    agent-shell-mode-hook
                     dirvish-mode-hook
                     dirvish-side-mode-hook))
       (add-hook mode (lambda () (display-line-numbers-mode 0))))

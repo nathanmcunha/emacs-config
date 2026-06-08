@@ -206,12 +206,6 @@
     (my/bind-leader "l c" 'tab-close "close tab")
     (my/bind-leader "l r" 'tab-rename "rename tab")
 
-    ;; --- AI Assistant (a) ---
-    (my/bind-leader "a g" 'agent-shell-google-start-gemini "Gemini CLI")
-    (my/bind-leader "a o" 'agent-shell-opencode-start-agent "Opencode")
-    (my/bind-leader "a s" 'agent-shell "Agent Shell Menu")
-    (my/bind-leader "a S" 'agent-shell-sidebar-toggle "OpenCode Sidebar")
-    (my/bind-leader "a q" 'gptel-send "Gptel Send")
   ;; --- Run (r) ---
     (my/bind-leader "r r" 'my/run "run (async)")
     (my/bind-leader "r c" 'my/run-compile "run (compile)")
