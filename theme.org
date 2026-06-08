@@ -28,7 +28,7 @@
     (doom-themes-visual-bell-config)
     (doom-themes-org-config)
     (doom-themes-treemacs-config)
-  ))
+  )
 
   (defun my/setup-frame-visuals (frame)
     (with-selected-frame frame
