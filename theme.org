@@ -28,51 +28,32 @@
     (doom-themes-visual-bell-config)
     (doom-themes-org-config)
     (doom-themes-treemacs-config)
+  ))
 
-    (defun nm/noctalia-dark-p ()
-      "Return t if noctalia is currently in dark mode."
-      (let ((darkfile (expand-file-name "~/.config/noctalia/.darkmode")))
-        (and (file-exists-p darkfile)
-             (string= "1" (string-trim
-                           (with-temp-buffer
-                             (insert-file-contents darkfile)
-                             (buffer-string)))))))
+  (defun my/setup-frame-visuals (frame)
+    (with-selected-frame frame
+      (scroll-bar-mode -1)
+      (tool-bar-mode -1)
+      (menu-bar-mode -1)
 
-    (defun nm/apply-theme ()
-      "Load the active theme (currently doom-gruvbox)."
-      (interactive)
-      (mapc #'disable-theme custom-enabled-themes)
-      (load-theme 'doom-gruvbox t)
-      (setq-default frame-background-mode 'dark)
-      (mapc (lambda (f)
-              (set-frame-parameter f 'background-mode 'dark))
-            (frame-list)))
+      ;; Apply fonts inside the frame creation hook to fix daemon loading
+      (when (display-graphic-p frame)
+        ;; Main coding font (Atkinson)
+        (my/safe-set-font '("Atkinson Hyperlegible Mono" "FiraCode Nerd Font" "Hack") :height 110)
 
-    (defun my/setup-frame-visuals (frame)
-      (with-selected-frame frame
-        (nm/apply-theme)
-        (scroll-bar-mode -1)
-        (tool-bar-mode -1)
-        (menu-bar-mode -1)
-        
-        ;; Apply fonts inside the frame creation hook to fix daemon loading
-        (when (display-graphic-p frame)
-          ;; Main coding font (Atkinson) - my/safe-set-font is now fully safe to call!
-          (my/safe-set-font '("Atkinson Hyperlegible Mono" "FiraCode Nerd Font" "Hack") :height 110)
-          
-          ;; Proportional reading font (Lexend) for Org-mode
-          (when (member "Lexend" (font-family-list))
-            (set-face-attribute 'variable-pitch nil :family "Lexend" :height 1.15))
-          
-          ;; Symbol & Emoji fallbacks
-          (dolist (charset '((symbol . "Symbols Nerd Font")
-                             (emoji . "Noto Color Emoji")))
-            (when (member (cdr charset) (font-family-list))
-              (set-fontset-font t (car charset) (cdr charset)))))))
+        ;; Proportional reading font (Lexend) for Org-mode
+        (when (member "Lexend" (font-family-list))
+          (set-face-attribute 'variable-pitch nil :family "Lexend" :height 1.15))
 
-    (if (daemonp)
-        (add-hook 'after-make-frame-functions #'my/setup-frame-visuals)
-      (my/setup-frame-visuals (selected-frame))))
+        ;; Symbol & Emoji fallbacks
+        (dolist (charset '((symbol . "Symbols Nerd Font")
+                           (emoji . "Noto Color Emoji")))
+          (when (member (cdr charset) (font-family-list))
+            (set-fontset-font t (car charset) (cdr charset)))))))
+
+  (if (daemonp)
+      (add-hook 'after-make-frame-functions #'my/setup-frame-visuals)
+    (my/setup-frame-visuals (selected-frame)))
 
   (use-package solaire-mode
     :ensure t

@@ -68,7 +68,6 @@ to keep ~/.config/emacs/ clean of auto-generated files.
 (setq package-user-dir (expand-file-name "elpa/" my-data-dir))
 #+end_src
 
-
 ** Package Management
 #+begin_src emacs-lisp
 ;; Prevent use-package from attempting to install packages (Nix manages packages).
