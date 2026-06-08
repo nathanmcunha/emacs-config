@@ -424,6 +424,36 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (auto-save-visited-mode +1)
     (dolist (cmd '(evil-window-next evil-window-prev balance-windows other-window))
       (advice-add cmd :before (lambda (&rest _) (save-some-buffers t))))
+
+
+;; --- Noctalia theme integration ---
+(defun nm/apply-noctalia-theme ()
+  "Load Rosé Pine Dawn (light) or Moon (dark) from noctalia state.
+Reads ~/.config/noctalia/.darkmode (\"0\" = light, \"1\" = dark).
+Falls back to rose-pine-dawn if the state file is missing."
+  (let ((darkp (and (file-exists-p (expand-file-name "~/.config/noctalia/.darkmode"))
+                    (with-temp-buffer
+                      (insert-file-contents
+                       (expand-file-name "~/.config/noctalia/.darkmode"))
+                      (string= "1" (string-trim (buffer-string)))))))
+    (add-to-list 'custom-theme-load-path
+                 (expand-file-name "~/.config/emacs/themes"))
+    (mapc #'disable-theme custom-enabled-themes)
+    (load-theme (if darkp 'rose-pine-moon 'rose-pine-dawn) t)
+    ;; Fix illegible faces: default subtle bg/faded fg is too muted
+    (let ((sel-bg (if darkp "#524f67" "#dfd9e8"))
+          (sel-fg (if darkp "#e0def4" "#575279"))
+          (comment-fg (if darkp "#908caa" "#797593")))
+      (set-face-attribute 'region nil :background sel-bg :foreground sel-fg)
+      (set-face-attribute 'vertico-current nil :background sel-bg :foreground sel-fg :inherit 'bold)
+      (set-face-attribute 'font-lock-comment-face nil :foreground comment-fg :inherit 'italic))
+    (setq-default frame-background-mode (if darkp 'dark 'light))
+    (mapc (lambda (f) (set-frame-parameter f 'background-mode
+                                           (if darkp 'dark 'light)))
+          (frame-list))))
+
+;; Apply on startup — also callable via emacsclient for noctalia darkModeChange hook.
+(add-hook 'after-init-hook #'nm/apply-noctalia-theme)
 #+end_src
 
 ** GC Magic

@@ -4,6 +4,10 @@
 #+AUTHOR: Nathan Martins Cunha
 #+PROPERTY: header-args:emacs-lisp :tangle config.el :results silent
 
+
+#+begin_src emacs-lisp
+;;; config.el --- Modular Configuration -*- lexical-binding: t -*-
+#+end_src
 # Keep modules visible to Nix use-package parsing.
 #+include: "core.org"
 #+include: "ui.org"

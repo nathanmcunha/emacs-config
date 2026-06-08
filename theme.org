@@ -2,6 +2,10 @@
 
 #+PROPERTY: header-args:emacs-lisp :tangle theme.el :results silent
 
+#+begin_src emacs-lisp
+;;; theme.el --- Visuals & Themes -*- lexical-binding: t -*-
+#+end_src
+
 * Visuals & Themes
 #+begin_src emacs-lisp
   (defun my/set-font (family &rest props)
@@ -20,15 +24,6 @@
     (unless (member (car families) (font-family-list))
       (message "Warning: None of the specified font families are available: %s" families)))
 
-  (use-package doom-themes
-    :demand t
-    :config
-    (setq doom-themes-enable-bold t
-          doom-themes-enable-italic t)
-    (doom-themes-visual-bell-config)
-    (doom-themes-org-config)
-    (doom-themes-treemacs-config)
-  )
 
   (defun my/setup-frame-visuals (frame)
     (with-selected-frame frame
@@ -55,9 +50,6 @@
       (add-hook 'after-make-frame-functions #'my/setup-frame-visuals)
     (my/setup-frame-visuals (selected-frame)))
 
-  (use-package solaire-mode
-    :ensure t
-    :hook (after-init . solaire-global-mode))
 
   ;; 3. ADHD Brain & Org-mode Tweaks
   (setq-default line-spacing 0.4)

@@ -16,3 +16,12 @@ custom.el
 gha-creds-*.json
 sql-connections.el
 /.agent-shell/
+
+# Runtime state/cache (XDG-redirected, these are stale or package-generated)
+.cache/
+.local/
+history
+org-roam.db
+transient/
+projects
+result

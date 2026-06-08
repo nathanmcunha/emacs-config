@@ -2,6 +2,10 @@
 
 #+PROPERTY: header-args:emacs-lisp :tangle ui.el :results silent
 
+#+begin_src emacs-lisp
+;;; ui.el --- User Interface -*- lexical-binding: t -*-
+#+end_src
+
 * Async Command Runner
 A general-purpose async command runner with smart completion.
 Detects mise tasks, npm scripts, Makefile targets, Gradle tasks, and Docker Compose commands
@@ -145,7 +149,7 @@ structure/config changes."
 
   (defun my/run--annotate (cand)
     "Annotation function for run candidates."
-    (if-let ((ann (get-text-property 0 'my/annotation cand)))
+    (if-let* ((ann (get-text-property 0 'my/annotation cand)))
         (format "  %s" (propertize ann 'face 'marginalia-documentation))
       ""))
 #+end_src
@@ -330,7 +334,7 @@ comint, eat, vterm, and agent-shell buffers.
                                (window-list))))
       (if popup-win
           (delete-window popup-win)
-        (when-let ((buf (seq-find #'my/popup-buffer-p (buffer-list))))
+        (when-let* ((buf (seq-find #'my/popup-buffer-p (buffer-list))))
           (display-buffer buf)))))
 
   (defun my/popup-cycle ()

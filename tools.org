@@ -2,6 +2,10 @@
 
 #+PROPERTY: header-args:emacs-lisp :tangle tools.el :results silent
 
+#+begin_src emacs-lisp
+;;; tools.el --- Development Tools -*- lexical-binding: t -*-
+#+end_src
+
 * Development Tools
 ** Snippets (Tempel)
  #+begin_src emacs-lisp
@@ -165,7 +169,7 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
     (when (boundp 'envrc-after-update-hook)
       (add-hook 'envrc-after-update-hook
                 (lambda ()
-                  (when-let (ws (car (lsp-workspaces)))
+                  (when-let* (ws (car (lsp-workspaces)))
                     (lsp-workspace-restart ws)))))
 
     ;; evil normal-state bindings (evil-collection has no lsp-mode module;

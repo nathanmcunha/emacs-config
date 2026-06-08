@@ -2,6 +2,10 @@
 
 #+PROPERTY: header-args:emacs-lisp :tangle notes.el :results silent
 
+#+begin_src emacs-lisp
+;;; notes.el --- Org & Notes -*- lexical-binding: t -*-
+#+end_src
+
 * Org Mode
 #+begin_src emacs-lisp
         (use-package org

@@ -2,6 +2,10 @@
 
 #+PROPERTY: header-args:emacs-lisp :tangle bindings.el :results silent
 
+#+begin_src emacs-lisp
+;;; bindings.el --- Key Bindings -*- lexical-binding: t -*-
+#+end_src
+
 * Keybindings Configuration
 ** Centralized Leader Bindings
 #+begin_src emacs-lisp

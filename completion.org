@@ -1,5 +1,9 @@
 # -*- lexical-binding: t; -*-
 #+PROPERTY: header-args:emacs-lisp :tangle completion.el :results silent
+
+#+begin_src emacs-lisp
+;;; completion.el --- Completion System -*- lexical-binding: t -*-
+#+end_src
 * Completion System (Vertico Stack)
 Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 
