@@ -1,6 +1,6 @@
 #+TITLE: My Doom-Like Vanilla Configuration
 #+AUTHOR: Nathan Martins Cunha
-#+PROPERTY: header-args:emacs-lisp :tangle core.el :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
 * File Header
 #+begin_src emacs-lisp
@@ -141,38 +141,6 @@ to keep ~/.config/emacs/ clean of auto-generated files.
   (declare-function org-roam-node-file-atime "ext:org-roam-node")
   (declare-function org-roam-node-file-mtime "ext:org-roam-node"))
 
- ;; --- Smart TAB Dispatcher (Doom Style) ---
-(defun my/smart-tab-dwim ()
-  "Smart TAB dispatcher: Minibuffer > Tempel > Corfu > Magit > Indent."
-  (interactive)
-  (cond
-    ;; 1. Minibuffer: Keep Vertico completion behavior
-    ((active-minibuffer-window)
-     (if (and (bound-and-true-p vertico-mode) vertico--candidates)
-         (vertico-insert)
-       (minibuffer-complete)))
-
-    ;; 2. Try to expand a tempel snippet at point
-    ((condition-case nil (progn (tempel-expand) t) (user-error nil)))
-
-    ;; 3. Corfu: If menu is open, TAB navigates between candidates
-    ((and (bound-and-true-p corfu-mode) corfu--candidates)
-     (corfu-next))
-
-    ;; 4. Support for Magit (Toggle sections)
-    ((derived-mode-p 'magit-mode)
-     (magit-section-toggle (magit-current-section)))
-
-    ;; 5. Final fallback: Standard indentation
-    (t
-     (indent-for-tab-command))))
-
- ;; --- Global and Evil Mapping ---
-(global-set-key (kbd "TAB") 'my/smart-tab-dwim)
-
- ;; Ensure Evil Mode in Insert State uses this logic
-  (with-eval-after-load 'evil
-    (define-key evil-insert-state-map (kbd "TAB") 'my/smart-tab-dwim))
 
 ;; --- Doom-like "K" Documentation Lookup ---
 (defun my/smart-lookup ()
@@ -460,8 +428,10 @@ Falls back to rose-pine-dawn if the state file is missing."
 #+begin_src emacs-lisp
 ;; GC Magic - lightweight automatic GC tuning
 (use-package gcmh
-  :ensure nil
-  :init (gcmh-mode 1))
+  :config (gcmh-mode 1))
+
+  ;; Minor-mode lighter control for :diminish keyword
+  (use-package diminish)
 #+end_src
 
 ** Server Mode
@@ -548,17 +518,8 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
 #+begin_src emacs-lisp
   (use-package which-key
     :ensure nil
-    :init (which-key-mode)
     :config
+    (which-key-mode)
     (setq which-key-idle-delay 0.3))
 
 #+end_src
-
-  # ;; Inherit shell PATH so mise shims (python, pyright, etc.) are visible in GUI Emacs.
-  # (use-package exec-path-from-shell
-  #   :ensure t
-  #   :config
-  #   (add-to-list 'exec-path (expand-file-name "~/.local/bin") t)
-  #   (when (or (display-graphic-p) (daemonp))
-  #     (exec-path-from-shell-initialize)))
-

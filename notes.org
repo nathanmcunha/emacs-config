@@ -1,6 +1,6 @@
 # -*- lexical-binding: t; -*-
 
-#+PROPERTY: header-args:emacs-lisp :tangle notes.el :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
 #+begin_src emacs-lisp
 ;;; notes.el --- Org & Notes -*- lexical-binding: t -*-
@@ -13,8 +13,6 @@
         :hook ((org-mode . visual-line-mode)
                (org-mode . org-indent-mode)
                (org-mode . my/org-enable-auto-tangle))
-        :bind (:map org-mode-map
-                    ("TAB" . my/org-tab-dwim))
         :config
         (require 'org-tempo)
         ;; Disable persistent cache to fix "Got element without parent" warnings
@@ -28,6 +26,8 @@
               org-hide-block-startup nil
               org-src-preserve-indentation nil
               org-startup-folded 'content)
+        (setq org-completion-use-ispell nil)
+        (setq text-mode-ispell-word-completion nil)
 
         (defconst my/org-auto-tangle-files
           '("core.org" "ui.org" "completion.org" "tools.org" "bindings.org" "config.org"
@@ -54,13 +54,8 @@
           "Enable per-buffer auto-tangle for managed Emacs config Org files."
           (when (my/org-config-file-p)
             (add-hook 'after-save-hook #'my/org-auto-tangle-config nil t)))
+        )
 
-        (defun my/org-tab-dwim ()
-          (interactive)
-          (or (condition-case nil (progn (tempel-expand) t) (user-error nil))
-              (and (fboundp 'completion-at-point)
-                   (completion-at-point))
-              (org-cycle))))
 
   (use-package org-modern
         :ensure t
@@ -72,11 +67,22 @@
               org-modern-list '((43 . "➤") (45 . "–") (42 . "•"))
               org-modern-todo nil org-modern-tag nil org-modern-priority nil))
 
+  ;; Show/hide emphasis markers on cursor movement
+  (use-package org-appear
+    :ensure t
+    :hook (org-mode . org-appear-mode))
+
+  ;; Align table columns visually
+  (use-package valign
+    :ensure t
+    :hook (org-mode . valign-mode))
+
       ;; variable-pitch-mode is built-in; fix code/table faces to stay monospace
       (add-hook 'org-mode-hook 'variable-pitch-mode)
-      (dolist (face '(org-block org-code org-table org-verbatim
-                      org-meta-line org-block-begin-line org-block-end-line))
-        (set-face-attribute face nil :inherit 'fixed-pitch))
+      (with-eval-after-load 'org
+        (dolist (face '(org-block org-code org-table org-verbatim
+                        org-meta-line org-block-begin-line org-block-end-line))
+          (set-face-attribute face nil :inherit 'fixed-pitch)))
 
       (use-package ob-mermaid :ensure t :after org
         :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (sql . t) (emacs-lisp . t))))

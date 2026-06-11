@@ -1,23 +1,25 @@
 # -*- lexical-binding: t; -*-
 
-#+PROPERTY: header-args:emacs-lisp :tangle tools.el :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
 #+begin_src emacs-lisp
 ;;; tools.el --- Development Tools -*- lexical-binding: t -*-
 #+end_src
 
 * Development Tools
-** Snippets (Tempel)
+** Snippets (Yasnippet)
  #+begin_src emacs-lisp
-   (use-package tempel
-     :ensure t
-     :bind (("M-+" . tempel-complete)
-            ("M-*" . tempel-insert)
-            :map tempel-map
-            ("TAB"   . tempel-next)
-            ("S-TAB" . tempel-previous)))
+  (use-package yasnippet
+    :ensure t
+    :config
+    (setq yas-snippet-dirs (list (expand-file-name "snippets" user-emacs-directory)))
+    (yas-global-mode 1))
 
-   (use-package tempel-collection :ensure t)
+  (use-package yasnippet-capf
+    :ensure t
+    :after yasnippet
+    :hook (yas-minor-mode . (lambda ()
+      (add-hook 'completion-at-point-functions #'yasnippet-capf 30 t))))
 #+end_src
 
 ** Extended Backends (Cape)
@@ -419,8 +421,8 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
 #+begin_src emacs-lisp
   (use-package apheleia
     :ensure t
-    :init (apheleia-global-mode +1)
     :config
+    (apheleia-global-mode +1)
      (setq apheleia-log-only-errors nil)
      (setf (alist-get 'google-java-format apheleia-formatters)
            '("google-java-format" "-"))
@@ -465,7 +467,8 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
                       (window-height . 0.25)
                       (preserve-size . (nil . t))
                       (window-parameters . ((no-other-window . nil)
-                                            (mode-line-format . none)))))
+                                            (mode-line-format . none)))
+                      (this-command . flymake-show-project-diagnostics)))
 
         ;; 2. Diagnostics buffer visuals
        (add-hook 'flymake-project-diagnostics-mode-hook
@@ -566,7 +569,7 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
     (add-hook 'sql-mode-hook
               (lambda ()
                 (add-hook 'completion-at-point-functions #'cape-keyword 10 t)
-                (add-hook 'completion-at-point-functions #'tempel-capf 10 t)))
+                (add-hook 'completion-at-point-functions #'yasnippet-capf 30 t)))
 
     (use-package sql-indent
       :ensure t

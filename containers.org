@@ -1,6 +1,6 @@
 # -*- lexical-binding: t; -*-
 
-#+PROPERTY: header-args:emacs-lisp :tangle containers.el :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
 #+begin_src emacs-lisp
 ;;; containers.el --- Docker & Kubernetes -*- lexical-binding: t -*-

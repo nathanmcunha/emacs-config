@@ -1,0 +1,29 @@
+# -*- lexical-binding: t; -*-
+
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
+
+#+begin_src emacs-lisp
+;;; ai.el --- LLM Configuration -*- lexical-binding: t -*-
+#+end_src
+
+#+begin_src emacs-lisp
+  (use-package gptel
+    :config
+    (require 'gptel-openai)
+    ;; Store key in ~/.authinfo.gpg:
+    ;;   machine token-plan-sgp.xiaomimimo.com login apikey password <key>
+    (gptel-make-openai "MiMo"
+      :host "token-plan-sgp.xiaomimimo.com"
+      :key #'gptel-api-key-from-auth-source
+      :stream t
+      :models '(mimo-v2.5-pro
+                mimo-v2.5
+                mimo-v2.5-asr
+                mimo-v2.5-tts-voiceclone
+                mimo-v2.5-tts-voicedesign
+                mimo-v2.5-tts
+                mimo-v2-pro
+                mimo-v2-omni
+                mimo-v2-tts)))
+#+end_src
+

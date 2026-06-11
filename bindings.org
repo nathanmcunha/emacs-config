@@ -1,6 +1,6 @@
 # -*- lexical-binding: t; -*-
 
-#+PROPERTY: header-args:emacs-lisp :tangle bindings.el :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
 #+begin_src emacs-lisp
 ;;; bindings.el --- Key Bindings -*- lexical-binding: t -*-
@@ -135,8 +135,8 @@
     (my/bind-leader "g r" (lambda () (interactive) (call-interactively 'magit-discard)) "Git discard selection")
 
     ;; --- Jump (j) ---
-    (my/bind-leader "i s" 'tempel-insert "insert snippet")
-    (my/bind-leader "i S" 'tempel-complete "complete snippet")
+    (my/bind-leader "i s" 'yas-insert-snippet "insert snippet")
+    (my/bind-leader "i S" 'yas-insert-snippet "complete snippet")
 
     (my/bind-leader "j j" 'avy-goto-char-2 "jump 2 chars")
     (my/bind-leader "j l" 'avy-goto-line "jump line")
@@ -216,6 +216,12 @@
     (my/bind-leader "r s" 'my/run-stop "stop")
     (my/bind-leader "r l" 'my/run-show "show output")
     (my/bind-leader "r R" 'my/run-restart "restart last")
+
+    ;; --- AI / LLM (a) ---
+    (my/bind-leader "a a" 'gptel "gptel chat")
+    (my/bind-leader "a s" 'gptel-send "gptel send")
+    (my/bind-leader "a m" 'gptel-menu "gptel menu")
+    (my/bind-leader "a r" 'gptel-rewrite "gptel rewrite")
     ;; --- Other ---
     (my/bind-leader ";"   'embark-act "act (embark)")
     (my/bind-leader "A"   'embark-act "actions (embark)")

@@ -1,5 +1,5 @@
 # -*- lexical-binding: t; -*-
-#+PROPERTY: header-args:emacs-lisp :tangle completion.el :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
 #+begin_src emacs-lisp
 ;;; completion.el --- Completion System -*- lexical-binding: t -*-
@@ -11,10 +11,11 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 #+begin_src emacs-lisp
   (use-package vertico
     :demand t
-    :init (vertico-mode)
+    :config (vertico-mode)
     :custom
     (vertico-cycle t)
     (vertico-count 17)
+    (vertico-resize nil)
     :bind (:map vertico-map
                 ("C-j" . vertico-next)
                 ("C-k" . vertico-previous)
@@ -62,16 +63,19 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
   (use-package marginalia
     :after vertico
     :custom
-    (marginalia-max-relative-age 0)
+    (marginalia-max-relative-age 48)
     (marginalia-align 'right)
-    :init (marginalia-mode)
-    :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle)))
+    :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle))
+    :config
+    (marginalia-mode))
 
   ;; Icons in minibuffer completion (Doom-like feel)
   (use-package nerd-icons-completion
-    :after (marginalia nerd-icons)
+    :after nerd-icons
     :config
     (nerd-icons-completion-mode 1)
+    (when (bound-and-true-p marginalia-mode)
+      (nerd-icons-completion-marginalia-setup))
     (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
 #+end_src
 
@@ -88,9 +92,9 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
     :demand t
     :custom
     (consult-narrow-key "<")
-    (consutl-widen-key ">")
+    (consult-widen-key ">")
     (consult-preview-key "M-.")
-    (consult-project-function (lambda (_) (when-let (p (project-current)) (project-root p))))
+    (consult-project-function (lambda (_) (when-let* ((p (project-current))) (project-root p))))
     :bind (("C-x b" . consult-buffer)
            ("C-x C-b" . consult-buffer)
            ("M-y" . consult-yank-pop)
@@ -99,7 +103,7 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
     :config
     ;; Doom-like preview defaults
     (consult-customize consult-buffer consult-source-recent-file
-                       :preview-key "C-SPC")
+                       :preview-key "M-.")
     (setq register-preview-delay 0.5
           register-preview-function #'consult-register-format)
     (advice-add #'register-preview :override #'consult-register-window)
@@ -141,8 +145,8 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
     :demand t
     :custom
     (corfu-auto t)
-    (corfu-auto-delay 0.24)          ; Doom uses 0.24
-    (corfu-auto-prefix 2)
+    (corfu-auto-delay 0.5)            ; pop only when user pauses
+    (corfu-auto-prefix 3)             ; wait for 3 chars
     (corfu-cycle t)
     (corfu-preselect 'prompt)
     (corfu-count 16)
@@ -152,7 +156,6 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
     (corfu-quit-no-match 'separator)
     (corfu-popupinfo-delay '(0.8 . 0.4))
     :init
-    (global-corfu-mode)
     (setq tab-always-indent 'complete)
     :bind
     (:map corfu-map
@@ -169,18 +172,24 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
           ("M-p" . corfu-popupinfo-scroll-up)
           ("M-n" . corfu-popupinfo-scroll-down))
     :config
-    (corfu-popupinfo-mode 1)
-    (corfu-history-mode 1)
+    (global-corfu-mode)
+    (keymap-global-set "C-." #'completion-at-point)
     (keymap-global-set "C-SPC" #'completion-at-point)
 
     ;; Use orderless for LSP completions (like Doom)
     (add-to-list 'completion-category-overrides `(lsp-capf (styles orderless)))
 
-    ;; Exclude modes where Corfu shouldn't activate (like Doom)
+    ;; Exclude modes where Corfu shouldn't activate
     (setq global-corfu-modes
           '((not erc-mode circe-mode help-mode gud-mode vterm-mode magit-mode)
-            t))
+            t)))
 
+  (use-package corfu-popupinfo
+    :hook ((corfu-mode . corfu-popupinfo-mode)))
+
+  (use-package corfu-history
+    :hook ((corfu-mode . corfu-history-mode))
+    :config
     (with-eval-after-load 'savehist
       (add-to-list 'savehist-additional-variables 'corfu-history)))
 
@@ -198,7 +207,6 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
     :init
     ;; Make LSP completion non-interruptible (key fix for stability)
     (advice-add #'lsp-completion-at-point :around #'cape-wrap-noninterruptible)
-    (advice-add #'lsp-completion-at-point :around #'cape-wrap-nonexclusive)
     (advice-add #'comint-completion-at-point :around #'cape-wrap-nonexclusive)
     (advice-add #'eglot-completion-at-point :around #'cape-wrap-nonexclusive)
     (advice-add #'pcomplete-completions-at-point :around #'cape-wrap-nonexclusive)
@@ -213,15 +221,15 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
     (add-hook 'markdown-mode-hook
               (lambda () (add-hook 'completion-at-point-functions #'cape-elisp-block 0 t)))
 
+
     ;; Dabbrev as FALLBACK (high priority = runs last)
     (dolist (hook '(prog-mode-hook text-mode-hook conf-mode-hook comint-mode-hook))
       (add-hook hook
                 (lambda () (add-hook 'completion-at-point-functions #'cape-dabbrev 20 t))))
 
-    :config
-    (setq pcomplete-ignore-case t)
-    (setq cape-dabbrev-check-other-buffers t)
-    (setq cape-dabbrev-buffer-scanning-size-limit (* 1 1024 1024)))  ; 1MB limit
+    (setq completion-ignore-case t)
+    (setq cape-dabbrev-check-other-buffers nil)  ; current buffer only
+    (setq cape-dabbrev-buffer-scanning-size-limit (* 256 1024)))  ; 256KB limit
 #+end_src
 
 ** LSP Completion Integration
@@ -231,3 +239,5 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
 
   (add-hook 'lsp-mode-hook #'lsp-completion-mode)
 #+end_src
+
+src

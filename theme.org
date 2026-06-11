@@ -1,6 +1,6 @@
 # -*- lexical-binding: t; -*-
 
-#+PROPERTY: header-args:emacs-lisp :tangle theme.el :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
 #+begin_src emacs-lisp
 ;;; theme.el --- Visuals & Themes -*- lexical-binding: t -*-
@@ -55,6 +55,10 @@
   (setq-default line-spacing 0.4)
   (add-hook 'org-mode-hook #'variable-pitch-mode)
 
+  ;; Required by local rose-pine themes (loaded from themes/ directory)
+  (use-package autothemer
+    :ensure t)
+
   (use-package nerd-icons
     :ensure t
     :demand t
@@ -72,8 +76,8 @@
 
   (use-package doom-modeline
     :ensure t
-    :init (doom-modeline-mode 1)
     :config
+    (doom-modeline-mode 1)
     (setq doom-modeline-hud t)
     (setq doom-modeline-buffer-file-name-style 'relative-from-project)
     (setq doom-modeline-height 25)
@@ -87,7 +91,6 @@
     (setq doom-modeline-major-mode-icon t)
     (setq doom-modeline-major-mode-hide-name t)
     (setq doom-modeline-project-name t)
-
     (column-number-mode -1)
 
     (defun my/doom-modeline-flymake-click ()

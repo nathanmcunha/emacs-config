@@ -1,6 +1,6 @@
 # -*- lexical-binding: t; -*-
 
-#+PROPERTY: header-args:emacs-lisp :tangle ui.el :results silent
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
 #+begin_src emacs-lisp
 ;;; ui.el --- User Interface -*- lexical-binding: t -*-
@@ -312,6 +312,9 @@ comint, eat, vterm, and agent-shell buffers.
                             (list #'my/cape-shell-super-capf)))))
 #+end_src
 * Window Management (Popups & Rules)
+
+  (use-package popper
+    :ensure t)
 ** Popup Windows (built-in toggle)
 #+begin_src emacs-lisp
   (defvar my/popup-buffer-regexps
@@ -364,7 +367,7 @@ comint, eat, vterm, and agent-shell buffers.
     (setq display-buffer-alist
         '(
           ;; Bottom side buffers (Height 0.3)
-          ("\\*\\(Output\\|Injector\\|Async Shell Command\\).*"
+          ("\\*\\(Output\\|Async Shell Command\\).*"
            (display-buffer-reuse-window display-buffer-at-bottom)
            (window-height . 0.3))
 
@@ -375,7 +378,8 @@ comint, eat, vterm, and agent-shell buffers.
 
           ;; Magit: Let it do its own thing (it manages windows well)
           ("Magit.*"
-           (display-buffer-same-window))
+           (display-buffer-same-window)
+           (this-command . magit-status))
           )))
 #+end_src
 
@@ -395,10 +399,11 @@ comint, eat, vterm, and agent-shell buffers.
               (evil-normal-state))
           (setq unread-command-events (list next-char))))))
 
+  (setq evil-want-keybinding nil)
+
   (use-package evil
-    :ensure nil
-    :after (evil)
     :config
+    (evil-mode 1)
     (define-key evil-insert-state-map (kbd "j") 'my/evil-escape-jk)
     (setq evil-emacs-state-cursor    '("#649bce" box)
           evil-normal-state-cursor   '("#ebcb8b" box)
@@ -514,8 +519,8 @@ comint, eat, vterm, and agent-shell buffers.
 
    (use-package undo-fu-session
      :ensure t
-     :init (undo-fu-session-global-mode)
      :config
+     (undo-fu-session-global-mode)
      (setq undo-fu-session-incompatible-files '("/COMMIT_EDITMSG\\'" "/git-rebase-todo\\'")))
 
    (use-package vundo
