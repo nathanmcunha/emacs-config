@@ -9,21 +9,24 @@
 #+begin_src emacs-lisp
   (use-package gptel
     :config
-    (require 'gptel-openai)
-    ;; Store key in ~/.authinfo.gpg:
-    ;;   machine token-plan-sgp.xiaomimimo.com login apikey password <key>
-    (gptel-make-openai "MiMo"
-      :host "token-plan-sgp.xiaomimimo.com"
-      :key #'gptel-api-key-from-auth-source
-      :stream t
-      :models '(mimo-v2.5-pro
-                mimo-v2.5
-                mimo-v2.5-asr
-                mimo-v2.5-tts-voiceclone
-                mimo-v2.5-tts-voicedesign
-                mimo-v2.5-tts
-                mimo-v2-pro
-                mimo-v2-omni
-                mimo-v2-tts)))
+    ;; Register default ChatGPT backend (no host = api.openai.com)
+    (gptel-make-openai "ChatGPT" :key 'gptel-api-key :stream t)
+    ;; Register and activate MiMo
+    (let ((mimo-backend
+           (gptel-make-openai "MiMo"
+             :host "token-plan-sgp.xiaomimimo.com"
+             :key #'gptel-api-key-from-auth-source
+             :stream t
+             :models '(mimo-v2.5-pro
+                       mimo-v2.5
+                       mimo-v2.5-asr
+                       mimo-v2.5-tts-voiceclone
+                       mimo-v2.5-tts-voicedesign
+                       mimo-v2.5-tts
+                       mimo-v2-pro
+                       mimo-v2-omni
+                       mimo-v2-tts))))
+      (setq gptel-backend mimo-backend
+            gptel-model 'mimo-v2.5-pro)))
 #+end_src
 

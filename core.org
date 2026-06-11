@@ -65,6 +65,22 @@ to keep ~/.config/emacs/ clean of auto-generated files.
 (setq org-roam-db-location (expand-file-name "org-roam.db" my-state-dir))
 
 ;; ELPA package directory (stays here for non-Nix fallback)
+
+;; Backup files (*~) — redirect from working dirs to ~/.local/state/emacs/backup/
+(setq backup-directory-alist `(("." . ,(expand-file-name "backup/" my-state-dir))))
+(setq backup-by-copying t)              ; preserve hard links when backing up
+(setq delete-old-versions t)            ; auto-delete old backups
+(setq kept-new-versions 6)
+(setq kept-old-versions 2)
+(setq version-control t)                ; version-numbered backups
+
+;; Auto-save files (#...#) — redirect to cache
+(setq auto-save-file-name-transforms
+      `((".*" ,(expand-file-name "auto-save/" my-cache-dir) t)))
+
+;; Lockfiles (.#file) — redirect to cache
+(setq lock-file-name-transforms
+      `((".*" ,(expand-file-name "locks/" my-cache-dir) t)))
 (setq package-user-dir (expand-file-name "elpa/" my-data-dir))
 #+end_src
 

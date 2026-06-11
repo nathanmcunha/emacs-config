@@ -24,4 +24,11 @@ history
 org-roam.db
 transient/
 projects
+
+# Nix store symlinks
+/init.el
+/early-init.el
+
+# gptel saved sessions (org files with GPTEL_BACKEND properties)
+gptel-*.org
 result

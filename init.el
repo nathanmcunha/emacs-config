@@ -1,1 +1,0 @@
-/nix/store/13f8dpna5k4brjgm2l7w4nkgg6z2hgag-home-manager-files/.config/emacs/init.el
