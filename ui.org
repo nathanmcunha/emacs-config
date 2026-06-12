@@ -231,7 +231,7 @@ structure/config changes."
 
 ** Cape Integration (In-Buffer Completion)
 Provides Corfu popup suggestions for shell commands in eshell, shell-mode,
-comint, eat, vterm, and agent-shell buffers.
+comint, eat, ghostel, and agent-shell buffers.
 
 #+begin_src emacs-lisp
   (defvar my/cape-run-cache nil
@@ -277,7 +277,7 @@ comint, eat, vterm, and agent-shell buffers.
                   shell-mode-hook
                   comint-mode-hook
                   eat-mode-hook
-                  vterm-mode-hook
+                  ghostel-mode-hook
                   agent-shell-mode-hook))
     (add-hook hook
               (lambda ()
@@ -444,12 +444,11 @@ comint, eat, vterm, and agent-shell buffers.
             gnus-group-mode
             gnus-summary-mode
             browse-kill-ring-mode
-            thingatpt-mode
-           view-mode
+             view-mode
              adoc-mode
              term-mode
-             vterm-mode
              eat-mode
+             ghostel-mode
              eshell-mode
              shell-mode))
     (setq evil-normal-state-modes

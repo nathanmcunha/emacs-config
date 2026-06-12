@@ -40,6 +40,11 @@ to keep ~/.config/emacs/ clean of auto-generated files.
   (unless (file-directory-p dir)
     (make-directory dir t)))
 
+;; Ensure SSH control socket directory exists for TRAMP multiplexing
+(defconst my-ssh-socket-dir (expand-file-name "~/.ssh/sockets/"))
+(unless (file-directory-p my-ssh-socket-dir)
+  (make-directory my-ssh-socket-dir t))
+
 ;; Savehist (minibuffer history)
 (setq savehist-file (expand-file-name "history" my-state-dir))
 
@@ -85,10 +90,9 @@ to keep ~/.config/emacs/ clean of auto-generated files.
 #+end_src
 
 ** Package Management
-#+begin_src emacs-lisp
-;; Prevent use-package from attempting to install packages (Nix manages packages).
+;; Package archives for :ensure t (packages not in Nix are pulled from MELPA).
+(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 (setq use-package-always-ensure nil)
-#+end_src
 
 ** Custom Functions
 #+begin_src emacs-lisp
@@ -365,6 +369,7 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
                     shell-mode-hook
                     eshell-mode-hook
                     eat-mode-hook
+                    ghostel-mode-hook
                     gemini-cli-mode-hook
                     dirvish-mode-hook
                     dirvish-side-mode-hook))
@@ -409,35 +414,12 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
     (dolist (cmd '(evil-window-next evil-window-prev balance-windows other-window))
       (advice-add cmd :before (lambda (&rest _) (save-some-buffers t))))
 
-
-;; --- Noctalia theme integration ---
-(defun nm/apply-noctalia-theme ()
-  "Load Rosé Pine Dawn (light) or Moon (dark) from noctalia state.
-Reads ~/.config/noctalia/.darkmode (\"0\" = light, \"1\" = dark).
-Falls back to rose-pine-dawn if the state file is missing."
-  (let ((darkp (and (file-exists-p (expand-file-name "~/.config/noctalia/.darkmode"))
-                    (with-temp-buffer
-                      (insert-file-contents
-                       (expand-file-name "~/.config/noctalia/.darkmode"))
-                      (string= "1" (string-trim (buffer-string)))))))
-    (add-to-list 'custom-theme-load-path
-                 (expand-file-name "~/.config/emacs/themes"))
-    (mapc #'disable-theme custom-enabled-themes)
-    (load-theme (if darkp 'rose-pine-moon 'rose-pine-dawn) t)
-    ;; Fix illegible faces: default subtle bg/faded fg is too muted
-    (let ((sel-bg (if darkp "#524f67" "#dfd9e8"))
-          (sel-fg (if darkp "#e0def4" "#575279"))
-          (comment-fg (if darkp "#908caa" "#797593")))
-      (set-face-attribute 'region nil :background sel-bg :foreground sel-fg)
-      (set-face-attribute 'vertico-current nil :background sel-bg :foreground sel-fg :inherit 'bold)
-      (set-face-attribute 'font-lock-comment-face nil :foreground comment-fg :inherit 'italic))
-    (setq-default frame-background-mode (if darkp 'dark 'light))
-    (mapc (lambda (f) (set-frame-parameter f 'background-mode
-                                           (if darkp 'dark 'light)))
-          (frame-list))))
-
-;; Apply on startup — also callable via emacsclient for noctalia darkModeChange hook.
-(add-hook 'after-init-hook #'nm/apply-noctalia-theme)
+;; --- Theme ---
+;; Theme loaded via base16-theme in theme.org (use-package :config).
+;; This sets frame-background-mode for daemon/client compatibility.
+(setq-default frame-background-mode 'dark)
+(mapc (lambda (f) (set-frame-parameter f 'background-mode 'dark))
+      (frame-list))
 #+end_src
 
 ** GC Magic

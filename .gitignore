@@ -1,7 +1,9 @@
 # Generated tangled output — source is .org files
 /*.el
-!/bin/*.el
+# Elpaca-generated files (no longer used, but may linger)
 /elpaca/
+*.elc
+/elpa/
 
 # Backup and lock files
 *~

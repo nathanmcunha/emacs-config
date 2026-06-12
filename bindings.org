@@ -151,10 +151,11 @@
 
     ;; --- Open (o) ---
     (my/bind-leader "o p" 'popper-toggle "toggle popup")
-     (my/bind-leader "o t h" 'my/open-terminal-here "here")
-     (my/bind-leader "o t p" 'my/open-terminal-in-project "project")
-     (my/bind-leader "o t e" 'eat "eat terminal")
-     (my/bind-leader "o t t" 'my/eat-toggle-evil-state "toggle evil state")
+     (my/bind-leader "o t h" 'my/open-terminal-here "here (Alacritty)")
+     (my/bind-leader "o t e" 'ghostel "ghostel")
+     (my/bind-leader "o t p" 'ghostel-project "project (ghostel)")
+     (my/bind-leader "o t a" 'eat "eat terminal")
+     (my/bind-leader "o t t" 'ghostel-char-mode "ghostel char mode")
      (my/bind-leader "o d" 'docker "docker TUI")
      (my/bind-leader "o C" 'docker-compose "docker compose")
     (my/bind-leader "o k" 'kubernetes "kubernetes TUI")

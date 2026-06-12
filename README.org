@@ -1,166 +1,193 @@
 #+TITLE: Emacs Configuration Overview
 #+AUTHOR: Nathan Martins Cunha
 
-
 A literate, modular Emacs configuration inspired by Doom Emacs but built on vanilla =use-package= with Nix-based package management. The config lives in =~/.config/emacs/= as a collection of Org files that tangle to their =.el= counterparts on save.
 
 * Architecture
 
-The entry point is =config.org=, which =#+include:=s every module and provides the tangle+load bootstrap. Each module tangles to an =.el= file and is loaded in dependency order.
+The entry point is =config.org=, which =#+include:=s every module. Each module tangles to an =.el= file and is loaded in dependency order.
 
-| Module          | Tangle Target    | Purpose                       |
-|-----------------+------------------+-------------------------------|
-| =config.org=    | =config.el=      | Root orchestrator             |
-| =core.org=      | =core.el=        | Foundation: paths, defaults   |
-| =ui.org=        | =ui.el=          | Evil, undo, window management |
-| =theme.org=     | =theme.el=       | Fonts, doom-modeline, icons   |
-| =completion.org=| =completion.el=  | Vertico-Corfu-Orderless stack |
-| =tools.org=     | =tools.el=       | LSP, Magit, Treemacs, etc.    |
-| =bindings.org=  | =bindings.el=    | SPC-leader keybindings        |
-| =notes.org=     | =notes.el=       | Org mode, Org-roam, Markdown  |
-| =containers.org=| =containers.el=  | Docker/Podman, Kubernetes     |
-| =ai.org=        | =ai.el=          | gptel LLM chat                |
+| Module           | Tangle Target   | Purpose                                       |
+|------------------+------------------+-----------------------------------------------|
+| =config.org=     | =config.el=      | Root orchestrator — includes all modules       |
+| =core.org=       | =core.el=        | XDG paths, defaults, custom functions, leader  |
+| =ui.org=         | =ui.el=          | Evil, async runner, undo, popup management     |
+| =theme.org=      | =theme.el=       | Fonts, base16 Rosé Pine, modeline, icons       |
+| =completion.org= | =completion.el=  | Vertico-Corfu-Orderless completion stack       |
+| =tools.org=      | =tools.el=       | LSP, Magit, Treemacs, formatting, terminals    |
+| =bindings.org=   | =bindings.el=    | SPC-leader keybindings (which-key labeled)     |
+| =notes.org=      | =notes.el=       | Org mode, Org-roam, Markdown, auto-tangle      |
+| =containers.org= | =containers.el=  | Docker/Podman, Kubernetes                       |
+| =ai.org=         | =ai.el=          | gptel LLM integration                           |
 
 * Package Management
 
-All elisp packages are declared as =use-package= forms in the =.org= modules. The Nix parser (=emacsWithPackagesFromUsePackage= with =alwaysEnsure = true=) discovers them automatically.
+All Elisp packages are declared as =use-package= forms inside the Org modules. The Nix module (=dotfiles/modules/emacs.nix=) uses =emacsWithPackagesFromUsePackage= with =alwaysEnsure = true= to discover and install them automatically from MELPA.
 
-=extraEmacsPackages= in the Nix module covers only =jinx= (disabled spell-check, kept for future re-enable) — the one package the parser cannot discover.
+The Nix module concatenates all Org files into a single =nixParsedConfig= for the parser, ensuring that =use-package= declarations across modules are visible. =extraEmacsPackages= covers only =jinx= (disabled spell-check, kept for future re-enable) — the one package the parser cannot discover.
 
 * Key Features
 
 ** Doom-Style Leader Key
 
-All primary commands are behind a =SPC= leader, with which-key labels. The leader map is defined in vanilla Emacs keymaps and bound into Evil's normal/visual/motion states.
+All primary commands are behind a =SPC= leader key, with which-key labels. The leader map is defined in vanilla Emacs keymaps (~my-leader-map~) and bound into Evil's normal/visual/motion states. A global =M-SPC= fallback is provided for insert and non-Evil contexts.
+
+| Prefix | Group        | Highlights                                    |
+|--------+-------------+-----------------------------------------------|
+| =SPC=  | find file    | project-find-file                             |
+| =SPC b= | buffer      | switch, kill, save, copy/move/delete file     |
+| =SPC c= | code        | LSP actions, format, Java create/refactor     |
+| =SPC e= | errors      | Flymake diagnostics (buffer, project, next/prev) |
+| =SPC f= | file        | find, recent, copy path, open config          |
+| =SPC g= | git         | Magit status, blame, log, timemachine         |
+| =SPC j= | jump        | Avy (char, word, line)                         |
+| =SPC n= | notes       | Org-roam (find, insert, dailies)               |
+| =SPC o= | open        | Terminal (ghostel/eat), Docker, K8s           |
+| =SPC p= | project     | switch, compile, test, search (ripgrep)        |
+| =SPC r= | run         | Async/compile runner with smart completion     |
+| =SPC s= | search      | consult-line, imenu, outline, yank-pop         |
+| =SPC u= | undo        | vundo (visual undo tree)                       |
+| =SPC w= | window      | split, move, balance, navigate (hjkl)           |
+| =SPC l= | workspace   | Tab bar (switch, new, close, rename)           |
+| =SPC a= | AI          | gptel chat, send, menu, rewrite                |
 
 ** Completion System (Vertico Stack)
 
-- =vertico= — vertical minibuffer completion with directory navigation
+- =vertico= — vertical minibuffer completion with directory navigation (~C-h~ for up, ~DEL~ for delete)
 - =orderless= — space-based fuzzy matching with style dispatchers (=!=, =&=, =%=, ===, =^=, =~=)
 - =marginalia= — rich annotations in the minibuffer
-- =consult= — enhanced commands (=consult-buffer=, =consult-line=, =consult-ripgrep=, =consult-flymake=)
-- =embark= — contextual actions on any completion candidate
-- =corfu= — in-buffer IntelliSense-style popup (auto-triggered)
-- =cape= — completion backends stacked with LSP taking priority, then file, dabbrev as fallback
-- =nerd-icons-completion= + =nerd-icons-corfu= — icons everywhere
-
-** LSP Support
-
-Managed through =lsp-mode= with Nix-provided servers:
-
-| Language       | Server                   |
-|----------------+--------------------------|
-| Python         | =basedpyright=           |
-| Nix            | =nixd=                   |
-| QML            | =qmlls=                  |
-| Java           | Eclipse JDT.LS           |
-| JS/TS/TSX      | =typescript-language-server= |
-| HTML/CSS/JSON  | =vscode-langservers-extracted= |
-| YAML           | =yaml-language-server=   |
-| Dockerfile     | =dockerfile-language-server= |
-| SQL            | =sqls=                   |
-| C/C++          | =clangd= (via clang-tools) |
-
-Tree-sitter grammars are also Nix-managed (=treesit-grammars= link farm), avoiding runtime compilation.
+- =consult= — enhanced commands (consult-buffer, consult-line, consult-ripgrep, consult-flymake)
+- =embark= — contextual actions on any candidate (~C-;~ / ~M-;~)
+- =corfu= — in-buffer IntelliSense-style popup (auto-triggered after 0.5s / 3 chars)
+- =cape= — completion backends stacked with LSP priority, then file, dabbrev as fallback
+- =nerd-icons-completion= + =nerd-icons-corfu= — icons in both minibuffer and popup
 
 ** Smart TAB
 
-A Doom-style dispatcher: Minibuffer completion → Tempel snippet → Corfu popup → Magit section toggle → standard indentation.
+A Doom-style dispatcher: Minibuffer completion → Yasnippet snippet → Corfu popup → Magit section toggle → standard indentation.
 
 ** Smart K (Documentation Lookup)
 
 Context-aware: =describe-symbol= in elisp, =lsp-describe-thing-at-point= under LSP, =evil-lookup= fallback.
 
-** Project-Aware Run
+** Project-Aware Run (=my/run=)
 
-=my/run= (async) and =my/run-compile= (compile buffer) detect mise tasks, npm scripts, Makefile targets, Gradle tasks, and Docker Compose commands. Completion is available in minibuffer prompts and inline in shell/terminal buffers via cape integration.
+=SPC r r= (async) and =SPC r c= (compile buffer) detect mise tasks, npm scripts, Makefile targets, Gradle tasks, and Docker Compose commands. Completion is available in the minibuffer prompt and inline in shell/terminal buffers via Cape integration with caching and invalidation.
+
+** LSP Support
+
+Managed through =lsp-mode= with Nix-provided servers. Custom clients registered for basedpyright (Python), nixd (Nix), and qmlls (QML).
+
+| Language        | Server                            |
+|------------------+-----------------------------------|
+| Python           | =basedpyright=                    |
+| Nix              | =nixd=                            |
+| QML              | =qmlls=                           |
+| Java             | Eclipse JDT.LS (=lsp-java=)      |
+| JS/TS/TSX        | =typescript-language-server=      |
+| HTML/CSS/JSON    | =vscode-langservers-extracted=    |
+| YAML             | =yaml-language-server=            |
+| Dockerfile       | =dockerfile-language-server=      |
+| SQL              | =sqls=                            |
+| C/C++            | =clangd= (via clang-tools)        |
+
+Tree-sitter grammars (18 languages) are Nix-managed via a link farm, avoiding runtime compilation. =major-mode-remap-alist= activates Tree-sitter variants preferentially.
 
 ** Java Development
 
-- IntelliJ-style class creation (=SPC c j=): new class, interface, enum, record, annotation
+- IntelliJ-style class creation (=SPC c j c/I/e/R=): new class, interface, enum, record
 - Generate toString, equals/hashCode, overrides, accessors (=SPC c j g=)
 - Extract variable, method, constant (=SPC c j x=)
-- Source/test file navigation (=SPC c j T=)
-- JaCoCo coverage visualization with inline lenses and missed-line highlights
+- Source/test file navigation (=SPC c j T=) — convention-based toggle between =src/main/java= and =src/test/java=
+- JaCoCo coverage visualization with inline lenses and missed-line highlights (=SPC c C=)
 
 ** Git (Magit)
 
-Full Magit integration with evil-collection keybindings, =git-timemachine= for history browsing.
+Full Magit integration with evil-collection keybindings and =git-timemachine= for history browsing. =magit-diff-refine-hunk= enabled for word-level diffs.
 
 ** Org Mode & Notes
 
 - =org-roam= for Zettelkasten note-taking (=~/org/=)
 - =org-modern= for prettified buffers (custom stars, list bullets, tables)
+- =org-appear= for showing/hiding emphasis markers on cursor
+- =valign= for visual table alignment
 - =ob-mermaid= and =ob-sql= for literate diagrams and SQL
 - Auto-tangle on save for all config Org files
-- =variable-pitch-mode= with monospace code/table faces
-- Markdown mode with =gfm-mode= for README files
+- =variable-pitch-mode= with monospace code/table faces for readable prose
 
 ** Terminals
 
-- =eat= — feature-rich terminal emulator with Solarized Light ANSI palette
-- =vterm= — native terminal fallback (requires cmake/make/cc)
-
-Both use =zsh= as the shell.
-
-** Containers
-
--=docker= and =kubernetes= TUI packages configured for Podman (rootless socket).
-
-** AI
-
--=gptel= configured for the MiMo API (Xiaomi token plan) with auth via =~/.authinfo.gpg=.
-
-** Theme
-
-Uses Rosé Pine (Dawn light / Moon dark) loaded from local theme files. Theme selection is synchronized with =noctalia= via =~/.config/noctalia/.darkmode=.
-
-Fonts: Atkinson Hyperlegible Mono (coding) and Lexend (proportional reading), with Symbol/Emoji Nerd Font fallbacks.
-
-** Undo System
-
--=undo-fu= + =undo-fu-session= for persistent linear undo across restarts
--=vundo= for graphical undo-tree visualization
+- =ghostel= — native terminal emulator powered by libghostty-vt (=SPC o t e=)
+  - Evil support via =evil-ghostel= (insert=type, normal=navigate, ESC=normal)
+  - Input mode toggle: =SPC o t t= switches to char mode (all keys to terminal)
+- =eat= — pure-Elisp fallback terminal with Solarized Light palette (=SPC o t a=)
+- Both use =zsh= as the shell
 
 ** Formatting (Apheleia)
 
-| Language     | Formatter          |
-|--------------+--------------------|
-| Python       | ruff (check+format)|
-| JS/TS/TSX    | prettier           |
-| HTML/CSS     | prettier           |
-| C/C++        | clang-format       |
+| Language  | Formatter                  |
+|-----------+----------------------------|
+| Python    | ruff (check + format)      |
+| JS/TS/TSX | prettier                    |
+| HTML/CSS  | prettier                    |
+| C/C++     | clang-format                |
 
-** Environment (envrc)
+** Containers
 
-Per-project =direnv= integration via =envrc=, supporting both Nix flakes and mise projects.
+- =docker= TUI package configured for Podman (rootless socket at =/run/user/$UID/podman/podman.sock=)
+- =kubernetes= TUI for cluster management
+
+** AI (gptel)
+
+Configured for the MiMo API (Xiaomi token plan) as the active backend with model =mimo-v2.5-pro=. Auth via =~/.authinfo.gpg=. Also includes a ChatGPT/OpenAI backend for fallback.
+
+** Theme
+
+Uses [[https://github.com/tinted-theming/base16-emacs][base16-emacs]] Rosé Pine Moon (dark) from MELPA. Rose Pine and Rose Pine Dawn variants available via =M-x load-theme=.
+
+Fonts:
+- *Coding*: Atkinson Hyperlegible Mono → FiraCode Nerd Font → Hack (fallback chain)
+- *Proportional*: Lexend (for Org-mode variable-pitch)
+- *Symbols*: Symbols Nerd Font / Noto Color Emoji fallbacks
+- =line-spacing= 0.4, =doom-modeline= with checker diagnostics
+
+** Undo System
+
+- =undo-fu= for linear undo/redo (Evil compatible)
+- =undo-fu-session= for persistent undo history across restarts
+- =vundo= for graphical undo-tree visualization (=SPC u=)
+
+* Notable Design Decisions
+
+- No external completion frameworks — everything built on the Vertico-Corfu-Orderless-Consult stack
+- No =company-mode=; Corfu replaces it entirely
+- No =flycheck=; Flymake (with consult-flymake) is used instead
+- No =key-chord=; Evil =jk= escape is implemented from scratch via =my/evil-escape-jk=
+- =visual-wrap-prefix-mode= (Emacs 30 built-in) replaces =adaptive-wrap=
+- =lsp-ui= is configured but breadcrumb headerline is disabled (opt-in, Doom style)
+- =lsp-completion-provider= set to =:none= — LSP adds to =completion-at-point-functions= which Corfu consumes natively
+- Spell checking (=jinx=) is wired but disabled; re-enable by removing =:tangle no= and adding to =extraEmacsPackages=
+- DAP mode is temporarily disabled for Java debugging
+- Nix =envrc= integration reconnects LSP on =direnv= environment changes
+- Emacs 30 =pgtk= (pure GTK) build with native compilation, Tree-sitter, SQLite3, and WebP
 
 * Nix Infrastructure
 
 The Home Manager module (=dotfiles/modules/emacs.nix=):
 
-- Uses =emacs-unstable-pgtk= with native compilation, Tree-sitter, SQLite3, and WebP support
-- Provides 18 Tree-sitter grammars from Nix to avoid runtime compilation
-- Supplies LSP servers and runtime tools isolated to the daemon PATH
-- Generates =init.el= and =early-init.el= from Nix templates with variable substitution
+- Builds =emacs30-pgtk= with native compilation, Tree-sitter, SQLite3, and WebP
+- Provides 18 Tree-sitter grammars from Nix (=treesit-grammars= link farm)
+- Supplies LSP servers and runtime tools isolated to the daemon PATH (not exposed to user shell)
+- Generates =init.el= and =early-init.el= from Nix templates with variable substitution (=emacsRuntimePath=, =treesitGrammars=)
+- =custom.el= is bootstrapped via Home Manager activation script so it remains writable (not a store symlink)
 - Systemd socket activation starts the Emacs daemon on first =emacsclient= connection
-- =custom.el= is bootstrapped via activation script so it remains writable (not a store symlink)
-
-* Notable Design Decisions
-
-- No external completion frameworks — everything built on the Vertico-Corfu-Orderless-Consult stack
-- No company-mode; Corfu replaces it entirely
-- No flycheck; Flymake (with consult-flymake integration) is used instead
-- Evil =jk= escape is implemented from scratch (no key-chord package)
-- =visual-wrap-prefix-mode= (Emacs 30 built-in) replaces adaptive-wrap
-- Spell checking (jinx) is disabled but wired for easy re-enable
-- DAP mode is temporarily disabled for Java debugging
+- =LD_LIBRARY_PATH= includes =enchant_2= for future jinx enablement
 
 * Project Conventions
 
 - =~/.config/emacs/= is a =git= repository
-- Any file change requires: =nix flake lock --update-input emacs-config && home-manager switch=
+- =config.org= =#+include:=s all modules; Nix parser concatenates them for =use-package= discovery
+- Any Org file change requires: =nix flake lock --update-input emacs-config && home-manager switch=
 - GPG signing is disabled for commits in headless environments
 - =custom.el= holds safe local variables and is not version-controlled
-
-  src 
+- All tangling happens on save — the =.el= files are the runtime artifacts, not the source of truth

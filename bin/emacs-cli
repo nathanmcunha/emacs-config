@@ -19,32 +19,24 @@ INIT_FILE="$PROJECT_ROOT/init.el"
 
 # --- Options ---
 VERBOSE=false
-SAFE_MODE=false
-DRY_RUN=false
 BACKGROUND=false
-SKIP_WAIT=false
-PHASED_SYNC=false
 TIMEOUT=600  # Default timeout: 10 minutes (in seconds)
 
 function print_usage() {
     echo "Usage: $(basename "$0") [command] [options]"
     echo ""
     echo "Commands:"
-    echo "  sync, install     Install missing packages and prune orphans (Batch mode)"
-    echo "  update, upgrade   Update all packages to their latest versions"
-    echo "  purge             Remove builds, sources and caches (to fix compilation errors)"
+    echo "  sync, install     Refresh package index and install missing packages"
+    echo "  update, upgrade   Update all packages to latest versions"
+    echo "  purge             Remove .local/packages cache"
     echo "  check, validate   Validate syntax of config.org and core Elisp files"
     echo "  doctor            Check system health and config.org integrity"
     echo "  help, --help, -h  Show this help message"
     echo ""
     echo "Options (for sync/update):"
-    echo "  -v, --verbose      Show detailed progress and package information"
-    echo "  -s, --safe         Skip problematic packages (safe mode)"
-    echo "  -d, --dry-run      Preview what would be installed (no changes)"
+    echo "  -v, --verbose      Show detailed progress"
     echo "  -b, --background   Run in background (log to file)"
     echo "  -t, --timeout N    Set timeout in seconds (default: 600)"
-    echo "  --skip-wait        Skip elpaca-wait (for debugging)"
-    echo "  --phased           Run sync in 3 phases: clone, build, compile"
 }
 
 function parse_options() {
@@ -52,14 +44,6 @@ function parse_options() {
         case "$1" in
             -v|--verbose)
                 VERBOSE=true
-                shift
-                ;;
-            -s|--safe)
-                SAFE_MODE=true
-                shift
-                ;;
-            -d|--dry-run)
-                DRY_RUN=true
                 shift
                 ;;
             -b|--background)
@@ -77,14 +61,6 @@ function parse_options() {
                 fi
                 TIMEOUT="$2"
                 shift 2
-                ;;
-            --skip-wait)
-                SKIP_WAIT=true
-                shift
-                ;;
-            --phased)
-                PHASED_SYNC=true
-                shift
                 ;;
             --)
                 shift
@@ -149,7 +125,7 @@ function check_duplicates() {
     if [ -x "$PROJECT_ROOT/bin/validate-duplicates" ]; then
         log_info "Checking for duplicate use-package declarations..."
         if ! "$PROJECT_ROOT/bin/validate-duplicates" "$PROJECT_ROOT/config.org"; then
-            log_error "Duplicate use-package declarations found — elpaca will fail. Fix config.org before continuing."
+            log_error "Duplicate use-package declarations found. Fix config.org before continuing."
             return 1
         fi
     else
@@ -193,133 +169,41 @@ function cmd_check() {
 }
 
 function cmd_sync() {
-    local cmd_args=()
-    local max_attempts=2
-    local attempt=1
-
     # Handle background mode
     if [ "$BACKGROUND" = true ]; then
         local log_file="$PROJECT_ROOT/.local/emacs-sync-$(date +%Y%m%d-%H%M%S).log"
-        local bg_args=()
-        [ "$VERBOSE" = true ] && bg_args+=("-v")
-        [ "$SAFE_MODE" = true ] && bg_args+=("-s")
-        [ "$DRY_RUN" = true ] && bg_args+=("-d")
-        [ "$SKIP_WAIT" = true ] && bg_args+=("--skip-wait")
         log_info "Running sync in background. Log: $log_file"
         mkdir -p "$(dirname "$log_file")"
-        nohup "$0" sync "${bg_args[@]}" --timeout "$TIMEOUT" > "$log_file" 2>&1 &
+        nohup "$0" sync --timeout "$TIMEOUT" > "$log_file" 2>&1 &
         local pid=$!
         echo "Background process PID: $pid"
         echo "Monitor with: tail -f $log_file"
         return 0
     fi
 
-    # Set up verbose mode
-    if [ "$VERBOSE" = true ]; then
-        log_info "Verbose mode enabled"
-        cmd_args+=("--eval" "(setq elpaca-log-events t)" "--eval" "(setq elpaca-verbose t)")
-    fi
-
-    # Set up safe mode
-    if [ "$SAFE_MODE" = true ]; then
-        log_info "Safe mode enabled - will skip problematic packages"
-        cmd_args+=("--eval" "(setq elpaca-queue-limit 1)")
-    fi
-
-    # Set up dry run
-    if [ "$DRY_RUN" = true ]; then
-        log_info "Dry run mode - no changes will be made"
-        cmd_args+=("--eval" "(setq elpaca-menu-disabled '(elpaca-menu-melpa elpaca-menu-elpa))")
-    fi
-
     check_duplicates || return 1
 
     stop_server
-    log_info "Syncing packages with Elpaca..."
+    log_info "Refreshing package index and installing missing packages..."
     log_info "Timeout set to ${TIMEOUT} seconds"
     prune_elc
 
-    if [ "$PHASED_SYNC" = true ]; then
-        local phase_exit=0
-        local phase_log="/tmp/emacs-sync-phased-output-$$.log"
-        local phases=("clone" "build" "compile")
-        local phase
-        local phased_failed=false
-
-        for phase in "${phases[@]}"; do
-            log_info "Running phased sync step: ${phase}"
-            local phase_args=("${cmd_args[@]}")
-            if [ "$phase" = "compile" ] || [ "$SAFE_MODE" = true ]; then
-                phase_args+=("--eval" "(setq elpaca-queue-limit 1)")
-            fi
-
-            set +e
-            ELPACA_SYNC_PHASE="$phase" timeout "$TIMEOUT" "$EMACS" -Q --batch \
-                --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
-                "${phase_args[@]}" \
-                -l "$INIT_FILE" \
-                -l "$PROJECT_ROOT/bin/elpaca-sync.el" 2>&1 | tee "$phase_log"
-            phase_exit=${PIPESTATUS[0]}
-            set -e
-
-            if [ $phase_exit -ne 0 ]; then
-                log_warn "Phased sync failed in '${phase}' step (exit ${phase_exit}); falling back to standard sync recovery."
-                phased_failed=true
-                break
-            fi
-        done
-
-        rm -f "$phase_log"
-        if [ "$phased_failed" = false ]; then
-            start_server
-            return 0
-        fi
-    fi
-
-    # Run Emacs in batch mode with timeout. On non-timeout failures, retry once
-    # after a full Elpaca purge in "safe" queue mode for a more deterministic rebuild.
-    local exit_code=0
-    local elapsed=0
     local log_file="/tmp/emacs-sync-output-$$.log"
-    while [ $attempt -le $max_attempts ]; do
-        local run_args=("${cmd_args[@]}")
-        if [ $attempt -gt 1 ]; then
-            log_info "Retrying sync (${attempt}/${max_attempts}) with recovery mode..."
-            cmd_purge
-            prune_elc
-            run_args+=("--eval" "(setq elpaca-queue-limit 1)")
-        fi
-
-        local sync_start=$(date +%s)
-        set +e
-        timeout "$TIMEOUT" "$EMACS" -Q --batch \
-               --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
-               "${run_args[@]}" \
-               -l "$INIT_FILE" \
-               -l "$PROJECT_ROOT/bin/elpaca-sync.el" 2>&1 | tee "$log_file"
-        exit_code=${PIPESTATUS[0]}
-        set -e
-        local sync_end=$(date +%s)
-        elapsed=$((sync_end - sync_start))
-
-        if [ $exit_code -eq 0 ]; then
-            break
-        fi
-        if [ $exit_code -eq 124 ]; then
-            break
-        fi
-        attempt=$((attempt + 1))
-    done
+    set +e
+    timeout "$TIMEOUT" "$EMACS" -Q --batch \
+           --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
+           --eval "(package-refresh-contents)" \
+           -l "$INIT_FILE" 2>&1 | tee "$log_file"
+    local exit_code=${PIPESTATUS[0]}
+    set -e
 
     if [ $exit_code -eq 124 ]; then
-        log_error "Sync timed out after ${elapsed} seconds"
-        log_info "Last 20 lines of output:"
+        log_error "Sync timed out after ${TIMEOUT} seconds"
         tail -20 "$log_file"
         rm -f "$log_file"
         return $exit_code
     elif [ $exit_code -ne 0 ]; then
-        log_error "Elpaca sync failed with exit code $exit_code after ${elapsed} seconds"
-        log_info "Last 20 lines of output:"
+        log_error "Sync failed with exit code $exit_code"
         tail -20 "$log_file"
         rm -f "$log_file"
         return $exit_code
@@ -331,62 +215,38 @@ function cmd_sync() {
 }
 
 function cmd_update() {
-    local cmd_args=()
-
     # Handle background mode
     if [ "$BACKGROUND" = true ]; then
         local log_file="$PROJECT_ROOT/.local/emacs-update-$(date +%Y%m%d-%H%M%S).log"
-        local bg_args=()
-        [ "$VERBOSE" = true ] && bg_args+=("-v")
-        [ "$SKIP_WAIT" = true ] && bg_args+=("--skip-wait")
         log_info "Running update in background. Log: $log_file"
         mkdir -p "$(dirname "$log_file")"
-        nohup "$0" update "${bg_args[@]}" --timeout "$TIMEOUT" > "$log_file" 2>&1 &
+        nohup "$0" update --timeout "$TIMEOUT" > "$log_file" 2>&1 &
         local pid=$!
         echo "Background process PID: $pid"
         echo "Monitor with: tail -f $log_file"
         return 0
     fi
 
-    # Set up verbose mode
-    if [ "$VERBOSE" = true ]; then
-        log_info "Verbose mode enabled"
-        cmd_args+=("--eval" "(setq elpaca-log-events t)" "--eval" "(setq elpaca-verbose t)")
-    fi
-
-    check_duplicates || return 1
-
     stop_server
-    log_info "Updating packages with Elpaca..."
+    log_info "Updating packages..."
     log_info "Timeout set to ${TIMEOUT} seconds"
 
-    prune_elc
-
-    # Run Emacs in batch mode with proper config directory and timeout
-    local update_start=$(date +%s)
     local log_file="/tmp/emacs-update-output-$$.log"
-
-    # Use timeout command to enforce the timeout
-    # Capture output to log file and also display it
+    set +e
     timeout "$TIMEOUT" "$EMACS" -Q --batch \
            --eval "(progn (setq user-emacs-directory \"$PROJECT_ROOT/\") (setq gc-cons-threshold 100000000))" \
-           "${cmd_args[@]}" \
-           -l "$INIT_FILE" \
-           -l "$PROJECT_ROOT/bin/elpaca-update.el" 2>&1 | tee "$log_file"
+           --eval "(package-refresh-contents)" \
+           --eval "(package-update-all)" 2>&1 | tee "$log_file"
     local exit_code=${PIPESTATUS[0]}
-
-    local update_end=$(date +%s)
-    local elapsed=$((update_end - update_start))
+    set -e
 
     if [ $exit_code -eq 124 ]; then
-        log_error "Update timed out after ${elapsed} seconds"
-        log_info "Last 20 lines of output:"
+        log_error "Update timed out after ${TIMEOUT} seconds"
         tail -20 "$log_file"
         rm -f "$log_file"
         return $exit_code
     elif [ $exit_code -ne 0 ]; then
-        log_error "Package update failed with exit code $exit_code after ${elapsed} seconds"
-        log_info "Last 20 lines of output:"
+        log_error "Package update failed with exit code $exit_code"
         tail -20 "$log_file"
         rm -f "$log_file"
         return $exit_code
@@ -398,17 +258,12 @@ function cmd_update() {
 }
 
 function cmd_purge() {
-    log_info "Purging Elpaca builds, sources and caches..."
-    # Remove the local Elpaca workspace so broken checkouts are rebuilt cleanly.
-    if [ -d "$PROJECT_ROOT/.local/packages/elpaca" ]; then
-        rm -rf \
-            "$PROJECT_ROOT/.local/packages/elpaca/builds/" \
-            "$PROJECT_ROOT/.local/packages/elpaca/sources/" \
-            "$PROJECT_ROOT/.local/packages/elpaca/cache/" \
-            "$PROJECT_ROOT/.local/packages/elpaca/queues/"
-        log_info "Purge complete. Run 'sync' to rebuild."
+    log_info "Purging .local/packages cache..."
+    if [ -d "$PROJECT_ROOT/.local/packages" ]; then
+        rm -rf "$PROJECT_ROOT/.local/packages"
+        log_success "Purge complete. Run 'sync' to reinstall."
     else
-        log_info "No Elpaca workspace found to purge."
+        log_info "No package cache found."
     fi
 }
 
@@ -424,24 +279,6 @@ function cmd_doctor() {
     echo "=== Configuration ==="
     echo "Init file: $INIT_FILE"
     echo "Config file: $PROJECT_ROOT/config.org"
-    echo ""
-    echo "=== Elpaca Status ==="
-    if [ -d "$PROJECT_ROOT/.local/packages/elpaca" ]; then
-        echo "✅ Elpaca directory found at: $PROJECT_ROOT/.local/packages/elpaca"
-        if [ -f "$PROJECT_ROOT/.local/packages/elpaca/repos/elpaca/elpaca.el" ]; then
-            echo "✅ Elpaca core file exists (repos)"
-        elif [ -f "$PROJECT_ROOT/.local/packages/elpaca/builds/elpaca/elpaca.el" ]; then
-            echo "✅ Elpaca core file exists (builds)"
-        else
-            echo "⚠️ Elpaca core file missing"
-        fi
-        echo "  Build directory: $PROJECT_ROOT/.local/packages/elpaca/builds/"
-        echo "  Repo directory: $PROJECT_ROOT/.local/packages/elpaca/repos/"
-        echo "  Repo count: $(find "$PROJECT_ROOT/.local/packages/elpaca/repos/" -maxdepth 1 -type d 2>/dev/null | wc -l)"
-    else
-        echo "⚠️ Elpaca directory not found. Run 'sync' to initialize."
-        exit_code=1
-    fi
     echo ""
     echo "=== Configuration Size ==="
     ls -lh "$PROJECT_ROOT/config.org" | awk '{print "config.org size: " $5}'

@@ -739,7 +739,7 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
     (setq emmet-move-cursor-between-quotes t))
 #+end_src
 
-** Terminals (EAT + VTerm)
+** Terminals (Ghostel + EAT)
 ;; AI tools (claude-code, agent-shell) moved to ai.org
 #+begin_src emacs-lisp
   ;; for eat terminal backend:
@@ -830,30 +830,49 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
         ;; Bind toggle escape sequence for switching modes
         (define-key eat-mode-map (kbd "C-c t") #'my/eat-toggle-evil-state)))
 
-   ;; for vterm terminal backend:
-  (use-package vterm
-    :ensure t
-    :if (let ((has-vterm-toolchain (and (executable-find "cmake")
-                                        (executable-find "make")
-                                        (or (executable-find "cc")
-                                            (executable-find "gcc")
-                                            (executable-find "clang")))))
-          (or has-vterm-toolchain (locate-library "vterm-module")))
-    :commands (vterm vterm-other-window)
-    :init
-    (let ((has-vterm-toolchain (and (executable-find "cmake")
-                                    (executable-find "make")
-                                    (or (executable-find "cc")
-                                        (executable-find "gcc")
-                                        (executable-find "clang")))))
-      ;; Avoid hard failures on systems without build tools (e.g. minimal Nix profiles).
-      (setq vterm-always-compile-module has-vterm-toolchain))
-    :config
-    (unless (bound-and-true-p vterm-module-loaded)
-      (message "vterm module not available; install cmake/make/cc to enable native vterm.")))
+   ;; Ghostel terminal emulator — native module powered by libghostty-vt.
+   ;; Pre-built binary auto-downloads on first use (no cmake/make required).
+   (use-package ghostel
+     :ensure t
+     :custom
+     (ghostel-shell "zsh")
+     (ghostel-term "xterm-ghostty")
+     :config
+     ;; Use the Noctalia (Rosé Pine) palette for ghostel ANSI colors.
+     ;; Normal (0-7)
+     (set-face-attribute 'ghostel-color-black       nil :foreground "#5b4839")
+     (set-face-attribute 'ghostel-color-red          nil :foreground "#eb6f92")
+     (set-face-attribute 'ghostel-color-green        nil :foreground "#9ccfd8" :background "#9ccfd8")
+     (set-face-attribute 'ghostel-color-yellow       nil :foreground "#f6c177")
+     (set-face-attribute 'ghostel-color-blue         nil :foreground "#569fba")
+     (set-face-attribute 'ghostel-color-magenta      nil :foreground "#c4a7e7")
+     (set-face-attribute 'ghostel-color-cyan         nil :foreground "#9ccfd8")
+     (set-face-attribute 'ghostel-color-white        nil :foreground "#e0def4")
+     ;; Bright (8-15)
+     (set-face-attribute 'ghostel-color-bright-black  nil :foreground "#5b4839" :background "#5b4839")
+     (set-face-attribute 'ghostel-color-bright-red    nil :foreground "#eb6f92" :background "#eb6f92")
+     (set-face-attribute 'ghostel-color-bright-green  nil :foreground "#9ccfd8" :background "#9ccfd8")
+     (set-face-attribute 'ghostel-color-bright-yellow nil :foreground "#f6c177" :background "#f6c177")
+     (set-face-attribute 'ghostel-color-bright-blue   nil :foreground "#569fba" :background "#569fba")
+     (set-face-attribute 'ghostel-color-bright-magenta nil :foreground "#c4a7e7" :background "#c4a7e7")
+     (set-face-attribute 'ghostel-color-bright-cyan   nil :foreground "#9ccfd8" :background "#9ccfd8")
+     (set-face-attribute 'ghostel-color-bright-white  nil :foreground "#e0def4" :background "#988571")
+    ;; Use FiraCode Nerd Font in ghostel buffers for proper icon rendering
+    ;; (starship prompt, eza, git status symbols, etc.)
+    (add-hook 'ghostel-mode-hook
+              (lambda ()
+                (face-remap-add-relative 'default :family "FiraCode Nerd Font"))))
+
+   (use-package evil-ghostel
+     :ensure nil
+     :vc (:url "https://github.com/dakra/ghostel"
+          :lisp-dir "extensions/evil-ghostel"
+          :rev :newest)
+     :after (ghostel evil)
+     :hook (ghostel-mode . evil-ghostel-mode))
+
   (setq shell-file-name "zsh"
         explicit-shell-file-name "zsh")
-  (setq vterm-shell  "zsh")
 #+end_src
 
 ;; Org Mode configuration moved to notes.org
@@ -1006,26 +1025,44 @@ Module for subtle coverage visualization.
               (lambda (&rest _) (when my/java-coverage-visible (my/java-apply-subtle-coverage))))
 #+end_src
 
-** TRAMP GCP Configuration
-Enable TRAMP for GCP compute instances without modifying =~/.ssh/config=.
+** TRAMP (Remote Connections)
+Provider-agnostic SSH multiplexing for fast TRAMP connections, plus custom methods for GCP and AWS.
 
 #+begin_src emacs-lisp
   (with-eval-after-load 'tramp
-    ;; Enable TRAMP for GCP compute instances
+    ;; Performance: persistent SSH control sockets — TRAMP reuses a single connection
+    ;; so every file operation after the first is near-instant.
     (setq tramp-ssh-controlmaster-options
-          (concat "-o UserKnownHostsFile=/home/nathanmcunha/.ssh/google_compute_known_hosts "
-                  "-o HostKeyAlias=compute.5250592080668089503 "
-                  "-o CheckHostIP=no -o HashKnownHosts=no "
-                  "-o IdentitiesOnly=yes "
-                  "-i /home/nathanmcunha/.ssh/google_compute_engine"))
+          (concat "-o ControlMaster=auto "
+                   "-o ControlPath=~/.ssh/sockets/%r@%h-%p "
+                   "-o ControlPersist=600 "
+                   "-o ServerAliveInterval=60 "
+                   "-o ServerAliveCountMax=3"))
 
-    ;; Custom TRAMP method for gcloud
-    (setq tramp-methods
-          (cons '("gcloud"
-                  (tramp-login-program "gcloud compute ssh")
-                  (tramp-login-args (("%h" "--zone" "%k")))
-                  (tramp-remote-shell "/bin/sh")
-                  (tramp-remote-shell-login ("-l"))
-                  (tramp-remote-shell-args ("-c")))
-                tramp-methods)))
+    ;; GCP: direct SSH or "gcloud" TRAMP method
+    ;; Usage: /ssh:open-claw.us-central1-b.open-clawn-498212:/path
+    ;;   or:  /gcloud:INSTANCE_NAME:zone:/path
+    (add-to-list 'tramp-methods
+                 '("gcloud"
+                   (tramp-login-program "gcloud compute ssh")
+                   (tramp-login-args (("%h" "--zone" "%k")))
+                   (tramp-remote-shell "/bin/sh")
+                   (tramp-remote-shell-login ("-l"))
+                   (tramp-remote-shell-args ("-c"))))
+
+    ;; AWS: SSM Session Manager — no bastion host or open SSH port needed.
+    ;; Requires: awscli2 + ssm-session-manager-plugin in PATH
+    ;; Usage: /aws:i-0abc123def456:/path
+    (add-to-list 'tramp-methods
+                 '("aws"
+                   (tramp-login-program "aws")
+                   (tramp-login-args ("ssm" "start-session" "--target" "%h"
+                                      "--document-name" "AWS-StartSSHSession"
+                                      "--parameters" "portNumber=%p"))
+                   (tramp-remote-shell "/bin/sh")
+                   (tramp-remote-shell-login ("-l"))
+                   (tramp-remote-shell-args ("-c"))))
+
+    ;; Default remote shell for all methods
+    (setq tramp-default-remote-shell "/bin/bash"))
 #+end_src

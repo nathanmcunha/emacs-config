@@ -55,9 +55,26 @@
   (setq-default line-spacing 0.4)
   (add-hook 'org-mode-hook #'variable-pitch-mode)
 
-  ;; Required by local rose-pine themes (loaded from themes/ directory)
-  (use-package autothemer
-    :ensure t)
+  ;; Squirrelsong — light & dark variants
+  ;; https://sapegin.me/squirrelsong/
+  (defun my/squirrelsong-apply-rainbow (variant)
+    "Tune rainbow-identifiers for VARIANT (:light or :dark)."
+    (if (eq variant :light)
+        (setq rainbow-identifiers-cie-l-saturation 40
+              rainbow-identifiers-cie-l-lightness 50)
+      (setq rainbow-identifiers-cie-l-saturation 45
+            rainbow-identifiers-cie-l-lightness 70)))
+
+  (defun my/load-squirrelsong (&optional variant)
+    "Load Squirrelsong VARIANT (:light or :dark, default :dark)."
+    (let ((v (or variant :dark)))
+      (disable-theme 'squirrelsong-dark)
+      (disable-theme 'squirrelsong-light)
+      (load-theme (if (eq v :light) 'squirrelsong-light 'squirrelsong-dark) t)
+      (my/squirrelsong-apply-rainbow v)))
+
+  ;; Default: dark.  Call (my/load-squirrelsong :light) to switch.
+  (my/load-squirrelsong :dark)
 
   (use-package nerd-icons
     :ensure t
@@ -109,7 +126,6 @@
     :ensure t
     :hook (prog-mode . rainbow-identifiers-mode)
     :config
-    (setq rainbow-identifiers-cie-l-saturation 45
-          rainbow-identifiers-cie-l-lightness 70
-          rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
+    ;; Saturation/lightness tuned per-variant by my/load-squirrelsong
+    (setq rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
 #+end_src
