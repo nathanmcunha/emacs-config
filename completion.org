@@ -38,6 +38,35 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
     (add-hook 'minibuffer-setup-hook #'vertico-repeat-save))
 #+end_src
 
+** Vertico Multiform (Visual Enhancements)
+#+begin_src emacs-lisp
+  ;; Doom-like: highlight directories and enabled modes in completion
+  (use-package vertico-multiform
+    :hook (vertico-mode . vertico-multiform-mode)
+    :config
+    (defun +vertico-highlight-directory (file)
+      "Highlight directories with the marginalia directory face."
+      (when (string-suffix-p "/" file)
+        (add-face-text-property 0 (length file) 'marginalia-file-priv-dir 'append file))
+      file)
+
+    (defun +vertico-highlight-enabled-mode (cmd)
+      "Highlight enabled major/minor modes in M-x."
+      (let ((sym (intern cmd)))
+        (with-current-buffer (nth 1 (buffer-list))
+          (when (or (eq sym major-mode)
+                    (and (memq sym minor-mode-list)
+                         (boundp sym)
+                         (symbol-value sym)))
+            (add-face-text-property 0 (length cmd) 'font-lock-constant-face 'append cmd)))
+        cmd))
+
+    (add-to-list 'vertico-multiform-categories
+                 '(file (+vertico-transform-functions . +vertico-highlight-directory)))
+    (add-to-list 'vertico-multiform-commands
+                 '(execute-extended-command (+vertico-transform-functions . +vertico-highlight-enabled-mode))))
+#+end_src
+
 ** Orderless (Fuzzy Matching)
 #+begin_src emacs-lisp
   (use-package orderless
@@ -63,19 +92,23 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
   (use-package marginalia
     :after vertico
     :custom
-    (marginalia-max-relative-age 48)
+    (marginalia-max-relative-age 0)      ; always show absolute time
     (marginalia-align 'right)
     :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle))
     :config
-    (marginalia-mode))
+    (marginalia-mode)
+
+    ;; Doom-like: improve category detection for certain commands
+    (dolist (cat '((flycheck-error-list-set-filter . builtin)
+                   (projectile-switch-to-buffer . buffer)
+                   (persp-switch-to-buffer . buffer)))
+      (add-to-list 'marginalia-command-categories cat)))
 
   ;; Icons in minibuffer completion (Doom-like feel)
   (use-package nerd-icons-completion
     :after nerd-icons
     :config
     (nerd-icons-completion-mode 1)
-    (when (bound-and-true-p marginalia-mode)
-      (nerd-icons-completion-marginalia-setup))
     (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
 #+end_src
 
@@ -181,7 +214,7 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
 
     ;; Exclude modes where Corfu shouldn't activate
     (setq global-corfu-modes
-          '((not erc-mode circe-mode help-mode gud-mode vterm-mode magit-mode)
+          '((not erc-mode circe-mode help-mode gud-mode ghostel-mode magit-mode)
             t)))
 
   (use-package corfu-popupinfo
@@ -239,5 +272,3 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
 
   (add-hook 'lsp-mode-hook #'lsp-completion-mode)
 #+end_src
-
-src
