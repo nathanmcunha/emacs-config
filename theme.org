@@ -74,7 +74,7 @@
       (my/squirrelsong-apply-rainbow v)))
 
   ;; Default: dark.  Call (my/load-squirrelsong :light) to switch.
-  (my/load-squirrelsong :dark)
+  (my/load-squirrelsong :light)
 
   (use-package nerd-icons
     :ensure t

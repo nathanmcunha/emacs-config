@@ -18,6 +18,14 @@ custom.el
 gha-creds-*.json
 sql-connections.el
 /.agent-shell/
+# ECA server binary + Java test-runner jars (large, fetched externally)
+/eca/
+/eclipse.jdt.ls/
+# Scratch planning notes
+/*-plan.md
+/default-doom.md
+/doom-vertico.md
+/eca-emacs.md
 
 # Runtime state/cache (XDG-redirected, these are stale or package-generated)
 .cache/

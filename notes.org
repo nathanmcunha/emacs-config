@@ -31,7 +31,7 @@
 
         (defconst my/org-auto-tangle-files
           '("core.org" "ui.org" "completion.org" "tools.org" "bindings.org" "config.org"
-            "notes.org" "ai.org" "containers.org" "theme.org")
+            "notes.org" "ai.org" "containers.org" "theme.org" "eca.org")
           "Org files in `user-emacs-directory' that should auto-tangle on save.")
 
         (defun my/org-config-file-p (&optional file)
@@ -85,7 +85,7 @@
           (set-face-attribute face nil :inherit 'fixed-pitch)))
 
       (use-package ob-mermaid :ensure t :after org
-        :config (org-babel-do-load-languages 'org-babel-load-languages '((mermaid . t) (sql . t) (emacs-lisp . t))))
+        :config (org-babel-do-load-languages 'org-babel-load-languages (list (cons 'mermaid t) (cons 'gptel t) (cons 'sql t) (cons 'emacs-lisp t) (cons 'shell t) (cons 'python t))))
 
 
       (use-package org-roam

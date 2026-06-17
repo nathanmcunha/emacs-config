@@ -366,20 +366,38 @@ comint, eat, ghostel, and agent-shell buffers.
     (setq selection-coding-system 'utf-8)
     (setq display-buffer-alist
         '(
-          ;; Bottom side buffers (Height 0.3)
+          ;; Output / Async Shell Command
           ("\\*\\(Output\\|Async Shell Command\\).*"
            (display-buffer-reuse-window display-buffer-at-bottom)
            (window-height . 0.3))
 
-          ;; Help buffers
-          ("\\*Help.*"
+          ;; Compilation
+          ("\\*compilation\\*"
+           (display-buffer-reuse-window display-buffer-at-bottom)
+           (window-height . 0.3))
+
+          ;; Help / Apropos
+          ("\\*\\(?:[Hh]elp\\|Apropos\\).*"
            (display-buffer-reuse-window display-buffer-at-bottom)
            (window-height . 0.4))
 
-          ;; Magit: Let it do its own thing (it manages windows well)
+          ;; Messages / Compile-Log
+          ("\\*\\(?:Messages\\|Compile-Log\\).*"
+           (display-buffer-reuse-window display-buffer-at-bottom)
+           (window-height . 0.3))
+
+          ;; Warnings / Backtrace
+          ("\\*\\(?:Warnings\\|Backtrace\\).*"
+           (display-buffer-reuse-window display-buffer-at-bottom)
+           (window-height . 0.25))
+
+          ;; Info / Man pages — stay in current window
+          ("\\*\\(?:info\\|WoMan\\).*"
+           (display-buffer-reuse-window display-buffer-same-window))
+
+          ;; Magit: manages its own windows
           ("Magit.*"
-           (display-buffer-same-window)
-           (this-command . magit-status))
+           (display-buffer-same-window))
           )))
 #+end_src
 

@@ -1,0 +1,38 @@
+# -*- lexical-binding: t; -*-
+
+#+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
+
+#+begin_src emacs-lisp
+;;; eca.el --- ECA (Editor Code Assistant) Configuration -*- lexical-binding: t -*-
+#+end_src
+
+# ECA is an AI pair-programming client that connects to an external eca server
+# (Clojure, JSONRPC over stdin/stdout). The server handles LLM interaction,
+# tool calling, agents, skills, and context.
+#
+# gptel (ai.org) stays for general-purpose LLM chat; ECA handles coding workflows.
+# Keybindings: SPC A (ECA) vs SPC a (gptel) — separate prefixes, no collision.
+#
+# Skills: ECA and OMP both support the agentskills.io spec. The shared path
+# .agents/skills/ is discovered by both. Project-specific ECA skills go in
+# .eca/skills/<name>/SKILL.md.
+
+#+begin_src emacs-lisp
+(use-package eca
+  :ensure t
+  :commands (eca)
+  :config
+  ;; Chat window: right side panel, 60 columns wide
+  (setq eca-chat-use-side-window t)
+  (setq eca-chat-window-side 'right)
+  (setq eca-chat-window-width 60)
+
+  ;; Don't auto-add repoMap on open (keeps initial prompt clean)
+  (setq eca-chat-auto-add-repomap nil)
+
+  ;; Track cursor position as context (useful for coding)
+  (setq eca-chat-auto-add-cursor t)
+
+  ;; Inline completion disabled by default (enable per-buffer if wanted)
+  (setq eca-completion-idle-delay nil))
+#+end_src

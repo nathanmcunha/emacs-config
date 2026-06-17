@@ -87,6 +87,7 @@ to keep ~/.config/emacs/ clean of auto-generated files.
 (setq lock-file-name-transforms
       `((".*" ,(expand-file-name "locks/" my-cache-dir) t)))
 (setq package-user-dir (expand-file-name "elpa/" my-data-dir))
+(package-initialize)  ; re-scan after setting package-user-dir
 #+end_src
 
 ** Package Management
@@ -509,7 +510,9 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
       "s"   "search"
       "w"   "window"
       "W"   "workspaces"
-      "a"   "AI Assistant"))
+      "a"   "AI Assistant"
+      "A"   "ECA"
+      "A t" "ECA tools"))
 #+end_src
 
 ** Which-Key
@@ -518,6 +521,8 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     :ensure nil
     :config
     (which-key-mode)
-    (setq which-key-idle-delay 0.3))
+    (setq which-key-idle-delay 0.3)
+    (which-key-setup-side-window-right)  
+    )
 
 #+end_src

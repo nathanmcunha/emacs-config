@@ -11,6 +11,7 @@
     :config
     ;; Register default ChatGPT backend (no host = api.openai.com)
     (gptel-make-openai "ChatGPT" :key 'gptel-api-key :stream t)
+    (setq gptel-default-mode 'org-mode)
     ;; Register and activate MiMo
     (let ((mimo-backend
            (gptel-make-openai "MiMo"
@@ -28,5 +29,53 @@
                        mimo-v2-tts))))
       (setq gptel-backend mimo-backend
             gptel-model 'mimo-v2.5-pro)))
+#+end_src
+#+begin_src emacs-lisp
+  (use-package ob-gptel
+    :ensure nil
+    :vc (:url "https://github.com/jwiegley/ob-gptel")
+    :after (org)
+    :config
+    (add-to-list 'org-babel-load-languages '(gptel . t))
+    (org-babel-do-load-languages 'org-babel-load-languages org-babel-load-languages)
+    (add-hook 'org-mode-hook
+              (lambda ()
+                (add-hook 'completion-at-point-functions #'ob-gptel-capf nil t)))
+    ;; Fix "Native code fontification error" in gptel src blocks.
+    ;; gptel-mode is a minor mode, not a major mode, so org can't
+    ;; fontify #+begin_src gptel blocks natively. Map gptel → text-mode.
+    (add-to-list 'org-src-lang-modes '("gptel" . text)))
+#+end_src
+#+begin_src emacs-lisp
+;; Each org heading is its own conversation branch
+(setq gptel-org-branching-context t)
+;; Non-heading prefixes for org-mode (avoids conflicts with org headings)
+(setf (alist-get 'org-mode gptel-prompt-prefix-alist) "@user\n")
+(setf (alist-get 'org-mode gptel-response-prefix-alist) "@assistant\n")
+#+end_src
+
+#+begin_src emacs-lisp
+(defun my/gptel-org-template (filename)
+  "Create a new org file configured for gptel source block conversations.
+Prompts for FILENAME and inserts a template with MiMo backend defaults."
+  (interactive "FGptel chat file: ")
+  (when (string-empty-p (file-name-nondirectory filename))
+    (user-error "Filename cannot be empty"))
+  (let ((full-path (expand-file-name filename)))
+    (find-file full-path)
+    (when (= (buffer-size) 0)
+      (insert "#+title: GPT Chat\n")
+      (insert "#+property: header-args:gptel :backend \"MiMo\" :model mimo-v2.5-pro\n")
+      (insert "\n* First Prompt\n\n")
+      (insert "#+begin_src gptel\n")
+      (insert "Your prompt here.\n")
+      (insert "#+end_src\n\n")
+      (insert "#+RESULTS:\n\n")
+      (insert "* Next Prompt\n\n")
+      (insert "#+begin_src gptel :session my-session\n")
+      (insert "Follow-up question.\n")
+      (insert "#+end_src\n")
+      (goto-char (point-min))
+      (forward-line 6))))
 #+end_src
 
