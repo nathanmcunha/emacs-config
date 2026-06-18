@@ -8,10 +8,16 @@
 
 #+begin_src emacs-lisp
   (use-package gptel
+    :custom
+    ;; Each org heading is its own conversation branch
+    (gptel-org-branching-context t)
     :config
-    ;; Register default ChatGPT backend (no host = api.openai.com)
-    (gptel-make-openai "ChatGPT" :key 'gptel-api-key :stream t)
+    ;; ChatGPT backend removed — never used. Active backend is always MiMo below.
     (setq gptel-default-mode 'org-mode)
+    ;; Non-heading prefixes for org-mode (avoids conflicts with org headings).
+    ;; Must live in `:config` so they apply after gptel defines the alists.
+    (setf (alist-get 'org-mode gptel-prompt-prefix-alist) "@user\n")
+    (setf (alist-get 'org-mode gptel-response-prefix-alist) "@assistant\n")
     ;; Register and activate MiMo
     (let ((mimo-backend
            (gptel-make-openai "MiMo"
@@ -21,37 +27,31 @@
              :models '(mimo-v2.5-pro
                        mimo-v2.5
                        mimo-v2.5-asr
-                       mimo-v2.5-tts-voiceclone
-                       mimo-v2.5-tts-voicedesign
-                       mimo-v2.5-tts
                        mimo-v2-pro
-                       mimo-v2-omni
-                       mimo-v2-tts))))
+                       mimo-v2-omni))))
       (setq gptel-backend mimo-backend
             gptel-model 'mimo-v2.5-pro)))
 #+end_src
+
 #+begin_src emacs-lisp
-  (use-package ob-gptel
-    :ensure nil
-    :vc (:url "https://github.com/jwiegley/ob-gptel")
-    :after (org)
-    :config
-    (add-to-list 'org-babel-load-languages '(gptel . t))
-    (org-babel-do-load-languages 'org-babel-load-languages org-babel-load-languages)
-    (add-hook 'org-mode-hook
-              (lambda ()
-                (add-hook 'completion-at-point-functions #'ob-gptel-capf nil t)))
-    ;; Fix "Native code fontification error" in gptel src blocks.
-    ;; gptel-mode is a minor mode, not a major mode, so org can't
-    ;; fontify #+begin_src gptel blocks natively. Map gptel → text-mode.
-    (add-to-list 'org-src-lang-modes '("gptel" . text)))
-#+end_src
-#+begin_src emacs-lisp
-;; Each org heading is its own conversation branch
-(setq gptel-org-branching-context t)
-;; Non-heading prefixes for org-mode (avoids conflicts with org headings)
-(setf (alist-get 'org-mode gptel-prompt-prefix-alist) "@user\n")
-(setf (alist-get 'org-mode gptel-response-prefix-alist) "@assistant\n")
+(use-package ob-gptel
+  :ensure nil
+  :vc (:url "https://github.com/jwiegley/ob-gptel")
+  :after (org)
+  :config
+  ;; Babel languages consolidated here — ai.org is the only module that needs them.
+  ;; Using add-to-list per language instead of setq-overwrite prevents silent loss
+  ;; of gptel/sql entries on every reload.
+  (dolist (lang '(mermaid gptel sql emacs-lisp shell python))
+    (add-to-list 'org-babel-load-languages (cons lang t)))
+  (org-babel-do-load-languages 'org-babel-load-languages org-babel-load-languages)
+  (add-hook 'org-mode-hook
+            (lambda ()
+              (add-hook 'completion-at-point-functions #'ob-gptel-capf nil t)))
+  ;; Fix "Native code fontification error" in gptel src blocks.
+  ;; gptel-mode is a minor mode, not a major mode, so org can't
+  ;; fontify #+begin_src gptel blocks natively. Map gptel → text-mode.
+  (add-to-list 'org-src-lang-modes '("gptel" . text)))
 #+end_src
 
 #+begin_src emacs-lisp

@@ -122,7 +122,6 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
      (setq lsp-enable-indentation nil)
      (setq lsp-keep-workspace-alive nil)
      (setq lsp-file-watch-threshold 10000)  ; reduced from 500000
-     (setq read-process-output-max (* 1024 1024))  ; 1MB buffer (Doom)
 
 
      ;; Disable auto-install — all servers managed by Nix
@@ -174,15 +173,15 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
                   (when-let* (ws (car (lsp-workspaces)))
                     (lsp-workspace-restart ws)))))
 
-    ;; evil normal-state bindings (evil-collection has no lsp-mode module;
-    ;; replaces what evil-collection-eglot provided for eglot-mode-map)
+    ;; evil normal-state bindings (evil-collection has no lsp-mode module).
+    ;; K is bound globally in core.org via `evil-motion-state-map` to `my/smart-lookup`,
+    ;; which already dispatches to LSP — defining K here would shadow it.
     (with-eval-after-load 'evil
       (evil-define-key 'normal lsp-mode-map
         "gd" #'lsp-find-definition
         "gD" #'lsp-find-declaration
         "gr" #'lsp-find-references
-        "gi" #'lsp-find-implementation
-        "K"  #'lsp-describe-thing-at-point)))
+        "gi" #'lsp-find-implementation)))
 
   (use-package lsp-ui
     :ensure t
@@ -204,26 +203,20 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
 ** Java Development (lsp-java)
 Java language server using Eclipse JDT.LS via lsp-java.
 
-#+begin_src emacs-lisp
+  ;; `:hook` triggers deferred load; do NOT add `:demand t` — that would defeat the hook.
   (use-package lsp-java
     :ensure t
-    :demand t
     :after lsp-mode
     :hook ((java-mode . (lambda () (require 'lsp-java) (lsp-deferred)))
            (java-ts-mode . (lambda () (require 'lsp-java) (lsp-deferred))))
     :config
-    (setq lsp-java-server-install-dir (expand-file-name "lsp/eclipse.jdt.ls/" my-local-pkg-dir))
     (setq lsp-java-workspace-dir (expand-file-name "state/java-workspace/" my-local-dir))
     (setq lsp-java-import-maven-enabled t)
-    (setq lsp-java-import-gradle-enabled nil)  ; disable Gradle
+    (setq lsp-java-import-gradle-enabled nil)  ; Gradle disabled: all projects use Maven.
     (setq lsp-java-vmargs '("-XX:+UseG1GC" "-Xmx2G" "-Xms512m"))
     (setq lsp-java-bundles '())  ; disable all extensions for testing
     (setq lsp-java-completion-on-did-select nil))  ; disable onDidSelect timeout
 #+end_src
-
-;; TEMPORARILY DISABLED - Enable after testing
-;; #+begin_src emacs-lisp :tangle no
-;;   (use-package dap-mode ...
 
 #+begin_src emacs-lisp
   (defun my/java-code-actions ()
@@ -261,15 +254,27 @@ Java language server using Eclipse JDT.LS via lsp-java.
   ;; === Java File & Class Creation (IntelliJ-style) ===
 
   (defun my/java-source-root ()
-    "Find the Java source root (src/main/java or src/test/java)."
+    "Find the Java source root for the current file.
+Walks up from the current file to find the nearest `pom.xml' or `build.gradle',
+then looks for `src/main/java' or `src/test/java' relative to that marker.
+Falls back to the project root's `src/main/java' if no marker is found."
     (let* ((file (or (buffer-file-name) default-directory))
+           (dir (file-name-directory file))
            (root (project-root (project-current t))))
+      ;; Walk up looking for a build-file marker (handles monorepos).
       (catch 'found
-        (dolist (dir '("src/main/java/" "src/test/java/" "src/"))
-          (let ((full (expand-file-name dir root)))
-            (when (and (file-directory-p full)
-                       (string-prefix-p full file))
-              (throw 'found full))))
+        (while (and dir (string-prefix-p (expand-file-name root) (expand-file-name dir)))
+          (dolist (marker '("pom.xml" "build.gradle" "build.gradle.kts"))
+            (when (file-exists-p (expand-file-name marker dir))
+              ;; Marker found — look for src/main/java or src/test/java here.
+              (dolist (src '("src/main/java/" "src/test/java/"))
+                (let ((full (expand-file-name src dir)))
+                  (when (and (file-directory-p full)
+                             (string-prefix-p (expand-file-name full)
+                                              (expand-file-name file)))
+                    (throw 'found full))))))
+          (setq dir (file-name-directory (directory-file-name dir))))
+        ;; Fallback: project-root/src/main/java
         (expand-file-name "src/main/java/" root))))
 
   (defun my/java-current-package ()
@@ -434,17 +439,18 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
      ;; DISABLED for Java testing - re-enable after
      ;; (push '(java-mode . google-java-format) apheleia-mode-alist)
      ;; (push '(java-ts-mode . google-java-format) apheleia-mode-alist)
-     (push '(python-mode . ruff) apheleia-mode-alist)
-     (push '(python-ts-mode . ruff) apheleia-mode-alist)
-     (push '(js-ts-mode . prettier) apheleia-mode-alist)
-     (push '(typescript-ts-mode . prettier) apheleia-mode-alist)
-     (push '(tsx-ts-mode . prettier) apheleia-mode-alist)
-     (push '(html-ts-mode . prettier) apheleia-mode-alist)
-     (push '(css-ts-mode . prettier) apheleia-mode-alist)
-     (push '(c++-mode . clang-format) apheleia-mode-alist)
-     (push '(c++-ts-mode . clang-format) apheleia-mode-alist)
-     (push '(c-mode . clang-format) apheleia-mode-alist)
-     (push '(c-ts-mode . clang-format) apheleia-mode-alist))
+    ;; `cl-pushnew` instead of `push` — `eval-buffer` would otherwise double every entry.
+    (cl-pushnew '(python-mode . ruff) apheleia-mode-alist)
+    (cl-pushnew '(python-ts-mode . ruff) apheleia-mode-alist)
+    (cl-pushnew '(js-ts-mode . prettier) apheleia-mode-alist)
+    (cl-pushnew '(typescript-ts-mode . prettier) apheleia-mode-alist)
+    (cl-pushnew '(tsx-ts-mode . prettier) apheleia-mode-alist)
+    (cl-pushnew '(html-ts-mode . prettier) apheleia-mode-alist)
+    (cl-pushnew '(css-ts-mode . prettier) apheleia-mode-alist)
+    (cl-pushnew '(c++-mode . clang-format) apheleia-mode-alist)
+    (cl-pushnew '(c++-ts-mode . clang-format) apheleia-mode-alist)
+    (cl-pushnew '(c-mode . clang-format) apheleia-mode-alist)
+    (cl-pushnew '(c-ts-mode . clang-format) apheleia-mode-alist))
 #+end_src
 
 ** Linting (Flymake)
@@ -454,30 +460,29 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
   (add-hook 'prog-mode-hook #'flymake-mode)
 
   ;; Configure flymake when loaded
-  (eval-after-load 'flymake
-    '(progn
-       (setq flymake-fringe-indicator-position 'left-fringe)
+  (with-eval-after-load 'flymake
+    (setq flymake-fringe-indicator-position 'left-fringe)
 
-        ;; 1. Window Configuration (Clean Popup at Bottom)
-       (add-to-list 'display-buffer-alist
-                    '("\*Flymake diagnostics.*"
-                      (display-buffer-reuse-window display-buffer-in-side-window)
-                      (side . bottom)
-                      (slot . 0)
-                      (window-height . 0.25)
-                      (preserve-size . (nil . t))
-                      (window-parameters . ((no-other-window . nil)
-                                            (mode-line-format . none)))
-                      (this-command . flymake-show-project-diagnostics)))
+    ;; 1. Window Configuration (Clean Popup at Bottom)
+    (add-to-list 'display-buffer-alist
+                 '("\*Flymake diagnostics.*"
+                   (display-buffer-reuse-window display-buffer-in-side-window)
+                   (side . bottom)
+                   (slot . 0)
+                   (window-height . 0.25)
+                   (preserve-size . (nil . t))
+                   (window-parameters . ((no-other-window . nil)
+                                         (mode-line-format . none)))
+                   (this-command . flymake-show-project-diagnostics)))
 
-        ;; 2. Diagnostics buffer visuals
-       (add-hook 'flymake-project-diagnostics-mode-hook
-                 (lambda ()
-                   (setq header-line-format nil)
-                   (setq tabulated-list-use-header-line nil)
-                   (setq tabulated-list-gui-sort-indicator-mode nil)
-                   (display-line-numbers-mode 0)
-                   (hl-line-mode 1)))))
+    ;; 2. Diagnostics buffer visuals
+    (add-hook 'flymake-project-diagnostics-mode-hook
+              (lambda ()
+                (setq header-line-format nil)
+                (setq tabulated-list-use-header-line nil)
+                (setq tabulated-list-gui-sort-indicator-mode nil)
+                (display-line-numbers-mode 0)
+                (hl-line-mode 1))))
 
    ;; 3. Search function for Consult (simplified to avoid macro expansion issues)
     (defun my/consult-flymake-project ()
@@ -584,18 +589,20 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
  (use-package treesit
    :ensure nil
    :config
-    (setq treesit-language-source-alist
-          '((java "https://github.com/tree-sitter/tree-sitter-java")
-            (javascript "https://github.com/tree-sitter/tree-sitter-javascript")
-            (typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
-            (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")
-            (python "https://github.com/tree-sitter/tree-sitter-python")
-            (dockerfile "https://github.com/camdencheek/tree-sitter-dockerfile")
-            (yaml "https://github.com/ikatyang/tree-sitter-yaml")
-            (html "https://github.com/tree-sitter/tree-sitter-html")
-            (css "https://github.com/tree-sitter/tree-sitter-css")
-            (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
-            (c "https://github.com/tree-sitter/tree-sitter-c")))
+   ;; Use `add-to-list` consistently — the second block below uses it,
+   ;; and a prior `setq` here would wipe out any later additions.
+   (dolist (spec '((java "https://github.com/tree-sitter/tree-sitter-java")
+                   (javascript "https://github.com/tree-sitter/tree-sitter-javascript")
+                   (typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
+                   (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")
+                   (python "https://github.com/tree-sitter/tree-sitter-python")
+                   (dockerfile "https://github.com/camdencheek/tree-sitter-dockerfile")
+                   (yaml "https://github.com/ikatyang/tree-sitter-yaml")
+                   (html "https://github.com/tree-sitter/tree-sitter-html")
+                   (css "https://github.com/tree-sitter/tree-sitter-css")
+                   (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
+                   (c "https://github.com/tree-sitter/tree-sitter-c")))
+     (add-to-list 'treesit-language-source-alist spec))
 
 (defun my/install-all-treesit-grammars ()
       "Install all configured Tree-sitter grammars."
@@ -654,7 +661,7 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
                                              (t "bash")))
                             (lang-mode (intern (format "%s-ts-mode" lang-name))))
                 (when (functionp lang-mode)
-                  (treesit-fontify-region code-start code-end lang-name))))))))))
+                  (treesit-font-lock-fontify-region code-start code-end lang-name))))))))))
 
   ;; Indirect buffer method for full LSP support on embedded code
   (defun my/mise-edit-run-command ()
@@ -706,7 +713,12 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
       (user-error "Not in a mise edit buffer")))
 
   (with-eval-after-load 'toml-ts-mode
-    (define-key toml-ts-mode-map (kbd "C-c C-e") #'my/mise-edit-run-command))
+    (define-key toml-ts-mode-map (kbd "C-c C-e") #'my/mise-edit-run-command)
+    ;; C-c C-c in the indirect *mise-run:* buffer saves back to the source file.
+    ;; Both modes are loaded by `my/mise-edit-run-command` when the buffer opens.
+    (dolist (mode '(bash-ts-mode python-ts-mode javascript-ts-mode))
+      (with-eval-after-load mode
+        (define-key (intern (format "%s-map" mode)) (kbd "C-c C-c") #'my/mise-save-back))))
   #+end_src
 
   ** Visual Wrapping (built-in Emacs 30)
@@ -813,8 +825,8 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
           "C-l" #'evil-window-right)
 
         ;; Leader key bindings for terminal (SPC prefix)
-        (with-eval-after-load 'evil
-          (define-key eat-mode-map (kbd "SPC") my-leader-map))
+        ;; No need for nested `with-eval-after-load 'evil` — we're already inside one.
+        (define-key eat-mode-map (kbd "SPC") my-leader-map)
 
         ;; Function to toggle Evil state in terminal
         (defun my/eat-toggle-evil-state ()
@@ -840,23 +852,25 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
      :config
      ;; Use the Noctalia (Rosé Pine) palette for ghostel ANSI colors.
      ;; Normal (0-7)
-     (set-face-attribute 'ghostel-color-black       nil :foreground "#5b4839")
-     (set-face-attribute 'ghostel-color-red          nil :foreground "#eb6f92")
-     (set-face-attribute 'ghostel-color-green        nil :foreground "#9ccfd8" :background "#9ccfd8")
-     (set-face-attribute 'ghostel-color-yellow       nil :foreground "#f6c177")
-     (set-face-attribute 'ghostel-color-blue         nil :foreground "#569fba")
-     (set-face-attribute 'ghostel-color-magenta      nil :foreground "#c4a7e7")
-     (set-face-attribute 'ghostel-color-cyan         nil :foreground "#9ccfd8")
-     (set-face-attribute 'ghostel-color-white        nil :foreground "#e0def4")
-     ;; Bright (8-15)
-     (set-face-attribute 'ghostel-color-bright-black  nil :foreground "#5b4839" :background "#5b4839")
-     (set-face-attribute 'ghostel-color-bright-red    nil :foreground "#eb6f92" :background "#eb6f92")
-     (set-face-attribute 'ghostel-color-bright-green  nil :foreground "#9ccfd8" :background "#9ccfd8")
-     (set-face-attribute 'ghostel-color-bright-yellow nil :foreground "#f6c177" :background "#f6c177")
-     (set-face-attribute 'ghostel-color-bright-blue   nil :foreground "#569fba" :background "#569fba")
-     (set-face-attribute 'ghostel-color-bright-magenta nil :foreground "#c4a7e7" :background "#c4a7e7")
-     (set-face-attribute 'ghostel-color-bright-cyan   nil :foreground "#9ccfd8" :background "#9ccfd8")
-     (set-face-attribute 'ghostel-color-bright-white  nil :foreground "#e0def4" :background "#988571")
+    ;; ANSI colors — Rosé Pine palette. Drop :background everywhere; setting
+    ;; :background equal to :foreground makes text invisible (matched bg/fg).
+    (set-face-attribute 'ghostel-color-black       nil :foreground "#5b4839")
+    (set-face-attribute 'ghostel-color-red          nil :foreground "#eb6f92")
+    (set-face-attribute 'ghostel-color-green        nil :foreground "#9ccfd8")
+    (set-face-attribute 'ghostel-color-yellow       nil :foreground "#f6c177")
+    (set-face-attribute 'ghostel-color-blue         nil :foreground "#569fba")
+    (set-face-attribute 'ghostel-color-magenta      nil :foreground "#c4a7e7")
+    (set-face-attribute 'ghostel-color-cyan         nil :foreground "#9ccfd8")
+    (set-face-attribute 'ghostel-color-white        nil :foreground "#e0def4")
+    ;; Bright variants inherit normal foreground; do NOT set :background.
+    (set-face-attribute 'ghostel-color-bright-black  nil :foreground "#6e5849")
+    (set-face-attribute 'ghostel-color-bright-red    nil :foreground "#f185a8")
+    (set-face-attribute 'ghostel-color-bright-green  nil :foreground "#aee8d5")
+    (set-face-attribute 'ghostel-color-bright-yellow nil :foreground "#f9cb8c")
+    (set-face-attribute 'ghostel-color-bright-blue   nil :foreground "#6cb2c9")
+    (set-face-attribute 'ghostel-color-bright-magenta nil :foreground "#d8b4ee")
+    (set-face-attribute 'ghostel-color-bright-cyan   nil :foreground "#aee8d5")
+    (set-face-attribute 'ghostel-color-bright-white  nil :foreground "#ece6f6")
     ;; Use FiraCode Nerd Font in ghostel buffers for proper icon rendering
     ;; (starship prompt, eza, git status symbols, etc.)
     (add-hook 'ghostel-mode-hook
@@ -894,7 +908,6 @@ Each project needs a ~.envrc~ file (~use flake~ for Nix, or ~mise direnv activat
 #+end_src
 
 ** Which-Func (breadcrumb in header-line)
-;; dap-mode config temporarily disabled — re-enable after testing
 
 #+begin_src emacs-lisp
   (require 'which-func)
@@ -1040,15 +1053,8 @@ Provider-agnostic SSH multiplexing for fast TRAMP connections, plus custom metho
                    "-o ServerAliveCountMax=3"))
 
     ;; GCP: direct SSH or "gcloud" TRAMP method
-    ;; Usage: /ssh:open-claw.us-central1-b.open-clawn-498212:/path
-    ;;   or:  /gcloud:INSTANCE_NAME:zone:/path
-    (add-to-list 'tramp-methods
-                 '("gcloud"
-                   (tramp-login-program "gcloud compute ssh")
-                   (tramp-login-args (("%h" "--zone" "%k")))
-                   (tramp-remote-shell "/bin/sh")
-                   (tramp-remote-shell-login ("-l"))
-                   (tramp-remote-shell-args ("-c"))))
+    ;; /ssh:INSTANCE_EXTERNAL_IP:/path   or   /gcloud:INSTANCE_NAME:/path
+    (load (expand-file-name "gcloud-tramp" user-emacs-directory) nil 'nomessage)
 
     ;; AWS: SSM Session Manager — no bastion host or open SSH port needed.
     ;; Requires: awscli2 + ssm-session-manager-plugin in PATH
@@ -1056,9 +1062,9 @@ Provider-agnostic SSH multiplexing for fast TRAMP connections, plus custom metho
     (add-to-list 'tramp-methods
                  '("aws"
                    (tramp-login-program "aws")
-                   (tramp-login-args ("ssm" "start-session" "--target" "%h"
-                                      "--document-name" "AWS-StartSSHSession"
-                                      "--parameters" "portNumber=%p"))
+                   (tramp-login-args (("ssm" "start-session" "--target" "%h"
+                                       "--document-name" "AWS-StartSSHSession"
+                                       "--parameters" "portNumber=%p")))
                    (tramp-remote-shell "/bin/sh")
                    (tramp-remote-shell-login ("-l"))
                    (tramp-remote-shell-args ("-c"))))

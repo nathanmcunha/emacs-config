@@ -25,11 +25,9 @@ from the current project, and feeds them into the Corfu/Cape completion stack.
     "Global favorite commands always shown in completion.")
 
   (defun my/run--mise-tasks ()
-    "Return list of 'mise run TASK' strings from current project."
-    (let ((default-directory (or (and (project-current)
-                                      (project-root (project-current)))
-                                 default-directory)))
-      (condition-case nil
+    "Return list of 'mise run TASK' strings from current project.
+Caller must set `default-directory' to the project root."
+    (condition-case nil
           (let ((output (shell-command-to-string "mise tasks --json 2>/dev/null")))
             (unless (string-empty-p output)
               (let* ((json-array-type 'list)
@@ -41,13 +39,12 @@ from the current project, and feeds them into the Corfu/Cape completion stack.
                             (propertize (format "mise run %s" name)
                                        'my/annotation desc)))
                         parsed))))
-        (error nil))))
+        (error nil)))
 
   (defun my/run--package-json-scripts ()
-    "Return list of 'npm run SCRIPT' strings from package.json."
-    (let* ((root (or (and (project-current) (project-root (project-current)))
-                     default-directory))
-           (pkg (expand-file-name "package.json" root)))
+    "Return list of 'npm run SCRIPT' strings from package.json.
+Caller must set `default-directory' to the project root."
+    (let ((pkg (expand-file-name "package.json" default-directory)))
       (when (file-exists-p pkg)
         (condition-case nil
             (let* ((json-object-type 'alist)
@@ -61,10 +58,9 @@ from the current project, and feeds them into the Corfu/Cape completion stack.
           (error nil)))))
 
   (defun my/run--makefile-targets ()
-    "Return list of 'make TARGET' strings from Makefile."
-    (let* ((root (or (and (project-current) (project-root (project-current)))
-                     default-directory))
-           (makefile (expand-file-name "Makefile" root)))
+    "Return list of 'make TARGET' strings from Makefile.
+Caller must set `default-directory' to the project root."
+    (let ((makefile (expand-file-name "Makefile" default-directory)))
       (when (file-exists-p makefile)
         (condition-case nil
             (let ((output (shell-command-to-string
@@ -75,26 +71,23 @@ from the current project, and feeds them into the Corfu/Cape completion stack.
           (error nil)))))
 
   (defun my/run--gradle-tasks ()
-    "Return common Gradle tasks if gradlew exists."
-    (let* ((root (or (and (project-current) (project-root (project-current)))
-                     default-directory))
-           (gradlew (expand-file-name "gradlew" root)))
-      (when (file-exists-p gradlew)
+    "Return common Gradle tasks if gradlew exists.
+Caller must set `default-directory' to the project root."
+    (let ((gradlew (expand-file-name "gradlew" default-directory)))
         (mapcar (lambda (task) (format "./gradlew %s" task))
                 '("build" "test" "run" "clean" "bootRun"
                   "assemble" "check" "classes" "jar")))))
 
   (defun my/run--docker-compose-services ()
-    "Return docker compose commands if a compose file exists."
-    (let* ((root (or (and (project-current) (project-root (project-current)))
-                     default-directory))
-           (compose-cmd (if (executable-find "podman") "podman compose" "docker compose")))
-      (when (or (file-exists-p (expand-file-name "docker-compose.yml" root))
-                (file-exists-p (expand-file-name "docker-compose.yaml" root))
-                (file-exists-p (expand-file-name "compose.yml" root))
-                (file-exists-p (expand-file-name "compose.yaml" root))
+    "Return docker compose commands if a compose file exists.
+Caller must set `default-directory' to the project root."
+    (let ((compose-cmd (if (executable-find "podman") "podman compose" "docker compose")))
+      (when (or (file-exists-p (expand-file-name "docker-compose.yml" default-directory))
+                (file-exists-p (expand-file-name "docker-compose.yaml" default-directory))
+                (file-exists-p (expand-file-name "compose.yml" default-directory))
+                (file-exists-p (expand-file-name "compose.yaml" default-directory))
                 (seq-some (lambda (f) (string-match-p "docker-compose" f))
-                          (directory-files root nil "\\.ya?ml$")))
+                          (directory-files default-directory nil "\\.ya?ml$")))
         (mapcar (lambda (sub) (format "%s %s" compose-cmd sub))
                 '("up -d" "down" "logs -f" "ps" "build" "restart" "pull")))))
 
@@ -115,15 +108,20 @@ structure/config changes."
             (cl-loop for f in markers
                      for path = (expand-file-name f root)
                      when (file-exists-p path)
-                     collect (let* ((attrs (file-attributes path))
-                                    (mtime (file-attribute-modification-time attrs)))
-                               (truncate (float-time mtime))))))
-      (if times (apply #'max times) 0)))
+                     collect (let ((mtime (file-attribute-modification-time
+                                          (file-attributes path))))
+                               ;; Guard: nil mtime can happen on some TRAMP
+                               ;; connections or special filesystems.
+                               (when mtime (truncate (float-time mtime)))))))
+      (if times (apply #'max (delq nil times)) 0)))
 
   (defun my/run--collect-candidates ()
-    "Collect all command candidates for the current project with caching."
+    "Collect all command candidates for the current project with caching.
+Binds `default-directory' to the project root once so individual collectors
+don't each call `(project-current)' (expensive in TRAMP directories)."
     (let* ((root (my/run--project-key))
-           (stamp (when root (my/run--project-markers-timestamp root)))
+           (default-directory (file-name-as-directory root))
+           (stamp (my/run--project-markers-timestamp root))
            (entry (assoc root my/run--cache)))
       (if (and entry (equal (cadr entry) stamp))
           ;; cache hit: return cached candidates
@@ -139,13 +137,32 @@ structure/config changes."
                                           my/run-favorites
                                           my/run-history))
                       :test #'string= :from-end t)))
-          (setq my/run--cache (cl-delete root my/run--cache :key #'car :test #'equal))
+          (my/run--invalidate-entry root)
           (push (list root stamp cands) my/run--cache)
           cands))))
 
-  ;; Invalidate cache on common actions
-  (advice-add 'project-switch-project :after (lambda (&rest _) (setq my/run--cache nil)))
-  (advice-add 'save-buffer :after (lambda (&rest _) (setq my/run--cache nil)))
+  ;; Single invalidator for the shared cache (used by `my/run` and cape-run-capf).
+  (defun my/run--invalidate-entry (root)
+    "Remove ROOT's entry from `my/run--cache'."
+    (setq my/run--cache (cl-remove root my/run--cache :key #'car :test #'equal)))
+
+  (defun my/run--invalidate-all ()
+    "Clear the entire `my/run--cache'."
+    (setq my/run--cache nil))
+
+  ;; save-buffer nuke the cache on every keystroke-save defeats the mtime cache.
+  ;; Only invalidate when the saved file actually moved a project-marker mtime.
+  (defun my/run--save-buffer-advice (&rest _)
+    "After `save-buffer', drop the cache entry for the saved file's project
+iff its project marker mtimes changed. Unrelated saves leave the cache alone."
+    (when-let* ((root (my/run--project-key))
+                (entry (assoc root my/run--cache))
+                (current-stamp (my/run--project-markers-timestamp root))
+                ((not (eql current-stamp (cadr entry)))))
+      (my/run--invalidate-entry root)))
+
+(advice-add 'project-switch-project :after #'my/run--invalidate-all)
+(advice-add 'save-buffer :after #'my/run--save-buffer-advice)
 
   (defun my/run--annotate (cand)
     "Annotation function for run candidates."
@@ -206,7 +223,7 @@ structure/config changes."
                (proc (get-buffer-process (get-buffer choice))))
           (when proc
             (interrupt-process proc)
-            (sit-for 0.3)
+            (sleep-for 0.3)
             (when (process-live-p proc) (kill-process proc)))
           (message "Stopped %s" choice)))))
 
@@ -234,25 +251,12 @@ Provides Corfu popup suggestions for shell commands in eshell, shell-mode,
 comint, eat, ghostel, and agent-shell buffers.
 
 #+begin_src emacs-lisp
-  (defvar my/cape-run-cache nil
-    "Cached candidates as (PROJECT-ROOT . CANDIDATES).")
-
-  (defun my/cape-run--invalidate-cache ()
-    "Clear cache when switching projects."
-    (setq my/cape-run-cache nil))
-
-  (advice-add 'project-switch-project :after
-              (lambda (&rest _) (my/cape-run--invalidate-cache)))
-
+  ;; `my/cape-run--candidates` reads from the shared `my/run--cache` (same
+  ;; shape as `my/run--collect-candidates` returns). Single source of truth.
   (defun my/cape-run--candidates ()
-    "Return cached or fresh command candidates for the current project."
-    (let ((root (or (and (project-current) (project-root (project-current)))
-                    default-directory)))
-      (if (and my/cape-run-cache (string= (car my/cape-run-cache) root))
-          (cdr my/cape-run-cache)
-        (let ((cands (my/run--collect-candidates)))
-          (setq my/cape-run-cache (cons root cands))
-          cands))))
+    "Return candidates for the current project, reusing `my/run--cache'."
+    (or (caddr (assoc (my/run--project-key) my/run--cache))
+        (my/run--collect-candidates)))
 
   (defun my/cape-run-capf ()
     "Completion-at-point function for shell commands.
@@ -303,18 +307,18 @@ comint, eat, ghostel, and agent-shell buffers.
      #'cape-history
      #'cape-dabbrev))
 
+  ;; Append, don't replace: `setq-local` here would wipe out the
+  ;; `my/cape-run-capf` hook installed above (Phase 2.8).
   (dolist (hook '(eshell-mode-hook
                   shell-mode-hook
                   comint-mode-hook))
     (add-hook hook
               (lambda ()
-                (setq-local completion-at-point-functions
-                            (list #'my/cape-shell-super-capf)))))
+                (add-hook 'completion-at-point-functions
+                          #'my/cape-shell-super-capf -60 t))))
 #+end_src
 * Window Management (Popups & Rules)
 
-  (use-package popper
-    :ensure t)
 ** Popup Windows (built-in toggle)
 #+begin_src emacs-lisp
   (defvar my/popup-buffer-regexps
@@ -417,26 +421,31 @@ comint, eat, ghostel, and agent-shell buffers.
               (evil-normal-state))
           (setq unread-command-events (list next-char))))))
 
-  (setq evil-want-keybinding nil)
+  ;; Required by CLAUDE.md — must be set before Evil loads so `<leader>` and
+  ;; `*`/`+` registers route through the system clipboard.
+  (setq evil-want-clipboard t)
 
+  ;; evil-collection reads this at load time; setting in `:init` ensures
+  ;; it sticks before evil-collection sees it.
   (use-package evil
+    :init (setq evil-want-keybinding nil)
     :config
     (evil-mode 1)
     (define-key evil-insert-state-map (kbd "j") 'my/evil-escape-jk)
-    (setq evil-emacs-state-cursor    '("#649bce" box)
-          evil-normal-state-cursor   '("#ebcb8b" box)
-          evil-visual-state-cursor   '("#676f7d" box)
-          evil-insert-state-cursor   '("#ebcb8b" bar)
-          evil-replace-state-cursor  '("#ebcb8b" hbar)
-          evil-operator-state-cursor '("#ebcb8b" hollow)))
-
+    ;; Cursor colors fall through to the active theme's `:cursor` face — no
+    ;; hardcoded Nord/Rosé-Pine values here. Per-theme tints are configured
+    ))
   (use-package evil-collection
     :after evil
     :ensure t
     :custom
     (evil-collection-magit-use-z-for-folds nil)
     (evil-collection-magit-want-horizontal-movement t)
+    ;; Only initialize for modes we actually use. Avoids surprise keybindings
+    ;; from being installed for every loaded package.
     :config
+    (setq evil-collection-mode-list
+          '(magit dired ibuffer help xref consult corfu vertico))
     (evil-collection-init))
 
   (with-eval-after-load 'evil

@@ -11,7 +11,6 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 #+begin_src emacs-lisp
   (use-package vertico
     :demand t
-    :config (vertico-mode)
     :custom
     (vertico-cycle t)
     (vertico-count 17)
@@ -27,6 +26,7 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
                 ("C-f" . vertico-scroll-down)
                 ("C-b" . vertico-scroll-up))
     :config
+    (vertico-mode)
     ;; Doom-like file navigation in minibuffer
     (require 'vertico-directory)
     (define-key vertico-map (kbd "C-h") #'vertico-directory-up)
@@ -40,31 +40,33 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 
 ** Vertico Multiform (Visual Enhancements)
 #+begin_src emacs-lisp
-  ;; Doom-like: highlight directories and enabled modes in completion
-  (use-package vertico-multiform
-    :hook (vertico-mode . vertico-multiform-mode)
-    :config
-    (defun +vertico-highlight-directory (file)
-      "Highlight directories with the marginalia directory face."
-      (when (string-suffix-p "/" file)
-        (add-face-text-property 0 (length file) 'marginalia-file-priv-dir 'append file))
-      file)
+;; Doom-like: highlight directories and enabled modes in completion.
+;; Functions prefixed `my/` to match the codebase convention; the
+;; Doom-style `+` prefix was inconsistent with our naming.
+(use-package vertico-multiform
+  :hook (vertico-mode . vertico-multiform-mode)
+  :config
+  (defun my/vertico-highlight-directory (file)
+    "Highlight directories with the marginalia directory face."
+    (when (string-suffix-p "/" file)
+      (add-face-text-property 0 (length file) 'marginalia-file-priv-dir 'append file))
+    file)
 
-    (defun +vertico-highlight-enabled-mode (cmd)
-      "Highlight enabled major/minor modes in M-x."
-      (let ((sym (intern cmd)))
-        (with-current-buffer (nth 1 (buffer-list))
-          (when (or (eq sym major-mode)
-                    (and (memq sym minor-mode-list)
-                         (boundp sym)
-                         (symbol-value sym)))
-            (add-face-text-property 0 (length cmd) 'font-lock-constant-face 'append cmd)))
-        cmd))
+  (defun my/vertico-highlight-enabled-mode (cmd)
+    "Highlight enabled major/minor modes in M-x."
+    (let ((sym (intern cmd)))
+      (with-current-buffer (nth 1 (buffer-list))
+        (when (or (eq sym major-mode)
+                  (and (memq sym minor-mode-list)
+                       (boundp sym)
+                       (symbol-value sym)))
+          (add-face-text-property 0 (length cmd) 'font-lock-constant-face 'append cmd)))
+      cmd))
 
-    (add-to-list 'vertico-multiform-categories
-                 '(file (+vertico-transform-functions . +vertico-highlight-directory)))
-    (add-to-list 'vertico-multiform-commands
-                 '(execute-extended-command (+vertico-transform-functions . +vertico-highlight-enabled-mode))))
+  (add-to-list 'vertico-multiform-categories
+               '(file (+vertico-transform-functions . my/vertico-highlight-directory)))
+  (add-to-list 'vertico-multiform-commands
+               '(execute-extended-command (+vertico-transform-functions . my/vertico-highlight-enabled-mode))))
 #+end_src
 
 ** Orderless (Fuzzy Matching)
@@ -98,9 +100,9 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
     :config
     (marginalia-mode)
 
-    ;; Doom-like: improve category detection for certain commands
+    ;; Doom-like: improve category detection for certain commands.
+    ;; (project.el only — projectile never installed.)
     (dolist (cat '((flycheck-error-list-set-filter . builtin)
-                   (projectile-switch-to-buffer . buffer)
                    (persp-switch-to-buffer . buffer)))
       (add-to-list 'marginalia-command-categories cat)))
 
@@ -116,7 +118,8 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 #+begin_src emacs-lisp
   (use-package savehist
     :ensure nil
-    :init (savehist-mode))
+    :init (savehist-mode)
+    (add-to-list 'savehist-additional-variables 'my/run-history))
 #+end_src
 
 ** Consult & Embark (Enhanced Completions)
@@ -146,9 +149,7 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
   (use-package embark
     :demand t
     :bind (("C-;" . embark-act)
-           ("M-;" . embark-act)   ; terminal-safe fallback
-           ("C-:" . embark-dwim)
-           ("M-:" . embark-dwim)) ; terminal-safe fallback
+           ("C-:" . embark-dwim))
     :init (setq prefix-help-command #'embark-prefix-help-command)
     :config
     (add-to-list 'display-buffer-alist
@@ -241,7 +242,7 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
     ;; Make LSP completion non-interruptible (key fix for stability)
     (advice-add #'lsp-completion-at-point :around #'cape-wrap-noninterruptible)
     (advice-add #'comint-completion-at-point :around #'cape-wrap-nonexclusive)
-    (advice-add #'eglot-completion-at-point :around #'cape-wrap-nonexclusive)
+    ;; eglot never installed — config uses lsp-mode exclusively.
     (advice-add #'pcomplete-completions-at-point :around #'cape-wrap-nonexclusive)
 
     ;; File completion in prog modes (LOW priority = runs after LSP)
@@ -266,9 +267,6 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
 #+end_src
 
 ** LSP Completion Integration
-#+begin_src emacs-lisp
-  ;; LSP uses Corfu for completion (like Doom)
-  (setq lsp-completion-provider :none)
-
-  (add-hook 'lsp-mode-hook #'lsp-completion-mode)
-#+end_src
+;; `lsp-completion-provider :none` is set in tools.org under the `lsp-mode`
+;; use-package's `:init` block; this section just enables `lsp-completion-mode`.
+(add-hook 'lsp-mode-hook #'lsp-completion-mode)

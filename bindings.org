@@ -15,7 +15,7 @@
     ;; --- Help & Config (h) ---
     (my/bind-leader "h b i" 'my/emacs-build-info "Emacs build info")
     (my/bind-leader "h k"   'my/which-key-debug "debug keybinding")
-    (my/bind-leader "h r r" (lambda () (interactive) (load-file user-init-file)) "reload config")
+    (my/bind-leader "h r r" (lambda () (interactive) (my/reload-config)) "reload config")
 
     ;; --- Buffer (b) ---
     (my/bind-leader "."   'find-file "browse files")
@@ -34,7 +34,6 @@
     (my/bind-leader "b K" 'my/kill-all-buffers "kill all buffers")
     (my/bind-leader "b O" 'my/kill-other-buffers "kill other buffers")
     (my/bind-leader "b N" 'evil-buffer "new buffer")
-    (my/bind-leader "b y" 'my/copy-this-file "copy file contents")
     (my/bind-leader "b R" 'rename-buffer "rename buffer")
     (my/bind-leader "b Y" 'bury-buffer "bury buffer")
 
@@ -107,8 +106,6 @@
     (my/bind-leader "f S" 'write-file "save as...")
     (my/bind-leader "f R" 'my/move-this-file "rename/move file")
     (my/bind-leader "f d" 'my/delete-this-file "delete file")
-    (my/bind-leader "f D" 'my/delete-this-file "delete file")
-    (my/bind-leader "f y" 'my/copy-file-path "copy file path")
     (my/bind-leader "f Y" 'my/copy-file-path-relative-to-project "copy relative path")
     (my/bind-leader "f p" (lambda () (interactive) (find-file (expand-file-name "config.org" user-emacs-directory))) "open config")
     (my/bind-leader "f e" (lambda () (interactive) (find-file (expand-file-name "early-init.el" user-emacs-directory))) "open early-init")
@@ -150,15 +147,15 @@
     (my/bind-leader "n d t" 'org-roam-dailies-capture-today "capture today")
 
     ;; --- Open (o) ---
-    (my/bind-leader "o p" 'popper-toggle "toggle popup")
      (my/bind-leader "o t h" 'my/open-terminal-here "here (Alacritty)")
-     (my/bind-leader "o t e" 'ghostel "ghostel")
+    (my/bind-leader "o p" 'my/popup-toggle "toggle popup")
      (my/bind-leader "o t p" 'ghostel-project "project (ghostel)")
      (my/bind-leader "o t a" 'eat "eat terminal")
      (my/bind-leader "o t t" 'ghostel-char-mode "ghostel char mode")
      (my/bind-leader "o d" 'docker "docker TUI")
      (my/bind-leader "o C" 'docker-compose "docker compose")
     (my/bind-leader "o k" 'kubernetes "kubernetes TUI")
+    (my/bind-leader "o g" 'gcloud-dired "gcloud dired")
 
     ;; --- Project (p) ---
     (my/bind-leader "p p" 'project-switch-project "switch project")

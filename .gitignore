@@ -33,6 +33,7 @@ sql-connections.el
 history
 org-roam.db
 transient/
+auto-save-list/
 projects
 
 # Nix store symlinks

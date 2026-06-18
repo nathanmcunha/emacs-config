@@ -8,21 +8,19 @@
 
 * Visuals & Themes
 #+begin_src emacs-lisp
-  (defun my/set-font (family &rest props)
-    "Set default face attributes if the family exists."
-    (when (member family (font-family-list))
-      (set-face-attribute 'default nil :family family :foundry "outline")))
 
   (defun my/safe-set-font (families &rest props)
     "Safely cycle through FAMILIES and apply the first match with PROPS."
-    (cl-loop for family in families
-             when (member family (font-family-list))
-             return (progn
-                      (set-face-attribute 'default nil :family family)
-                      (cl-loop for (prop val) on props by 'cddr
-                               do (set-face-attribute 'default nil prop val))))
-    (unless (member (car families) (font-family-list))
-      (message "Warning: None of the specified font families are available: %s" families)))
+    (let ((found nil))
+      (cl-loop for family in families
+               when (member family (font-family-list))
+               return (progn
+                        (setq found t)
+                        (set-face-attribute 'default nil :family family)
+                        (cl-loop for (prop val) on props by 'cddr
+                                 do (set-face-attribute 'default nil prop val))))
+      (unless found
+        (message "Warning: None of the specified font families are available: %s" families))))
 
 
   (defun my/setup-frame-visuals (frame)
@@ -58,7 +56,13 @@
   ;; Squirrelsong — light & dark variants
   ;; https://sapegin.me/squirrelsong/
   (defun my/squirrelsong-apply-rainbow (variant)
-    "Tune rainbow-identifiers for VARIANT (:light or :dark)."
+    "Tune rainbow-identifiers for VARIANT (:light or :dark).
+The saturation/lightness values are chosen to keep identifier colors
+visually distinct within each Squirrelsong palette:
+  - Light: lower saturation (40) prevents colors from washing out on
+    the bright background; lightness 50 keeps them readable against white.
+  - Dark: slightly higher saturation (45) lifts colors from the dark
+    background; lightness 70 ensures legibility on the dark base."
     (if (eq variant :light)
         (setq rainbow-identifiers-cie-l-saturation 40
               rainbow-identifiers-cie-l-lightness 50)
@@ -126,6 +130,10 @@
     :ensure t
     :hook (prog-mode . rainbow-identifiers-mode)
     :config
-    ;; Saturation/lightness tuned per-variant by my/load-squirrelsong
-    (setq rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
+    ;; Saturation/lightness tuned per-variant by my/load-squirrelsong.
+    ;; Defaults here ensure the variables exist before the first theme load;
+    ;; `my/squirrelsong-apply-rainbow' overrides them when switching themes.
+    (setq rainbow-identifiers-cie-l-saturation 40
+          rainbow-identifiers-cie-l-lightness 50
+          rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
 #+end_src

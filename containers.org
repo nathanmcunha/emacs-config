@@ -17,10 +17,10 @@
     (setq docker-compose-command "podman compose")
     (setq docker-container-tramp-method "podman")
 
-    (let ((uid (number-to-string (user-uid))))
-      (setenv "DOCKER_HOST" (concat "unix:///run/user/" uid "/podman/podman.sock"))
-      ;; Explicitly set the command with the socket path to avoid any environment issues
-      (setq docker-compose-command (concat "DOCKER_HOST=unix:///run/user/" uid "/podman/podman.sock podman compose")))
+    ;; DOCKER_HOST is exported by the systemd unit in emacs.nix (Phase 6).
+    ;; docker-compose-command stays as the bare executable; docker.el prepends
+    ;; DOCKER_HOST itself via `process-environment` when launching subprocesses.
+    (setq docker-compose-command "podman compose")
 
     :config
     ;; Podman network ls doesn't support the 'Scope' field in older versions
