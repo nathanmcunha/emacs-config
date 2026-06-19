@@ -39,6 +39,7 @@ projects
 # Nix store symlinks
 /init.el
 /early-init.el
+/themes/doom-rose-pine*.el
 
 # gptel saved sessions (org files with GPTEL_BACKEND properties)
 gptel-*.org

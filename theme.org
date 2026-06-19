@@ -53,32 +53,29 @@
   (setq-default line-spacing 0.4)
   (add-hook 'org-mode-hook #'variable-pitch-mode)
 
-  ;; Squirrelsong — light & dark variants
-  ;; https://sapegin.me/squirrelsong/
-  (defun my/squirrelsong-apply-rainbow (variant)
+  ;; Rosé Pine — light & dark Doom variants
+  ;; https://github.com/donniebreve/rose-pine-doom-emacs
+  (defun my/rose-pine-apply-rainbow (variant)
     "Tune rainbow-identifiers for VARIANT (:light or :dark).
-The saturation/lightness values are chosen to keep identifier colors
-visually distinct within each Squirrelsong palette:
-  - Light: lower saturation (40) prevents colors from washing out on
-    the bright background; lightness 50 keeps them readable against white.
-  - Dark: slightly higher saturation (45) lifts colors from the dark
-    background; lightness 70 ensures legibility on the dark base."
+Rosé Pine Dawn is a warm light theme — identifiers need lower
+saturation so they don't compete with the pastel background.
+Rosé Pine (dark) uses higher lightness for legibility on the dark base."
     (if (eq variant :light)
-        (setq rainbow-identifiers-cie-l-saturation 40
-              rainbow-identifiers-cie-l-lightness 50)
+        (setq rainbow-identifiers-cie-l-saturation 35
+              rainbow-identifiers-cie-l-lightness 45)
       (setq rainbow-identifiers-cie-l-saturation 45
             rainbow-identifiers-cie-l-lightness 70)))
 
-  (defun my/load-squirrelsong (&optional variant)
-    "Load Squirrelsong VARIANT (:light or :dark, default :dark)."
-    (let ((v (or variant :dark)))
-      (disable-theme 'squirrelsong-dark)
-      (disable-theme 'squirrelsong-light)
-      (load-theme (if (eq v :light) 'squirrelsong-light 'squirrelsong-dark) t)
-      (my/squirrelsong-apply-rainbow v)))
+  (defun my/load-rose-pine (&optional variant)
+    "Load Rosé Pine VARIANT (:light or :dark, default :light)."
+    (let ((v (or variant :light)))
+      (disable-theme 'doom-rose-pine)
+      (disable-theme 'doom-rose-pine-dawn)
+      (load-theme (if (eq v :light) 'doom-rose-pine-dawn 'doom-rose-pine) t)
+      (my/rose-pine-apply-rainbow v)))
 
-  ;; Default: dark.  Call (my/load-squirrelsong :light) to switch.
-  (my/load-squirrelsong :light)
+  ;; Default: light (Rosé Pine Dawn). Call (my/load-rose-pine :dark) to switch.
+  (my/load-rose-pine :light)
 
   (use-package nerd-icons
     :ensure t
@@ -130,10 +127,10 @@ visually distinct within each Squirrelsong palette:
     :ensure t
     :hook (prog-mode . rainbow-identifiers-mode)
     :config
-    ;; Saturation/lightness tuned per-variant by my/load-squirrelsong.
+    ;; Saturation/lightness tuned per-variant by my/load-rose-pine.
     ;; Defaults here ensure the variables exist before the first theme load;
-    ;; `my/squirrelsong-apply-rainbow' overrides them when switching themes.
-    (setq rainbow-identifiers-cie-l-saturation 40
-          rainbow-identifiers-cie-l-lightness 50
+    ;; `my/rose-pine-apply-rainbow' overrides them when switching themes.
+    (setq rainbow-identifiers-cie-l-saturation 35
+          rainbow-identifiers-cie-l-lightness 45
           rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
 #+end_src

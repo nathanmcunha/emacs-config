@@ -359,7 +359,7 @@ We start by cleaning up the UI to make it look modern and minimal, similar to Do
 ;; --- Theme ---
 ;; Theme loaded in theme.org via use-package :config.
 ;; No frame-background-mode override here — that conflicts with theme.org's
-;; `(my/load-squirrelsong :light)` call (light palette evaluated against a dark
+;; `(my/load-rose-pine :light)` call (Rosé Pine Dawn is a light palette; a dark
 ;; base renders faces, fringes, and ghostel/eat overlays wrong).
 
 ** GC Magic
