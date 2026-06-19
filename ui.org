@@ -76,7 +76,7 @@ Caller must set `default-directory' to the project root."
     (let ((gradlew (expand-file-name "gradlew" default-directory)))
         (mapcar (lambda (task) (format "./gradlew %s" task))
                 '("build" "test" "run" "clean" "bootRun"
-                  "assemble" "check" "classes" "jar")))))
+                  "assemble" "check" "classes" "jar"))))
 
   (defun my/run--docker-compose-services ()
     "Return docker compose commands if a compose file exists.
@@ -434,7 +434,7 @@ comint, eat, ghostel, and agent-shell buffers.
     (define-key evil-insert-state-map (kbd "j") 'my/evil-escape-jk)
     ;; Cursor colors fall through to the active theme's `:cursor` face — no
     ;; hardcoded Nord/Rosé-Pine values here. Per-theme tints are configured
-    ))
+    )
   (use-package evil-collection
     :after evil
     :ensure t

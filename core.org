@@ -139,7 +139,6 @@ to keep ~/.config/emacs/ clean of auto-generated files.
     (find-file new-name)
     (message "Copied '%s' to '%s'" filename new-name)))
 
-    (define-key evil-motion-state-map (kbd "K") #'my/smart-lookup))
 
 (defun my/reload-config ()
   "Reload every tangled .el module after `config.org` is re-tangled.

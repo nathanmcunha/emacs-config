@@ -203,6 +203,7 @@ Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Do
 ** Java Development (lsp-java)
 Java language server using Eclipse JDT.LS via lsp-java.
 
+#+begin_src emacs-lisp
   ;; `:hook` triggers deferred load; do NOT add `:demand t` — that would defeat the hook.
   (use-package lsp-java
     :ensure t
