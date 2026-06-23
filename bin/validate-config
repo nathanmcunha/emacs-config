@@ -118,6 +118,23 @@ else
 fi
 echo ""
 
+# Test 2b: Stale tangle check — warn if .org newer than .el
+echo "⏱️  Test 2b: Checking for stale tangle..."
+EL_FILE="${CONFIG_FILE%.org}.el"
+if [ -f "$EL_FILE" ]; then
+    ORG_TIME=$(stat -c %Y "$CONFIG_FILE" 2>/dev/null)
+    EL_TIME=$(stat -c %Y "$EL_FILE" 2>/dev/null)
+    if [ "$ORG_TIME" -gt "$EL_TIME" ]; then
+        echo "   ⚠️  $EL_FILE is stale (org newer than el)"
+        echo "      Re-tangle: emacs --batch -l org --eval \"(org-babel-tangle-file \\\"$CONFIG_FILE\\\")\""
+    else
+        echo "   ✅ Elisp file is up to date"
+    fi
+else
+    echo "   ℹ️  No corresponding .el file (not tangling?)"
+fi
+echo ""
+
 # Test 3: Horizontal indentation check (common mistake: wrong level)
 echo "🔧 Test 3: Checking for indentation and structure issues..."
 INDENT_ISSUES=$(awk '
@@ -146,36 +163,46 @@ else
 fi
 echo ""
 
-# Test 4: Attempt tangling to catch structural issues
-echo "🔄 Test 4: Testing Org tangling..."
-TEMP_TANGLE_DIR=$(mktemp -d)
-trap "rm -rf $TEMP_TANGLE_DIR" EXIT
-
-TANGLE_OUTPUT=$(emacs -Q --batch -l org \
+# Test 4: Tangle structure check, then load + byte-compile existing .el
+echo "🔄 Test 4: Tangling, loading, and byte-compiling..."
+ABS_CONFIG="$(realpath "$CONFIG_FILE")"
+EL_FILE="${CONFIG_FILE%.org}.el"
+# 4a: Tangle — verifies org structural integrity (exit code only)
+if emacs -Q --batch -l org --eval "(require 'ob-emacs-lisp)" \
     --eval "(setq org-confirm-babel-evaluate nil)" \
-    --eval "(setq user-emacs-directory \"$TEMP_TANGLE_DIR/\")" \
-    --eval "(org-babel-tangle-file \"$CONFIG_FILE\" \"$TEMP_TANGLE_DIR/test-tangle.el\")" 2>&1)
-
-TANGLE_EXIT=$?
-if [ $TANGLE_EXIT -eq 0 ]; then
+    --eval "(condition-case e (org-babel-tangle-file \"$ABS_CONFIG\") (error (kill-emacs 1)))" 2>/dev/null; then
     echo "   ✅ Tangling successful"
 else
-    echo "   ❌ Tangling failed! (exit code $TANGLE_EXIT)"
-    echo "      Run: emacs -Q --batch -l org -f org-babel-tangle-file \"$CONFIG_FILE\" /tmp/test.el"
+    echo "   ❌ Tangling failed"
     HAS_ERROR=1
+fi
+# 4b: Load — catches incomplete expressions (the bug I hit)
+if [ -f "$EL_FILE" ]; then
+    if emacs -Q --batch \
+        --eval "(condition-case e (progn (load \"$EL_FILE\" nil :nomessage) (kill-emacs 0)) (error (message \"LOAD-FAIL: %s\" (error-message-string e)) (kill-emacs 1)))" 2>&1 | grep -q "LOAD-FAIL"; then
+        echo "   ❌ Load failed (unbalanced parens or syntax error)"
+        HAS_ERROR=1
+    else
+        echo "   ✅ Loaded without errors"
+    fi
+    # 4c: Byte-compile — catches runtime issues
+    if emacs -Q --batch \
+        --eval "(condition-case e (progn (byte-compile-file \"$EL_FILE\") (kill-emacs 0)) (error (message \"COMPILE-FAIL: %s\" (error-message-string e)) (kill-emacs 1)))" 2>&1 | grep -q "COMPILE-FAIL"; then
+        echo "   ❌ Byte-compilation failed"
+        HAS_ERROR=1
+    else
+        echo "   ✅ Byte-compilation successful"
+    fi
+else
+    echo "   ⚠️  No .el file to load (tangle first)"
 fi
 echo ""
 
-# Test 5: Check for common syntax errors in Lisp
-echo "🔬 Test 5: Checking for common Emacs Lisp syntax issues..."
-SYNTAX_ISSUES=$(awk '
-  /\\'\''/ {
-    print "Line " NR ": Odd escape sequence";
-  }
-' "$CONFIG_FILE")
-
+# Test 5: Basic syntax sanity check
+echo "🔬 Test 5: Syntax sanity check..."
+SYNTAX_ISSUES=$(grep -Pn '[^\x00-\x7E\x09\x0A\x0D]' "$CONFIG_FILE" 2>/dev/null || true)
 if [ -n "$SYNTAX_ISSUES" ]; then
-    echo "   ⚠️  Potential syntax issues:"
+    echo "   ⚠️  Non-ASCII characters found:"
     echo "$SYNTAX_ISSUES" | sed 's/^/      /'
 else
     echo "   ✅ No obvious syntax issues"

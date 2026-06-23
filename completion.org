@@ -1,5 +1,5 @@
-# -*- lexical-binding: t; -*-
 #+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
+
 
 #+begin_src emacs-lisp
 ;;; completion.el --- Completion System -*- lexical-binding: t -*-
@@ -29,6 +29,8 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
     (vertico-mode)
     ;; Doom-like file navigation in minibuffer
     (require 'vertico-directory)
+    ;; Tidy shadowed path syntax (~/foo/bar/// -> /, ~/foo/bar/~/ -> ~/)
+    (add-hook 'rfn-eshadow-update-overlay-hook #'vertico-directory-tidy)
     (define-key vertico-map (kbd "C-h") #'vertico-directory-up)
     (define-key vertico-map (kbd "DEL") #'vertico-directory-delete-char)
     (define-key vertico-map (kbd "M-DEL") #'vertico-directory-delete-word)
@@ -40,12 +42,23 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
 
 ** Vertico Multiform (Visual Enhancements)
 #+begin_src emacs-lisp
-;; Doom-like: highlight directories and enabled modes in completion.
-;; Functions prefixed `my/` to match the codebase convention; the
-;; Doom-style `+` prefix was inconsistent with our naming.
-(use-package vertico-multiform
-  :hook (vertico-mode . vertico-multiform-mode)
-  :config
+;; Candidate display transforms (directory + enabled-mode highlighting).
+;; vertico-multiform registers per-category transform *functions*, but a
+;; `cl-defmethod' on `vertico--format-candidate' is what actually invokes
+;; them (minad/vertico wiki). Without it the registrations are no-ops.
+;; Variable prefixed `my/' to match the codebase convention.
+(with-eval-after-load 'vertico
+  (vertico-multiform-mode)
+
+  (defvar my/vertico-transform-functions nil
+    "Per-category candidate transform functions; invoked while formatting.")
+
+  (cl-defmethod vertico--format-candidate :around
+    (cand prefix suffix index start &context ((not my/vertico-transform-functions) null))
+    (dolist (fun (ensure-list my/vertico-transform-functions))
+      (setq cand (funcall fun cand)))
+    (cl-call-next-method cand prefix suffix index start))
+
   (defun my/vertico-highlight-directory (file)
     "Highlight directories with the marginalia directory face."
     (when (string-suffix-p "/" file)
@@ -64,9 +77,9 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
       cmd))
 
   (add-to-list 'vertico-multiform-categories
-               '(file (+vertico-transform-functions . my/vertico-highlight-directory)))
+               '(file (my/vertico-transform-functions . my/vertico-highlight-directory)))
   (add-to-list 'vertico-multiform-commands
-               '(execute-extended-command (+vertico-transform-functions . my/vertico-highlight-enabled-mode))))
+               '(execute-extended-command (my/vertico-transform-functions . my/vertico-highlight-enabled-mode))))
 #+end_src
 
 ** Orderless (Fuzzy Matching)
@@ -129,22 +142,61 @@ Based on Doom Emacs configuration patterns for a clean, IDE-like experience.
     :custom
     (consult-narrow-key "<")
     (consult-widen-key ">")
-    (consult-preview-key "M-.")
+    (consult-preview-key "C-SPC")
     (consult-project-function (lambda (_) (when-let* ((p (project-current))) (project-root p))))
     :bind (("C-x b" . consult-buffer)
            ("C-x C-b" . consult-buffer)
            ("M-y" . consult-yank-pop)
-           ("M-." . consult-mark-symbol)
+           ("M-#" . consult-register)
            ("M-?" . consult-ripgrep))
     :config
-    ;; Doom-like preview defaults
+    ;; Doom-like preview defaults (C-SPC previews on demand; M-. stays xref-find-definitions)
     (consult-customize consult-buffer consult-source-recent-file
-                       :preview-key "M-.")
+                       :preview-key "C-SPC")
     (setq register-preview-delay 0.5
           register-preview-function #'consult-register-format)
     (advice-add #'register-preview :override #'consult-register-window)
     (setq xref-show-xrefs-function #'consult-xref
           xref-show-definitions-function #'consult-xref))
+
+  ;; Evil: make `consult-register' see evil's registers, and route evil's
+  ;; register display through consult. Ports doom's `+evil--*-registers-a'.
+  (defvar my/evil-use-evil-registers t)
+
+  (defun my/evil-use-evil-registers-a (fn register)
+    "Resolve REGISTER from Evil when Evil is active (merged register view)."
+    (if (and (characterp register)
+             my/evil-use-evil-registers
+             (or (bound-and-true-p evil-mode)
+                 (bound-and-true-p evil-local-mode)))
+        (if (char-equal register ?=)
+            evil-last-=-register-input
+          (let (my/evil-use-evil-registers)
+            (evil-get-register register t)))
+      (funcall fn register)))
+
+  (defun my/evil-propagate-registers-a (fn &rest args)
+    "Merge Evil's registers into Emacs' for preview/list operations."
+    (let ((register-alist
+           (if (and my/evil-use-evil-registers
+                    (or (bound-and-true-p evil-mode)
+                        (bound-and-true-p evil-local-mode)))
+               (evil-register-list)
+             register-alist)))
+      (apply fn args)))
+
+  (with-eval-after-load 'evil
+    (advice-add #'get-register :around #'my/evil-use-evil-registers-a)
+    (advice-add #'register-swap-out :around #'my/evil-propagate-registers-a)
+    (advice-add #'register-buffer-to-file-query :around #'my/evil-propagate-registers-a)
+    (advice-add #'list-registers :around #'my/evil-propagate-registers-a)
+    (when (fboundp 'register-read-with-preview-fancy)
+      (advice-add #'register-read-with-preview-fancy :around #'my/evil-propagate-registers-a))
+    (define-key evil-motion-state-map [remap evil-show-registers] #'consult-register)
+    (define-key evil-normal-state-map [remap evil-show-registers] #'consult-register))
+
+  (with-eval-after-load 'consult
+    (advice-add #'consult-register--alist :around #'my/evil-propagate-registers-a))
 
   (use-package embark
     :demand t
@@ -190,14 +242,14 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
     (corfu-quit-no-match 'separator)
     (corfu-popupinfo-delay '(0.8 . 0.4))
     :init
-    (setq tab-always-indent 'complete)
+    (setq tab-always-indent 'complete)  ; Doom-style: indent first, then complete
     :bind
     (:map corfu-map
           ("C-j" . corfu-next)
           ("C-k" . corfu-previous)
           ("C-l" . corfu-insert)
           ("C-h" . corfu-reset)
-          ("TAB" . corfu-next)
+          ("TAB" . corfu-next)           ; Only active when popup visible (keymap precedence)
           ([tab] . corfu-next)
           ("S-TAB" . corfu-previous)
           ([backtab] . corfu-previous)
@@ -207,25 +259,24 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
           ("M-n" . corfu-popupinfo-scroll-down))
     :config
     (global-corfu-mode)
+    ;; Evil: dismiss the popup when leaving insert state (ESC). Doom parity.
+    (with-eval-after-load 'evil
+      (add-hook 'evil-insert-state-exit-hook #'corfu-quit))
     (keymap-global-set "C-." #'completion-at-point)
-    (keymap-global-set "C-SPC" #'completion-at-point)
 
     ;; Use orderless for LSP completions (like Doom)
-    (add-to-list 'completion-category-overrides `(lsp-capf (styles orderless)))
+    (add-to-list 'completion-category-overrides `(lsp-capf (styles orderless basic)))
 
     ;; Exclude modes where Corfu shouldn't activate
     (setq global-corfu-modes
           '((not erc-mode circe-mode help-mode gud-mode ghostel-mode magit-mode)
             t)))
 
-  (use-package corfu-popupinfo
-    :hook ((corfu-mode . corfu-popupinfo-mode)))
-
-  (use-package corfu-history
-    :hook ((corfu-mode . corfu-history-mode))
-    :config
+    ;; Enable built-in extensions
+    (corfu-popupinfo-mode)
+    (corfu-history-mode)
     (with-eval-after-load 'savehist
-      (add-to-list 'savehist-additional-variables 'corfu-history)))
+      (add-to-list 'savehist-additional-variables 'corfu-history))
 
   ;; Nerd Icons for Corfu
   (use-package nerd-icons-corfu
@@ -267,6 +318,56 @@ Based on Doom Emacs corfu configuration for VS Code-like IntelliSense.
 #+end_src
 
 ** LSP Completion Integration
+#+begin_src emacs-lisp
 ;; `lsp-completion-provider :none` is set in tools.org under the `lsp-mode`
 ;; use-package's `:init` block; this section just enables `lsp-completion-mode`.
 (add-hook 'lsp-mode-hook #'lsp-completion-mode)
+#+end_src
+
+** Org-Mode TAB Completion
+#+begin_src emacs-lisp
+;; org-cycle intercepts TAB for visibility folding, which blocks
+;; `tab-always-indent' inside src blocks. Delegate to
+;; `indent-for-tab-command' when point is inside a src block body.
+(with-eval-after-load 'org
+  (defun my/org-cycle-complete-a (fn &rest args)
+    "Inside Org src blocks, delegate TAB to `indent-for-tab-command'.
+Outside src blocks, fall through to `org-cycle' for visibility folding."
+    (if (org-in-src-block-p t)
+        (call-interactively #'indent-for-tab-command)
+      (apply fn args)))
+  (advice-add 'org-cycle :around #'my/org-cycle-complete-a))
+#+end_src
+
+** Evil Insert State TAB Delegation
+#+begin_src emacs-lisp
+;; evil-motion-state-map carries TAB -> `evil-jump-forward' as an auxiliary
+;; map that shadows insert state. Without a binding in evil-insert-state-map,
+;; TAB in org/prog buffers never reaches the major-mode or minor-mode bindings.
+;; Override with a DWIM dispatcher: check the major-mode (local) map first
+;; (so org-cycle wins over minor-mode yasnippet), then walk active maps for
+;; minor-mode fallbacks. Falls back to `indent-for-tab-command'.
+(defun my/evil-tab-dwim ()
+  "Delegate TAB: major-mode first, then minor-mode maps, then indent."
+  (interactive)
+  (let* ((tab (kbd "TAB"))
+         (local (lookup-key (current-local-map) tab))
+         (cmd (or (and local (commandp local)
+                       (not (memq local '(evil-jump-forward)))
+                       local)
+                  (cl-loop for map in (current-active-maps)
+                           for binding = (lookup-key map tab)
+                           when (and binding (commandp binding)
+                                     (not (memq binding '(evil-jump-forward my/evil-tab-dwim))))
+                           return binding))))
+    (if cmd
+        (call-interactively cmd)
+      (call-interactively #'indent-for-tab-command))))
+
+(with-eval-after-load 'evil
+  (define-key evil-insert-state-map (kbd "TAB") #'my/evil-tab-dwim)
+  (define-key evil-insert-state-map (kbd "<tab>") #'my/evil-tab-dwim)
+  ;; In org-mode normal state, TAB should cycle visibility, not evil-jump-forward
+  (evil-define-key 'normal org-mode-map (kbd "TAB") 'org-cycle)
+  (evil-define-key 'normal org-mode-map (kbd "<tab>") 'org-cycle))
+#+end_src

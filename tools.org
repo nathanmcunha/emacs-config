@@ -1,4 +1,4 @@
-# -*- lexical-binding: t; -*-
+
 
 #+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
@@ -11,6 +11,9 @@
  #+begin_src emacs-lisp
   (use-package yasnippet
     :ensure t
+    :bind (:map yas-minor-mode-map
+          ("TAB" . yas-maybe-expand)
+          ([tab] . yas-maybe-expand))
     :config
     (setq yas-snippet-dirs (list (expand-file-name "snippets" user-emacs-directory)))
     (yas-global-mode 1))
@@ -1040,7 +1043,7 @@ Module for subtle coverage visualization.
 #+end_src
 
 ** TRAMP (Remote Connections)
-Provider-agnostic SSH multiplexing for fast TRAMP connections, plus custom methods for GCP and AWS.
+Provider-agnostic SSH multiplexing for fast TRAMP connections, plus a custom method for AWS SSM.
 
 #+begin_src emacs-lisp
   (with-eval-after-load 'tramp
@@ -1048,14 +1051,18 @@ Provider-agnostic SSH multiplexing for fast TRAMP connections, plus custom metho
     ;; so every file operation after the first is near-instant.
     (setq tramp-ssh-controlmaster-options
           (concat "-o ControlMaster=auto "
-                   "-o ControlPath=~/.ssh/sockets/%r@%h-%p "
+                   "-o ControlPath=~/.ssh/sockets/%%r@%%h-%%p "
                    "-o ControlPersist=600 "
                    "-o ServerAliveInterval=60 "
                    "-o ServerAliveCountMax=3"))
 
-    ;; GCP: direct SSH or "gcloud" TRAMP method
-    ;; /ssh:INSTANCE_EXTERNAL_IP:/path   or   /gcloud:INSTANCE_NAME:/path
-    (load (expand-file-name "gcloud-tramp" user-emacs-directory) nil 'nomessage)
+    ;; SSH host completion: parse main config + gcloud_config
+    ;; (Include isn't always followed by tramp-parse-sconfig)
+    (tramp-set-completion-function
+     "ssh"
+     '((tramp-parse-sconfig "~/.ssh/config")
+       (tramp-parse-sconfig "~/.ssh/gcloud_config")
+       (tramp-parse-shosts "~/.ssh/known_hosts")))
 
     ;; AWS: SSM Session Manager — no bastion host or open SSH port needed.
     ;; Requires: awscli2 + ssm-session-manager-plugin in PATH

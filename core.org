@@ -145,11 +145,16 @@ to keep ~/.config/emacs/ clean of auto-generated files.
 Nix loads config.el which does `(dolist ... (load path))`; mirroring that loop
 here keeps the runtime model identical so reload order, hooks, and advice stay consistent."
   (interactive)
-  (dolist (file '("core.el" "ui.el" "theme.el" "completion.el" "tools.el"
-                  "bindings.el" "notes.el" "containers.el" "ai.el" "eca.el"))
-    (let ((path (expand-file-name file user-emacs-directory)))
-      (when (file-exists-p path)
-        (load path 'noerror 'nomessage))))
+  (let ((files '("core.el" "ui.el" "theme.el" "completion.el" "tools.el"
+                 "bindings.el" "notes.el" "containers.el" "ai.el" "eca.el")))
+    (dolist (file files)
+      (let ((path (expand-file-name file user-emacs-directory)))
+        (when (file-exists-p path)
+          (load path 'noerror 'nomessage))))
+    ;; Recompile to .eln after tangling so next reload is instant
+    (when (featurep 'native-compile)
+      (dolist (file files)
+        (native-compile-async (expand-file-name file user-emacs-directory)))))
   (when (file-exists-p (expand-file-name "config.el" user-emacs-directory))
     (load (expand-file-name "config.el" user-emacs-directory) 'noerror 'nomessage))
   (message "Reloaded Emacs config."))
@@ -405,10 +410,7 @@ To mimic Doom's leader keys (~SPC~), we use native Emacs 30+ keymaps and ~which-
     "Apply leader bindings for Evil and global fallback keys."
     (when (featurep 'evil)
       ;; Doom-like + robust precedence over mode maps
-      (evil-define-key* '(normal visual motion) 'global (kbd "SPC") my-leader-map)
-      ;; Insert-state fallback for terminal/GUI reliability
-      (keymap-set evil-insert-state-map "M-SPC" my-leader-map)
-      (keymap-set evil-insert-state-map "C-SPC" my-leader-map))
+      (evil-define-key* '(normal visual motion) 'global (kbd "SPC") my-leader-map))
     ;; Global fallback when Evil is not active
     (keymap-global-set "M-SPC" my-leader-map))
 

@@ -1,4 +1,4 @@
-# -*- lexical-binding: t; -*-
+
 
 #+TITLE: Emacs Config (Modular)
 #+AUTHOR: Nathan Martins Cunha

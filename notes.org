@@ -1,4 +1,4 @@
-# -*- lexical-binding: t; -*-
+
 
 #+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
@@ -59,6 +59,7 @@ Guard against non-existent files — `file-truename' signals on missing paths."
         )
 
 
+
   (use-package org-modern
         :ensure t
         :hook (org-mode . org-modern-mode)
@@ -79,28 +80,28 @@ Guard against non-existent files — `file-truename' signals on missing paths."
     :ensure t
     :hook (org-mode . valign-mode))
 
-      ;; variable-pitch-mode is built-in; fix code/table faces to stay monospace
-      (add-hook 'org-mode-hook 'variable-pitch-mode)
-      (with-eval-after-load 'org
-        (dolist (face '(org-block org-code org-table org-verbatim
-                        org-meta-line org-block-begin-line org-block-end-line))
-          (set-face-attribute face nil :inherit 'fixed-pitch)))
+  ;; variable-pitch-mode is built-in; fix code/table faces to stay monospace
+  (add-hook 'org-mode-hook 'variable-pitch-mode)
+  (with-eval-after-load 'org
+    (dolist (face '(org-block org-code org-table org-verbatim
+                    org-meta-line org-block-begin-line org-block-end-line))
+      (set-face-attribute face nil :inherit 'fixed-pitch)))
 
 ;; Babel languages are registered in ai.org (the only module that needs gptel).
 ;; ob-mermaid is loaded here for the package; babel registration stays in ai.org.
 (use-package ob-mermaid :ensure t :after org)
 
 
-      (use-package org-roam
-        :ensure t
-        :init
-        (setq org-roam-v2-ack t)
-        (setq org-roam-directory (expand-file-name "~/org"))
-        (unless (file-directory-p org-roam-directory)
-          (make-directory org-roam-directory t))
-        :custom
-        (org-roam-completion-everywhere nil)
-        :config (org-roam-db-autosync-mode))
+  (use-package org-roam
+    :ensure t
+    :init
+    (setq org-roam-v2-ack t)
+    (setq org-roam-directory (expand-file-name "~/org"))
+    (unless (file-directory-p org-roam-directory)
+      (make-directory org-roam-directory t))
+    :custom
+    (org-roam-completion-everywhere nil)
+    :config (org-roam-db-autosync-mode))
 #+end_src
 
 * Markdown

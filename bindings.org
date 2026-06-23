@@ -1,4 +1,4 @@
-# -*- lexical-binding: t; -*-
+
 
 #+PROPERTY: header-args:emacs-lisp :tangle yes :results silent
 
@@ -155,7 +155,6 @@
      (my/bind-leader "o d" 'docker "docker TUI")
      (my/bind-leader "o C" 'docker-compose "docker compose")
     (my/bind-leader "o k" 'kubernetes "kubernetes TUI")
-    (my/bind-leader "o g" 'gcloud-dired "gcloud dired")
 
     ;; --- Project (p) ---
     (my/bind-leader "p p" 'project-switch-project "switch project")
