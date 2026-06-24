@@ -64,6 +64,46 @@
   (use-package git-timemachine :ensure t)
 #+end_src
 
+** Helpful Documentation
+#+begin_src emacs-lisp
+(use-package helpful
+  :ensure t
+  :defer t)
+#+end_src
+
+** Kirigami (Unified Folding)
+#+begin_src emacs-lisp
+(use-package kirigami
+  :ensure t
+  :custom
+  (kirigami-preserve-visual-position t)
+  :config
+  (kirigami-global-mode 1))
+#+end_src
+
+** Tree-sitter Fold
+#+begin_src emacs-lisp
+(use-package treesit-fold
+  :ensure t
+  :config
+  (global-treesit-fold-mode 1)
+  (setq treesit-fold-line-count-show t)
+  (global-treesit-fold-indicators-mode 1))
+#+end_src
+
+** Outline Indent (Indentation-based Folding)
+#+begin_src emacs-lisp
+(use-package outline-indent
+  :ensure t
+  :after kirigami
+  :config
+  ;; Register non-tree-sitter modes that outline-indent can't auto-detect.
+  ;; nix-mode uses tab-width 2; qml-mode uses standard c-basic-offset.
+  (add-to-list 'outline-indent--mode-basic-offset-map '(nix-mode . tab-width))
+  (add-to-list 'outline-indent--mode-basic-offset-map '(qml-mode . c-basic-offset))
+  :hook ((nix-mode qml-mode emacs-lisp-mode) . outline-indent-minor-mode))
+#+end_src
+
 ** LSP Mode Core
 Unified LSP client for Java, Python, JavaScript, TypeScript, HTML, CSS, YAML, Docker, SQL, Nix, and QML.
 
@@ -424,6 +464,17 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
     :after (lsp-mode treemacs)
     :config
     (lsp-treemacs-sync-mode 1))
+#+end_src
+
+** Page Break Lines
+#+begin_src emacs-lisp
+(use-package page-break-lines
+  :ensure t
+  :config
+  (global-page-break-lines-mode 1)
+  ;; Exclude org-mode (org-indent+visual-line display corruption)
+  (setq page-break-lines-modes
+        (delq 'org-mode page-break-lines-modes)))
 #+end_src
 
 ** Formatting (Apheleia)
@@ -1079,4 +1130,33 @@ Provider-agnostic SSH multiplexing for fast TRAMP connections, plus a custom met
 
     ;; Default remote shell for all methods
     (setq tramp-default-remote-shell "/bin/bash"))
+#+end_src
+
+
+** MCP Server (Elisp Dev Tools)
+An MCP server that exposes Emacs Lisp development tools to AI agents via the Model Context Protocol.
+Requires an active Emacs daemon and `M-x mcp-server-lib-start` before use.
+
+#+begin_src emacs-lisp
+  (use-package mcp-server-lib
+    :ensure t
+    :custom
+    ;; Script installs to ~/.config/emacs/emacs-mcp-stdio.sh (XDG default)
+    (mcp-server-lib-install-directory (expand-file-name "~/.config/emacs/")))
+
+  (use-package elisp-dev-mcp
+    :ensure t
+    :after mcp-server-lib)
+#+end_src
+
+** Indent Bars
+#+begin_src emacs-lisp
+(use-package indent-bars
+  :ensure t
+  :config
+  ;; Workaround for evil column-jumping on blank lines
+  (setq indent-bars-no-descend-string t)
+  ;; Suppress inconsistent rendering in org src blocks
+  (setq indent-bars-disable-in-org-src-blocks t)
+  :hook ((prog-mode text-mode conf-mode) . indent-bars-mode))
 #+end_src

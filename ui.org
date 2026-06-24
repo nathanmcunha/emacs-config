@@ -448,6 +448,17 @@ comint, eat, ghostel, and agent-shell buffers.
           '(magit dired ibuffer help xref consult corfu vertico))
     (evil-collection-init))
 
+  ;; Replace default evil folding keys with kirigami dispatcher.
+  ;; Delegates to treesit-fold (ts-modes), outline-indent (non-ts),
+  ;; or org-mode folding depending on buffer context.
+  (with-eval-after-load 'evil
+    (define-key evil-normal-state-map "zo" 'kirigami-open-fold)
+    (define-key evil-normal-state-map "zO" 'kirigami-open-fold-rec)
+    (define-key evil-normal-state-map "zc" 'kirigami-close-fold)
+    (define-key evil-normal-state-map "za" 'kirigami-toggle-fold)
+    (define-key evil-normal-state-map "zr" 'kirigami-open-folds)
+    (define-key evil-normal-state-map "zm" 'kirigami-close-folds))
+
   (with-eval-after-load 'evil
     (setq evil-emacs-state-modes
           '(help-mode
