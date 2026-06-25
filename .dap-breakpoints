@@ -1,1 +1,1 @@
-#s(hash-table test equal)
+#s(hash-table test equal data ("/home/nathanmcunha/dotfiles/modules/ghostty.nix" ((:point 1))))

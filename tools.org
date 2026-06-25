@@ -1101,11 +1101,23 @@ Provider-agnostic SSH multiplexing for fast TRAMP connections, plus a custom met
     ;; Performance: persistent SSH control sockets — TRAMP reuses a single connection
     ;; so every file operation after the first is near-instant.
     (setq tramp-ssh-controlmaster-options
-          (concat "-o ControlMaster=auto "
-                   "-o ControlPath=~/.ssh/sockets/%%r@%%h-%%p "
-                   "-o ControlPersist=600 "
-                   "-o ServerAliveInterval=60 "
-                   "-o ServerAliveCountMax=3"))
+          (concat
+           "-o ControlMaster=auto "
+           "-o ControlPath=~/.ssh/sockets/%%r@%%h-%%p "
+           "-o ControlPersist=600 "
+           "-o ServerAliveInterval=60 "
+           "-o ServerAliveCountMax=3 "
+           "-o ConnectTimeout=10 "
+           "-o GSSAPIAuthentication=no "
+           "-o PasswordAuthentication=no "
+           "-o StreamLocalBindUnlink=yes"))
+
+    ;; Safety net: cap connection attempts (default is 60s, way too long)
+    (setq tramp-connection-timeout 15)
+
+    ;; Debugging: set to 6 only when troubleshooting; 3 is default.
+    ;; Level 0 suppresses all TRAMP messages (fastest).
+    ;; (setq tramp-verbose 1)
 
     ;; SSH host completion: parse main config + gcloud_config
     ;; (Include isn't always followed by tramp-parse-sconfig)

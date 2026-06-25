@@ -26,7 +26,10 @@ to keep ~/.config/emacs/ clean of auto-generated files.
 (defconst my-data-dir (expand-file-name "~/.local/share/emacs/"))
 
 ;; Make sure state/cache directories exist
-(dolist (dir (list my-state-dir my-cache-dir my-data-dir))
+(dolist (dir (list my-state-dir my-cache-dir my-data-dir
+                   (expand-file-name "backup/" my-state-dir)
+                   (expand-file-name "auto-save/" my-cache-dir)
+                   (expand-file-name "locks/" my-cache-dir)))
   (unless (file-directory-p dir)
     (make-directory dir t)))
 
@@ -95,39 +98,237 @@ to keep ~/.config/emacs/ clean of auto-generated files.
   (declare-function json-read-file "json"))
 
 
-;; --- Doom-like "K" Documentation Lookup ---
-(defun my/smart-lookup ()
-  "Lookup documentation for the thing at point.
-   1. Elisp: describe-symbol
-   2. Org Src Block (Elisp): describe-symbol
-   3. LSP / lsp-mode: lsp-describe-thing-at-point
-   4. Fallback: evil-lookup"
+;; --- Doom-style Lookup System (definition, references, docs, files) ---
+
+;; Backend hook variables — each is an ordered list of (identifier) functions.
+;; `run-hook-with-args-until-success' calls them in order; first non-nil wins.
+(defvar my/lookup-definition-functions '()
+  "Ordered list of backend functions for `my/lookup-definition'.
+Each called with IDENTIFIER; stops at first non-nil result that moves point.")
+
+(defvar my/lookup-references-functions '()
+  "Ordered list of backend functions for `my/lookup-references'.")
+
+(defvar my/lookup-implementations-functions '()
+  "Ordered list of backend functions for `my/lookup-implementations'.")
+
+(defvar my/lookup-type-definition-functions '()
+  "Ordered list of backend functions for `my/lookup-type-definition'.")
+
+(defvar my/lookup-documentation-functions '()
+  "Ordered list of backend functions for `my/lookup-documentation'.
+Unlike jump commands, doc backends display info rather than moving point.")
+
+(defvar my/lookup-file-functions '()
+  "Ordered list of backend functions for `my/lookup-file'.")
+
+;; --- LSP backends ---
+(defun my/lookup--lsp-definition (_identifier)
+  "Call `lsp-find-definition'; return t if point moved."
+  (when (bound-and-true-p lsp-mode)
+    (let ((start (point)))
+      (ignore-errors (lsp-find-definition))
+      (/= start (point)))))
+
+(defun my/lookup--lsp-references (_identifier)
+  (when (bound-and-true-p lsp-mode)
+    (ignore-errors (lsp-find-references))
+    t))
+
+(defun my/lookup--lsp-implementations (_identifier)
+  (when (bound-and-true-p lsp-mode)
+    (ignore-errors (lsp-find-implementation))
+    t))
+
+(defun my/lookup--lsp-type-definition (_identifier)
+  (when (bound-and-true-p lsp-mode)
+    (ignore-errors (lsp-find-type-definition))
+    t))
+
+;; --- xref backends (built-in, works with TAGS/etags) ---
+(defun my/lookup--xref-definition (identifier)
+  (when (fboundp 'xref-find-definitions)
+    (ignore-errors (xref-find-definitions identifier))
+    t))
+
+(defun my/lookup--xref-references (identifier)
+  (when (fboundp 'xref-find-references)
+    (ignore-errors (xref-find-references identifier))
+    t))
+
+;; --- Consult-ripgrep fallback (project-wide text search) ---
+(defun my/lookup--consult-ripgrep (identifier)
+  "Search IDENTIFIER across project with ripgrep via Consult."
+  (when (and (fboundp 'consult-ripgrep)
+             identifier
+             (project-current))
+    (consult-ripgrep (project-root (project-current))
+                     (regexp-quote identifier))
+    t))
+
+;; --- Evil goto-definition (in-buffer text search, last resort) ---
+(defun my/lookup--evil-goto-definition (_identifier)
+  "Use `evil-goto-definition' as last-resort in-buffer definition search."
+  (when (fboundp 'evil-goto-definition)
+    (ignore-errors (evil-goto-definition) t)))
+
+;; --- Documentation backends ---
+(defun my/lookup--elisp-doc (_identifier)
+  "Look up Elisp symbol documentation.
+Handles use-package declarations, package names, and symbols from installed packages."
+  (when (derived-mode-p 'emacs-lisp-mode)
+    (let* ((sym-str (thing-at-point 'symbol))
+           (sym (and sym-str (intern-soft sym-str))))
+      (cond ((not sym) nil)
+            ;; Installed package → describe-package
+            ((and (boundp 'package-alist) (assq sym package-alist))
+             (describe-package sym)
+             t)
+            ;; Bound/fbound/face symbol → helpful
+            ((or (boundp sym) (fboundp sym) (facep sym)
+                 (symbol-plist sym) (get sym 'event-kind))
+             (ignore-errors (helpful-at-point) t))))))
+
+(defun my/lookup--org-elisp-doc (_identifier)
+  "Look up symbol in Org Elisp src block."
+  (when (and (eq major-mode 'org-mode) (org-in-src-block-p))
+    (let* ((lang (car (org-babel-get-src-block-info)))
+           (sym-str (thing-at-point 'symbol t))
+           (sym (and sym-str (intern-soft sym-str))))
+      (when (string= lang "emacs-lisp")
+        (cond ((and sym (or (boundp sym) (fboundp sym) (facep sym)))
+               (ignore-errors (helpful-at-point) t))
+              ;; Installed package → describe-package
+              ((and sym (boundp 'package-alist) (assq sym package-alist))
+               (describe-package sym)
+               t))))))
+
+(defun my/lookup--org-doc (_identifier)
+  "Open org links at point, or describe org context."
+  (when (eq major-mode 'org-mode)
+    (cond ((org-in-regexp org-link-any-re)
+           (org-open-at-point)
+           t)
+          ((org-at-heading-p)
+           (describe-function 'org-mode)
+           t))))
+
+(defun my/lookup--lsp-doc (_identifier)
+  "Show LSP hover documentation."
+  (when (bound-and-true-p lsp-mode)
+    (ignore-errors (lsp-describe-thing-at-point))
+    t))
+
+(defun my/lookup--evil-lookup (_identifier)
+  "Fallback: Evil's built-in lookup."
+  (when (fboundp 'evil-lookup)
+    (call-interactively #'evil-lookup)
+    t))
+
+;; --- File backend ---
+(defun my/lookup--ffap (identifier)
+  "Try `find-file-at-point', then locate-dominating-file walk."
+  (unless identifier
+    (setq identifier (thing-at-point 'filename t)))
+  (when (stringp identifier)
+    (cond ((file-exists-p identifier)
+           (find-file identifier)
+           t)
+          ((ffap-url-p identifier)
+           (find-file-at-point identifier)
+           t)
+          ((string-match-p "/" identifier)
+           (when-let* ((dir (locate-dominating-file default-directory identifier))
+                       (proj (project-current))
+                       ((file-in-directory-p dir (project-root proj))))
+             (find-file (expand-file-name identifier dir))
+             t)))))
+
+;; --- Top-level lookup commands ---
+(defun my/lookup-definition (identifier)
+  "Jump to the definition of IDENTIFIER (symbol at point).
+Tries backends in `my/lookup-definition-functions' in order."
+  (interactive (list (thing-at-point 'symbol)))
+  (unless identifier (user-error "Nothing under point"))
+  (or (run-hook-with-args-until-success 'my/lookup-definition-functions identifier)
+      (user-error "Couldn't find the definition of %S" identifier)))
+
+(defun my/lookup-references (identifier)
+  "Find references of IDENTIFIER (symbol at point)."
+  (interactive (list (thing-at-point 'symbol)))
+  (unless identifier (user-error "Nothing under point"))
+  (or (run-hook-with-args-until-success 'my/lookup-references-functions identifier)
+      (user-error "Couldn't find references of %S" identifier)))
+
+(defun my/lookup-implementations (identifier)
+  "Find implementations of IDENTIFIER (symbol at point)."
+  (interactive (list (thing-at-point 'symbol)))
+  (unless identifier (user-error "Nothing under point"))
+  (or (run-hook-with-args-until-success 'my/lookup-implementations-functions identifier)
+      (user-error "Couldn't find implementations of %S" identifier)))
+
+(defun my/lookup-type-definition (identifier)
+  "Jump to the type definition of IDENTIFIER."
+  (interactive (list (thing-at-point 'symbol)))
+  (unless identifier (user-error "Nothing under point"))
+  (or (run-hook-with-args-until-success 'my/lookup-type-definition-functions identifier)
+      (user-error "Couldn't find the type definition of %S" identifier)))
+
+(defun my/lookup-documentation (identifier)
+  "Show documentation for IDENTIFIER (symbol at point).
+Replaces the old `my/smart-lookup'."
+  (interactive (list (thing-at-point 'symbol)))
+  (unless identifier (user-error "Nothing under point"))
+  (or (run-hook-with-args-until-success 'my/lookup-documentation-functions identifier)
+      (user-error "Couldn't find documentation for %S" identifier)))
+
+(defun my/lookup-file (&optional path)
+  "Open the file referenced at point."
   (interactive)
-  (cond
-   ;; 1. Emacs Lisp Mode
-   ((derived-mode-p 'emacs-lisp-mode)
-    (let ((sym (thing-at-point 'symbol)))
-      (if sym (describe-symbol sym)
-        (message "No symbol at point"))))
+  (or (run-hook-with-args-until-success 'my/lookup-file-functions (or path (thing-at-point 'symbol)))
+      (user-error "Couldn't find any files here")))
 
-   ;; 2. Org Mode Source Blocks
-   ((and (eq major-mode 'org-mode) (org-in-src-block-p))
-    (let ((lang (car (org-babel-get-src-block-info)))
-          (sym (thing-at-point 'symbol t)))
-      (if (and (string= lang "emacs-lisp") sym)
-          (describe-symbol (intern sym))
-        (call-interactively #'evil-lookup))))
+;; --- Default backend chains ---
+(setq my/lookup-definition-functions
+      '(my/lookup--lsp-definition
+        my/lookup--xref-definition
+        my/lookup--consult-ripgrep
+        my/lookup--evil-goto-definition))
 
-   ;; 3. LSP / lsp-mode
-   ((bound-and-true-p lsp-mode)
-    (lsp-describe-thing-at-point))
+(setq my/lookup-references-functions
+      '(my/lookup--lsp-references
+        my/lookup--xref-references
+        my/lookup--consult-ripgrep))
 
-   ;; 4. Fallback
-   (t
-    (call-interactively #'evil-lookup))))
+(setq my/lookup-implementations-functions
+      '(my/lookup--lsp-implementations
+        my/lookup--xref-definition))
 
+(setq my/lookup-type-definition-functions
+      '(my/lookup--lsp-type-definition))
+
+(setq my/lookup-documentation-functions
+      '(my/lookup--elisp-doc
+        my/lookup--org-elisp-doc
+        my/lookup--org-doc
+        my/lookup--lsp-doc
+        my/lookup--evil-lookup))
+
+(setq my/lookup-file-functions
+      '(my/lookup--ffap))
+
+;; --- Keybindings ---
+;; lsp-mode-map bindings in tools.org (gd, gr, gD, gi) take precedence when
+;; LSP is active. The global evil bindings here provide fallbacks in non-LSP buffers.
 (with-eval-after-load 'evil
-  (define-key evil-motion-state-map (kbd "K") #'my/smart-lookup))
+  ;; K: documentation (replaces old my/smart-lookup)
+  (define-key evil-motion-state-map (kbd "K") #'my/lookup-documentation)
+  ;; Navigation: global fallbacks when lsp-mode-map is inactive
+  (define-key evil-normal-state-map (kbd "g d") #'my/lookup-definition)
+  (define-key evil-normal-state-map (kbd "g r") #'my/lookup-references)
+  (define-key evil-normal-state-map (kbd "g D") #'my/lookup-implementations)
+  (define-key evil-normal-state-map (kbd "g y") #'my/lookup-type-definition)
+  (define-key evil-normal-state-map (kbd "g f") #'my/lookup-file))
 
 ;; Doom-like utility functions for file operations
 (defun my/copy-this-file ()

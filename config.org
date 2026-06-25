@@ -13,11 +13,11 @@
 ;; this dolist is the runtime loader so modules never double-define hooks/advice.
 
 #+begin_src emacs-lisp
-(setq custom-file (expand-file-name "custom.el" user-emacs-directory))
-(when (file-exists-p custom-file)
-  (load custom-file 'noerror))
-(dolist (file '("core.el" "ui.el" "theme.el" "completion.el" "tools.el" "bindings.el" "notes.el" "containers.el" "ai.el" "eca.el"))
-  (let ((path (expand-file-name file user-emacs-directory)))
-    (when (file-exists-p path)
-      (load path 'noerror 'nomessage))))
+  (setq custom-file (expand-file-name "custom.el" user-emacs-directory))
+  (when (file-exists-p custom-file)
+    (load custom-file 'noerror))
+  (dolist (file '("core.el" "ui.el" "theme.el" "completion.el" "tools.el" "bindings.el" "notes.el" "containers.el" "ai.el" "eca.el"))
+    (let ((path (expand-file-name file user-emacs-directory)))
+      (when (file-exists-p path)
+        (load path 'noerror 'nomessage))))
 #+end_src
