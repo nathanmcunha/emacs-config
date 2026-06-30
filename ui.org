@@ -533,10 +533,27 @@ comint, eat, ghostel, and agent-shell buffers.
   (use-package avy
     :ensure t
     :config
-    (setq avy-timeout-seconds 0.3)
-    (define-key evil-normal-state-map (kbd "f") 'avy-goto-char-in-line)
-    (define-key evil-visual-state-map (kbd "f") 'avy-goto-char-in-line)
-    (define-key evil-motion-state-map "gs" 'avy-goto-char-2))
+    ;; Doom-matching defcustoms
+    (setq avy-timeout-seconds 0.3
+          avy-all-windows nil           ; jump only in current window (default t → too noisy)
+          avy-all-windows-alt t         ; prefix arg flips to all-windows
+          avy-background t              ; dim non-candidate text
+          avy-single-candidate-jump nil) ; never auto-jump on solo match
+    ;; Bind avy-isearch in isearch-map (C-' during isearch)
+    (avy-setup-default)
+    ;; Doom-style avy prefix map bound to `gs` in evil motion state.
+    ;; gs s  → 2-char jump (deterministic, good for in-line too)
+    ;; gs /  → timer jump (type as many chars as you need)
+    ;; gs SPC → timer jump across ALL visible windows
+    (defvar my/avy-map (make-sparse-keymap)
+      "Avy prefix keymap bound to `gs' in evil motion state.")
+    (define-key my/avy-map (kbd "s") 'evil-avy-goto-char-2)
+    (define-key my/avy-map (kbd "/") 'evil-avy-goto-char-timer)
+    (define-key my/avy-map (kbd "SPC")
+                (lambda () (interactive)
+                  (let ((current-prefix-arg t))
+                    (call-interactively #'evil-avy-goto-char-timer))))
+    (define-key evil-motion-state-map "gs" my/avy-map))
 #+end_src
 
 ** Undo System

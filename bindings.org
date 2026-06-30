@@ -139,6 +139,8 @@
     (my/bind-leader "j l" 'avy-goto-line "jump line")
     (my/bind-leader "j w" 'avy-goto-word-1 "jump word")
     (my/bind-leader "j c" 'avy-goto-char "jump char")
+    (my/bind-leader "j r" 'avy-resume "jump resume")
+    (my/bind-leader "j i" 'evil-avy-goto-char-in-line "jump in line")
 
     ;; --- Notes (n) ---
     (my/bind-leader "n r" 'org-roam-buffer-toggle "roam toggle")

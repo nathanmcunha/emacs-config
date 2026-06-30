@@ -134,3 +134,37 @@ Rosé Pine (dark) uses higher lightness for legibility on the dark base."
           rainbow-identifiers-cie-l-lightness 45
           rainbow-identifiers-choose-face-function #'rainbow-identifiers-cie-l*a*b*-choose-face))
 #+end_src
+* Bionic Reading 
+#+begin_src emacs-lisp
+
+    (defvar bionic-reading-face 'bold
+      "Face used to highlight the fixation point of words.")
+
+  (defun bionic-reading-apply-buffer ()
+    "Apply the bionic fixation overlay to the entire buffer."
+    (save-excursion
+      (save-restriction
+        (widen)
+        (goto-char (point-min))
+        (while (forward-word)
+          (let* ((bounds (bounds-of-thing-at-point 'word))
+                 (word-start (car bounds))
+                 (word-end (cdr bounds))
+                 (bold-len (1+ (/ (- word-end word-start) 2))))
+            (put-text-property word-start (+ word-start bold-len) 
+                               'font-lock-face bionic-reading-face))))))
+
+  (defun bionic-reading-clear-buffer ()
+  "Remove all bionic reading overlays from the buffer."
+  (with-silent-modifications
+    (remove-text-properties (point-min) (point-max) '(font-lock-face nil))))
+
+;;;###autoload
+(define-minor-mode bionic-reading-mode
+  "Toggle Bionic Reading style overlays in the current buffer."
+  :init-value nil
+  :lighter " Bionic"
+  (if bionic-reading-mode
+      (bionic-reading-apply-buffer)
+    (bionic-reading-clear-buffer)))
+#+end_src
