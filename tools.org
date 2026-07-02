@@ -1108,8 +1108,9 @@ Provider-agnostic SSH multiplexing for fast TRAMP connections, plus a custom met
            "-o ServerAliveInterval=60 "
            "-o ServerAliveCountMax=3 "
            "-o ConnectTimeout=10 "
-           "-o GSSAPIAuthentication=no "
            "-o PasswordAuthentication=no "
+           "-o BatchMode=yes "
+           "-o StrictHostKeyChecking=accept-new "
            "-o StreamLocalBindUnlink=yes"))
 
     ;; Safety net: cap connection attempts (default is 60s, way too long)
@@ -1124,7 +1125,6 @@ Provider-agnostic SSH multiplexing for fast TRAMP connections, plus a custom met
     (tramp-set-completion-function
      "ssh"
      '((tramp-parse-sconfig "~/.ssh/config")
-       (tramp-parse-sconfig "~/.ssh/gcloud_config")
        (tramp-parse-shosts "~/.ssh/known_hosts")))
 
     ;; AWS: SSM Session Manager — no bastion host or open SSH port needed.
@@ -1140,8 +1140,10 @@ Provider-agnostic SSH multiplexing for fast TRAMP connections, plus a custom met
                    (tramp-remote-shell-login ("-l"))
                    (tramp-remote-shell-args ("-c"))))
 
-    ;; Default remote shell for all methods
-    (setq tramp-default-remote-shell "/bin/bash"))
+    ;; Default remote shell. Use /bin/sh (not /bin/bash): NixOS remotes lack /bin/bash,
+    ;; and /bin/sh is present on every POSIX box. BatchMode+accept-new above prevent any
+    ;; interactive prompt (host-key/password) from hanging TRAMP's single-threaded loop.
+    (setq tramp-default-remote-shell "/bin/sh"))
 #+end_src
 
 
