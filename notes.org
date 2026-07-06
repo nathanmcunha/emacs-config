@@ -31,7 +31,7 @@
 
         (defconst my/org-auto-tangle-files
           '("core.org" "ui.org" "completion.org" "tools.org" "bindings.org" "config.org"
-            "notes.org" "ai.org" "containers.org" "theme.org" "eca.org")
+            "notes.org" "theme.org")
           "Org files in `user-emacs-directory' that should auto-tangle on save.")
 
         (defun my/org-config-file-p (&optional file)
@@ -87,9 +87,14 @@ Guard against non-existent files — `file-truename' signals on missing paths."
                     org-meta-line org-block-begin-line org-block-end-line))
       (set-face-attribute face nil :inherit 'fixed-pitch)))
 
-;; Babel languages are registered in ai.org (the only module that needs gptel).
-;; ob-mermaid is loaded here for the package; babel registration stays in ai.org.
+;; ob-mermaid: literate Mermaid diagrams. ob-sql ships with Org.
+;; Register the Babel languages used across the config (gptel lived in the
+;; now-removed ai.org and is intentionally dropped).
 (use-package ob-mermaid :ensure t :after org)
+(with-eval-after-load 'org
+  (dolist (lang '(mermaid sql emacs-lisp shell python))
+    (add-to-list 'org-babel-load-languages (cons lang t)))
+  (org-babel-do-load-languages 'org-babel-load-languages org-babel-load-languages))
 
 
   (use-package org-roam

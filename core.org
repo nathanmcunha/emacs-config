@@ -347,7 +347,7 @@ Nix loads config.el which does `(dolist ... (load path))`; mirroring that loop
 here keeps the runtime model identical so reload order, hooks, and advice stay consistent."
   (interactive)
   (let ((files '("core.el" "ui.el" "theme.el" "completion.el" "tools.el"
-                 "bindings.el" "notes.el" "containers.el" "ai.el" "eca.el")))
+                 "bindings.el" "notes.el")))
     (dolist (file files)
       (let ((path (expand-file-name file user-emacs-directory)))
         (when (file-exists-p path)

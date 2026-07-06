@@ -53,6 +53,10 @@
   (setq-default line-spacing 0.4)
   (add-hook 'org-mode-hook #'variable-pitch-mode)
 
+  ;; Ensure local themes/ dir is on the custom theme search path
+  (add-to-list 'custom-theme-load-path
+               (expand-file-name "themes/" user-emacs-directory))
+
   ;; Rosé Pine — light & dark Doom variants
   ;; https://github.com/donniebreve/rose-pine-doom-emacs
   (defun my/rose-pine-apply-rainbow (variant)

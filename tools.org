@@ -807,7 +807,6 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
 #+end_src
 
 ** Terminals (Ghostel + EAT)
-;; AI tools (claude-code, agent-shell) moved to ai.org
 #+begin_src emacs-lisp
   ;; for eat terminal backend:
   (use-package eat
@@ -948,9 +947,6 @@ A sidebar file explorer and project navigator, replacing Dirvish for project fil
 
 
 ;; Markdown configuration moved to notes.org
-
-
-;; Docker & Kubernetes configuration moved to containers.org
 
 ** Environment (envrc)
 Per-project environment activation via direnv. Works with both Nix flakes and mise projects.
@@ -1145,7 +1141,6 @@ Provider-agnostic SSH multiplexing for fast TRAMP connections, plus a custom met
     ;; interactive prompt (host-key/password) from hanging TRAMP's single-threaded loop.
     (setq tramp-default-remote-shell "/bin/sh"))
 #+end_src
-
 
 ** MCP Server (Elisp Dev Tools)
 An MCP server that exposes Emacs Lisp development tools to AI agents via the Model Context Protocol.

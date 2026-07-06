@@ -17,8 +17,6 @@ The entry point is =config.org=, which =#+include:=s every module. Each module t
 | =tools.org=      | =tools.el=       | LSP, Magit, Treemacs, formatting, terminals    |
 | =bindings.org=   | =bindings.el=    | SPC-leader keybindings (which-key labeled)     |
 | =notes.org=      | =notes.el=       | Org mode, Org-roam, Markdown, auto-tangle      |
-| =containers.org= | =containers.el=  | Docker/Podman, Kubernetes                       |
-| =ai.org=         | =ai.el=          | gptel LLM integration                           |
 
 * Package Management
 
@@ -42,14 +40,13 @@ All primary commands are behind a =SPC= leader key, with which-key labels. The l
 | =SPC g= | git         | Magit status, blame, log, timemachine         |
 | =SPC j= | jump        | Avy (char, word, line)                         |
 | =SPC n= | notes       | Org-roam (find, insert, dailies)               |
-| =SPC o= | open        | Terminal (ghostel/eat), Docker, K8s           |
+| =SPC o= | open        | Terminal (ghostel/eat)                        |
 | =SPC p= | project     | switch, compile, test, search (ripgrep)        |
 | =SPC r= | run         | Async/compile runner with smart completion     |
 | =SPC s= | search      | consult-line, imenu, outline, yank-pop         |
 | =SPC u= | undo        | vundo (visual undo tree)                       |
 | =SPC w= | window      | split, move, balance, navigate (hjkl)           |
 | =SPC l= | workspace   | Tab bar (switch, new, close, rename)           |
-| =SPC a= | AI          | gptel chat, send, menu, rewrite                |
 
 ** Completion System (Vertico Stack)
 
@@ -131,15 +128,6 @@ Full Magit integration with evil-collection keybindings and =git-timemachine= fo
 | JS/TS/TSX | prettier                    |
 | HTML/CSS  | prettier                    |
 | C/C++     | clang-format                |
-
-** Containers
-
-- =docker= TUI package configured for Podman (rootless socket at =/run/user/$UID/podman/podman.sock=)
-- =kubernetes= TUI for cluster management
-
-** AI (gptel)
-
-Configured for the MiMo API (Xiaomi token plan) as the active backend with model =mimo-v2.5-pro=. Auth via =~/.authinfo.gpg=. Also includes a ChatGPT/OpenAI backend for fallback.
 
 ** Theme
 

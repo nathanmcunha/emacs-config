@@ -8,7 +8,7 @@
 #+begin_src emacs-lisp
 ;;; config.el --- Modular Configuration -*- lexical-binding: t -*-
 #+end_src
-;; Load order: core -> theme -> completion -> ui -> tools -> bindings -> notes -> containers -> ai -> eca.
+;; Load order: core -> theme -> completion -> ui -> tools -> bindings -> notes.
 ;; Each module is its own .org file (Nix reads them directly via nixParsedConfig);
 ;; this dolist is the runtime loader so modules never double-define hooks/advice.
 
@@ -16,7 +16,7 @@
   (setq custom-file (expand-file-name "custom.el" user-emacs-directory))
   (when (file-exists-p custom-file)
     (load custom-file 'noerror))
-  (dolist (file '("core.el" "ui.el" "theme.el" "completion.el" "tools.el" "bindings.el" "notes.el" "containers.el" "ai.el" "eca.el"))
+  (dolist (file '("core.el" "ui.el" "theme.el" "completion.el" "tools.el" "bindings.el" "notes.el"))
     (let ((path (expand-file-name file user-emacs-directory)))
       (when (file-exists-p path)
         (load path 'noerror 'nomessage))))

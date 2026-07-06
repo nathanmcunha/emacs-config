@@ -15,7 +15,7 @@ This is a **literate Emacs configuration** using modular Org Mode files (`core.o
 - `tools.org` / `tools.el` — LSP, magit, org-mode, languages
 - `bindings.org` / `bindings.el` — Leader keybindings
 - `config.org` / `config.el` — Loader (`dolist` over all `.el` modules) + custom-file
-- `notes.org`, `containers.org`, `ai.org`, `eca.org` — Miscellaneous
+- `notes.org` — Org mode, Org-roam, Markdown, auto-tangle
 
 
 ## Common Commands
